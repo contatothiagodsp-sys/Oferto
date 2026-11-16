@@ -14,14 +14,14 @@ Material para montar e operar os canais da marca, de 16/11 a 31/12/2026. É base
 
 ## Marca
 
-![Logo Ofertô](../../assets/logo-oferto.png)
+![Logo Ofertô](../../assets/logo-oferto.jpeg)
 
 | Item | Uso |
 |---|---|
 | **Nome** | **Ofertô** (com acento nos textos; `oferto` sem acento em @, domínio, tags e sub-IDs) |
 | **Slogan** (está no logo) | *Promoções que valem a pena!* |
 | **Promessa** (critério do selo) | *Só desconto real.* Toda oferta tem preço igual ou abaixo do menor preço dos últimos 90 dias. |
-| **Logo** | `assets/logo-oferto.png`. Foto de perfil em todos os espaços, inclusive nos 2 bots (no @BotFather, use `/setuserpic`). |
+| **Logo** | `assets/logo-oferto.jpeg`. Foto de perfil em todos os espaços, inclusive nos 2 bots (no @BotFather, use `/setuserpic`). |
 | **Cores** (do logo) | Amarelo/laranja de fundo, vermelho do megafone, contorno roxo-escuro. Use amarelo + texto escuro nos criativos e na landing. |
 
 O slogan diz **o que** a marca entrega. A promessa diz **como** ela garante isso. Use os dois juntos sempre que houver espaço: "Promoções que valem a pena. Só desconto real." 
