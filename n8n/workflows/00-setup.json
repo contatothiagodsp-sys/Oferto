@@ -13,6 +13,20 @@
       ]
     },
     {
+      "name": "Chamado por outro workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "notes": "Servidor local: o workflow 90 · Túnel chama o setup quando o endereço público muda.",
+      "id": "12ce1bf3-c347-4361-af7c-f4244746c738",
+      "position": [
+        0,
+        480
+      ]
+    },
+    {
       "name": "Criar bfx_config",
       "type": "n8n-nodes-base.dataTable",
       "typeVersion": 1.1,
@@ -881,6 +895,17 @@
   ],
   "connections": {
     "Rodar setup": {
+      "main": [
+        [
+          {
+            "node": "Criar bfx_config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chamado por outro workflow": {
       "main": [
         [
           {

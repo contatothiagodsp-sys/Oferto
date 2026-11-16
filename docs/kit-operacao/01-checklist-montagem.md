@@ -13,9 +13,9 @@ Marque `[x]` conforme avança.
   - se algum estiver ocupado, decidir uma variação **antes** de criar as tags da Amazon.
 - [ ] **Chip dedicado** para o WhatsApp Business da marca, que nunca pode ser o número pessoal.
 - [ ] **2º admin de reserva:** escolher a pessoa de confiança que terá acesso de admin a tudo (WhatsApp, Telegram, n8n).
-- [ ] **n8n Cloud:**
-  - criar a conta, conferir o limite de execuções e a disponibilidade de Data Tables;
-  - ajustar o fuso para America/Sao_Paulo.
+- [ ] **n8n:**
+  - **no seu computador** (grátis, para validar): instalar o Docker e subir o [servidor local](../../servidor-local/README.md); desativar a suspensão automática do computador;
+  - **ou n8n Cloud:** criar a conta, conferir o limite de execuções e a disponibilidade de Data Tables, e ajustar o fuso para America/Sao_Paulo.
 
 ## 17/11 (segunda): Telegram e bot
 

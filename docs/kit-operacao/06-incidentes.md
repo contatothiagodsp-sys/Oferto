@@ -19,9 +19,10 @@
 
 ## O bot não responde
 
-1. No n8n Cloud, abra **Executions** do **01 · Telegram**.
+1. No n8n (Cloud ou http://localhost:5678), abra **Executions** do **01 · Telegram**.
    - **Nenhuma execução nova:** o workflow pode estar despublicado ou o webhook caiu. Confira se o 01 está **Published** e rode o **00 · Setup** de novo; ele reaplica os webhooks.
    - **Execução com erro:** abra-a, veja o nó vermelho e me mande o print do erro.
+   - **Servidor local:** o computador dormiu ou o Docker parou? Rode `docker compose ps -a` na pasta `servidor-local` e depois `docker compose up -d`. Em até 1 minuto, `docker compose logs vigia` mostra o webhook refeito.
 2. **Limite de execuções do plano estourou:** troque `rastrear_entradas` para `nao` na `bfx_config` e rode o 00. Se ainda faltar execução, faça upgrade do plano durante a BF.
 3. **Enquanto não volta:**
    - poste manualmente no Telegram, com o link de afiliado da plataforma `tg` gerado na mão;

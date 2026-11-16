@@ -1,0 +1,68 @@
+# Ofertô: n8n Community no seu computador, com túnel público só para o webhook do Telegram.
+# Uso (nesta pasta):  docker compose up -d      Parar:  docker compose down
+# Guia completo: servidor-local/README.md
+name: oferto
+
+x-n8n-env: &n8n-env
+  GENERIC_TIMEZONE: America/Sao_Paulo
+  TZ: America/Sao_Paulo
+  # IPv4 explícito: em Dockers sem IPv6 o padrão (::) impede o n8n de subir.
+  N8N_LISTEN_ADDRESS: 0.0.0.0
+  N8N_DIAGNOSTICS_ENABLED: "false"
+  N8N_PERSONALIZATION_ENABLED: "false"
+  N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+  # Apaga execuções com mais de 14 dias (o disco não enche).
+  EXECUTIONS_DATA_PRUNE: "true"
+  EXECUTIONS_DATA_MAX_AGE: "336"
+
+services:
+  # Importa e publica os workflows desta pasta quando eles mudam (roda e termina antes do n8n subir).
+  preparar:
+    image: n8nio/n8n:2.47.7
+    entrypoint: ["/bin/sh", "/oferto/preparar.sh"]
+    environment: *n8n-env
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/oferto/workflows:ro
+      - ./preparar.sh:/oferto/preparar.sh:ro
+    restart: "no"
+
+  n8n:
+    image: n8nio/n8n:2.47.7
+    depends_on:
+      preparar:
+        condition: service_completed_successfully
+    environment: *n8n-env
+    # O painel só abre neste computador: http://localhost:5678
+    ports:
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+
+  # Filtro: do túnel, só passa o POST do webhook do Telegram. O painel do n8n não fica exposto.
+  filtro:
+    image: caddy:2.8.4-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on: [n8n]
+    restart: unless-stopped
+
+  # Túnel rápido da Cloudflare (sem conta). O endereço muda a cada reinício; o vigia cuida disso.
+  tunel:
+    image: cloudflare/cloudflared:2025.8.1
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://filtro:80
+    depends_on: [filtro]
+    restart: unless-stopped
+
+  # Vigia: quando o endereço do túnel muda, avisa o n8n (workflow 90), que refaz o webhook no Telegram.
+  vigia:
+    image: curlimages/curl:8.11.1
+    entrypoint: ["/bin/sh", "/oferto/vigia.sh"]
+    volumes:
+      - ./vigia.sh:/oferto/vigia.sh:ro
+    depends_on: [n8n, tunel]
+    restart: unless-stopped
+
+volumes:
+  n8n_data:

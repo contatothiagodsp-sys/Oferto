@@ -1,0 +1,13 @@
+# Só o webhook do Telegram passa pelo túnel. Todo o resto responde 404.
+:80 {
+	@telegram {
+		method POST
+		path /webhook/telegram-ofertas
+	}
+	handle @telegram {
+		reverse_proxy n8n:5678
+	}
+	handle {
+		respond "Not found" 404
+	}
+}

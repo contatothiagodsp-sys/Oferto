@@ -8,6 +8,12 @@ const { TABELAS } = require('../lib/tabelas');
 
 const RAIZ = path.join(__dirname, '..');
 const SAIDA = path.join(RAIZ, 'n8n', 'workflows');
+const SAIDA_LOCAL = path.join(RAIZ, 'servidor-local', 'workflows');
+// IDs fixos no servidor local: a CLI importa e publica por ID, e o workflow do túnel chama o setup por ID.
+const IDS_LOCAL = {
+  '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001',
+  '03-relatorio-diario.json': 'wfRelat000000001', '90-tunel.json': 'wfTunel000000001',
+};
 
 /* ---------- bundle da lib ---------- */
 
@@ -216,11 +222,17 @@ function configNodes(wf, x, y) {
 function wfSetup() {
   const wf = new WF('00 · Setup (rodar manualmente)');
   wf.add({ name: 'Rodar setup', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, parameters: {} }, 0, 300);
+  wf.add({
+    name: 'Chamado por outro workflow', type: 'n8n-nodes-base.executeWorkflowTrigger', typeVersion: 1.1,
+    parameters: { inputSource: 'passthrough' },
+    notes: 'Servidor local: o workflow 90 · Túnel chama o setup quando o endereço público muda.',
+  }, 0, 480);
   const nomes = Object.keys(TABELAS);
   let prev = 'Rodar setup';
   nomes.forEach((t, i) => {
     const n = wf.add(dtCreate(`Criar ${t}`, t), 220 + i * 200, 300);
     wf.link(prev, n);
+    if (i === 0) wf.link('Chamado por outro workflow', n);
     prev = n;
   });
   const x0 = 220 + nomes.length * 200;
@@ -459,15 +471,45 @@ return LIB.relatorioDiario({ posts: pega('Posts'), links: pega('Links'), ofertas
   return wf;
 }
 
+/* ---------- 90 · túnel (só no servidor local) ---------- */
+
+function wfTunel() {
+  const wf = new WF('90 · Túnel: atualizar o webhook (servidor local)');
+  wf.add({
+    name: 'Novo endereço do túnel', type: 'n8n-nodes-base.webhook', typeVersion: 2, webhookId: uuid('webhook-oferto-tunel'),
+    parameters: { httpMethod: 'POST', path: 'oferto-tunel', responseMode: 'onReceived', options: {} },
+    notes: 'Chamado pelo contêiner "vigia". Este caminho não passa pelo filtro do túnel: só responde dentro do Docker e em localhost.',
+  }, 0, 300);
+  wf.add(dtCreate('Criar bfx_config', 'bfx_config'), 220, 300);
+  wf.add(code('Linha da URL', `
+const base = String(($('Novo endereço do túnel').first().json.body || {}).url || '').trim().replace(/\\/+$/, '');
+if (!/^https:\\/\\/[a-z0-9.-]+$/i.test(base)) throw new Error('URL do túnel inválida: ' + base);
+return [{ json: { chave: 'n8n_webhook_url', valor: base + '/webhook/telegram-ofertas' } }];`, { cfg: false, nota: 'Monta a Production URL do webhook do 01 a partir do endereço público do túnel.' }), 440, 300);
+  wf.add(Object.assign(dtUpdate('Gravar URL', 'bfx_config', 'chave', 'upsert'), { executeOnce: true }), 660, 300);
+  wf.add({
+    name: 'Rodar setup', type: 'n8n-nodes-base.executeWorkflow', typeVersion: 1.2,
+    parameters: {
+      source: 'database', mode: 'once',
+      workflowId: { __rl: true, mode: 'id', value: IDS_LOCAL['00-setup.json'] },
+      options: { waitForSubWorkflow: true },
+    },
+    notes: 'O setup registra o webhook no Telegram com a nova URL e manda o resumo aos admins.',
+  }, 880, 300);
+  wf.chain('Novo endereço do túnel', 'Criar bfx_config', 'Linha da URL', 'Gravar URL', 'Rodar setup');
+  return wf;
+}
+
 /* ---------- main ---------- */
 
 function main() {
   fs.mkdirSync(SAIDA, { recursive: true });
   const wfs = { '00-setup.json': wfSetup(), '01-telegram-router.json': wfRouter(), '02-coleta-shopee.json': wfShopee(), '03-relatorio-diario.json': wfRelatorio() };
-  for (const [arq, wf] of Object.entries(wfs)) {
+  fs.mkdirSync(SAIDA_LOCAL, { recursive: true });
+  for (const [arq, wf] of Object.entries(Object.assign({}, wfs, { '90-tunel.json': wfTunel() }))) {
     const j = wf.json();
-    fs.writeFileSync(path.join(SAIDA, arq), JSON.stringify(j, null, 2) + '\n');
-    console.log(`${arq}: ${j.nodes.length} nós`);
+    if (wfs[arq]) fs.writeFileSync(path.join(SAIDA, arq), JSON.stringify(j, null, 2) + '\n');
+    fs.writeFileSync(path.join(SAIDA_LOCAL, arq), JSON.stringify(Object.assign({ id: IDS_LOCAL[arq] }, j), null, 2) + '\n');
+    console.log(`${arq}: ${j.nodes.length} nós${wfs[arq] ? '' : ' (só servidor local)'}`);
   }
   escreverDocConfig();
 }

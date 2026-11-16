@@ -152,6 +152,17 @@ hook('wfRelat000000001', espera=8)
 rel = [c for c in chamadas() if c['metodo'] == 'sendMessage']
 checar('relatório para os 2 admins', len(rel) == 2 and 'meta_casa_v1' in rel[0]['payload']['text'])
 
+print('7) Servidor local: túnel novo → URL gravada e webhook refeito')
+limpar_log()
+post('http://127.0.0.1:5678/webhook/oferto-tunel', {'url': 'https://exemplo-novo.trycloudflare.com/'})
+time.sleep(12)
+cs = chamadas()
+sw = [c for c in cs if c['metodo'] == 'setWebhook']
+checar('setWebhook com a URL do túnel', len(sw) >= 1 and all(c['payload'].get('url') == 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas' for c in sw))
+checar('n8n_webhook_url gravada', any(r['valor'] == 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas' for r in linhas('bfx_config', "where chave = 'n8n_webhook_url'")))
+checar('segredo do webhook mantido', all(c['payload'].get('secret_token') == SEGREDO for c in sw))
+checar('arrumação do grupo não repetida', not any(c['metodo'] == 'setChatDescription' for c in cs))
+
 c = sqlite3.connect(DB)
 erros = c.execute("select count(*) from execution_entity where status != 'success'").fetchone()[0]
 checar('nenhuma execução com erro no n8n', erros == 0)

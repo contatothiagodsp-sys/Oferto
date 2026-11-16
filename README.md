@@ -1,4 +1,4 @@
-# Ofertô: bot de ofertas (Telegram + n8n Cloud)
+# Ofertô: bot de ofertas (Telegram + n8n)
 
 Automação da seção 4 do plano ("publicar uma vez, distribuir em quatro"):
 
@@ -21,9 +21,17 @@ Automação da seção 4 do plano ("publicar uma vez, distribuir em quatro"):
 | `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite e retenção). |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
+| `servidor-local/` | n8n Community grátis no seu computador (Docker + túnel). Guia em [servidor-local/README.md](servidor-local/README.md). |
 | `teste-local/` | Teste de ponta a ponta com n8n local e Telegram/Shopee falsos. |
 
-Você **não precisa** rodar nada no computador: basta importar os 4 arquivos `.json` no n8n Cloud.
+## Onde rodar
+
+| Opção | Custo | Como |
+|---|---|---|
+| **Seu computador** (n8n Community + Docker) | Grátis; o computador precisa ficar ligado | [servidor-local/README.md](servidor-local/README.md): sobe tudo com `docker compose up -d`, importa os workflows e liga o webhook sozinho |
+| **n8n Cloud** | Plano pago após o teste grátis ([limite de execuções](#execuções-do-n8n-cloud-confira-o-seu-plano)) | Passo a passo abaixo: importar os 4 arquivos `.json` de `n8n/workflows/` |
+
+Os workflows são os mesmos nas duas opções. No servidor local, os passos 2 e 4 abaixo são automáticos.
 
 ## Arquitetura em 1 minuto
 

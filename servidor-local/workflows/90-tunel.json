@@ -1,0 +1,192 @@
+{
+  "id": "wfTunel000000001",
+  "name": "90 · Túnel: atualizar o webhook (servidor local)",
+  "nodes": [
+    {
+      "name": "Novo endereço do túnel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "5104b203-161c-4226-ae8d-e3e96ef35195",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "oferto-tunel",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "notes": "Chamado pelo contêiner \"vigia\". Este caminho não passa pelo filtro do túnel: só responde dentro do Docker e em localhost.",
+      "id": "eed984fc-1141-47c2-af1d-6628be31797c",
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "name": "Criar bfx_config",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "executeOnce": true,
+      "parameters": {
+        "resource": "table",
+        "operation": "create",
+        "tableName": "bfx_config",
+        "columns": {
+          "column": [
+            {
+              "name": "chave",
+              "type": "string"
+            },
+            {
+              "name": "valor",
+              "type": "string"
+            },
+            {
+              "name": "descricao",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "createIfNotExists": true
+        }
+      },
+      "id": "030950cf-b047-4131-ac94-3e2a43894e7e",
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "name": "Linha da URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const base = String(($('Novo endereço do túnel').first().json.body || {}).url || '').trim().replace(/\\/+$/, '');\nif (!/^https:\\/\\/[a-z0-9.-]+$/i.test(base)) throw new Error('URL do túnel inválida: ' + base);\nreturn [{ json: { chave: 'n8n_webhook_url', valor: base + '/webhook/telegram-ofertas' } }];\n"
+      },
+      "notes": "Monta a Production URL do webhook do 01 a partir do endereço público do túnel.",
+      "id": "1893401e-38e2-4808-a924-a7ce0e237430",
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "name": "Gravar URL",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "parameters": {
+        "resource": "row",
+        "operation": "upsert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "bfx_config"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "chave",
+              "condition": "eq",
+              "keyValue": "={{ $json.chave }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "executeOnce": true,
+      "id": "72b8aea7-9e87-4827-aa7e-e79fa1def162",
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "name": "Rodar setup",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "parameters": {
+        "source": "database",
+        "mode": "once",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "wfSetup000000001"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "notes": "O setup registra o webhook no Telegram com a nova URL e manda o resumo aos admins.",
+      "id": "9d61dae4-334c-4503-abd9-46a26e27e67b",
+      "position": [
+        880,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Novo endereço do túnel": {
+      "main": [
+        [
+          {
+            "node": "Criar bfx_config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criar bfx_config": {
+      "main": [
+        [
+          {
+            "node": "Linha da URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linha da URL": {
+      "main": [
+        [
+          {
+            "node": "Gravar URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar URL": {
+      "main": [
+        [
+          {
+            "node": "Rodar setup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

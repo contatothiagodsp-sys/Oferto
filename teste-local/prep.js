@@ -39,4 +39,6 @@ const wf = {
   ],
 };
 fs.writeFileSync(path.join(OUT, '99-config-teste.json'), JSON.stringify(wf));
+// Workflow do túnel do servidor local, como vai para o Docker (o vigia chama /webhook/oferto-tunel).
+fs.copyFileSync(path.join(__dirname, '..', 'servidor-local', 'workflows', '90-tunel.json'), path.join(OUT, '90-tunel.json'));
 console.log('workflows de teste em', OUT);
