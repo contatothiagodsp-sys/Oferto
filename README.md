@@ -74,11 +74,20 @@ Preencha agora:
 ### 6. Criar o supergrupo com Tópicos
 
 1. Crie um grupo e, em **Configurações do grupo**, ative **Tópicos**.
-2. Adicione o **bot publicador** como **administrador** com as permissões **Gerenciar tópicos** e **Convidar usuários via link**.
-3. O bot avisa você no privado com o **ID do grupo** (`-100…`) e confere as permissões. Copie o ID para `grupo_id`.
+2. Adicione o **bot publicador** como **administrador** com estas permissões:
+   - **Alterar informações do grupo**: para escrever a descrição;
+   - **Fixar mensagens**: para fixar as regras e os textos;
+   - **Gerenciar tópicos**: para criar, renomear e fechar tópicos;
+   - **Convidar usuários via link**: para o `/convite`.
+3. O bot avisa você no privado com o **ID do grupo** (`-100…`) e mostra quais permissões estão faltando. Copie o ID para `grupo_id`.
 4. Se quiser, preencha `grupo_link` com o link público do grupo.
-5. Rode o **00 · Setup** pela 3ª vez: ele cria os tópicos 🔥 Top do Dia, 🏠 Casa & Eletro, 🎁 Beleza & Presentes, 👶 Bebê & Família e 💻 Tech, grava os IDs na config e manda um resumo no seu Telegram.
-6. Renomeie o tópico **General** para **💬 Conversa** e fixe as regras: "Nunca pedimos pagamento nem dados no privado. Contém links de afiliado." Para ofertas, só o bot posta.
+5. Rode o **00 · Setup** pela 3ª vez. Ele:
+   - cria os tópicos 🔥 Top do Dia, 🏠 Casa & Eletro, 🎁 Beleza & Presentes, 👶 Bebê & Família e 💻 Tech e grava os IDs na config;
+   - escreve a descrição do grupo e renomeia o **General** para **💬 Conversa**;
+   - publica e fixa as regras e a mensagem de segurança (com o critério do selo e o aviso de afiliado) no Conversa, e um texto de apresentação em cada tópico;
+   - **fecha** os tópicos de oferta: só admins e o bot postam neles;
+   - manda 2 resumos no seu Telegram: "⚙️ Setup" e "🧩 Arrumação do grupo".
+6. A arrumação roda **uma vez** (a linha `grupo.textos` vira `ok`). Se algum passo falhar por permissão, corrija a permissão, volte `grupo.textos` para `pendente`, apague as mensagens que já saíram e rode o setup de novo.
 
 ### 7. Teste
 

@@ -257,6 +257,28 @@ return [{ json: LIB.resumoSetup(chamadas, resp, $('Config').first().json.avisos,
   wf.chain('Config', 'Chamadas de setup', 'Telegram (setup)', 'Resumo');
   wf.chain('Resumo', 'Tópicos criados', 'Gravar tópicos');
   wf.chain('Resumo', 'Mensagem de resumo', 'Telegram (resumo)');
+
+  // Arrumação do grupo (só com grupo.textos = pendente e todos os tópicos criados).
+  wf.add(code('Chamadas do grupo', `
+const criados = $('Resumo').first().json.topicos;
+return LIB.arrumarGrupoChamadas(cfg, criados).map((c) => ({ json: c }));`, { lib: true, nota: 'Descrição, General → 💬 Conversa, textos fixados e tópicos de oferta fechados.' }), x0 + 1100, 760);
+  wf.add(httpTelegram('Telegram (grupo)'), x0 + 1320, 760);
+  wf.add(code('Fixar mensagens', `
+const chamadas = $('Chamadas do grupo').all().map((i) => i.json);
+const resp = $input.all().map((i) => i.json);
+return LIB.fixarChamadas(chamadas, resp, cfg).map((c) => ({ json: c }));`, { lib: true }), x0 + 1540, 760);
+  wf.add(httpTelegram('Telegram (fixar)'), x0 + 1760, 760);
+  wf.add(code('Resumo do grupo', `
+const chamadas = $('Chamadas do grupo').all().map((i) => i.json).concat($('Fixar mensagens').all().map((i) => i.json));
+const resp = $('Telegram (grupo)').all().map((i) => i.json).concat($input.all().map((i) => i.json));
+return [{ json: LIB.resumoGrupo(chamadas, resp, cfg) }];`, { lib: true }), x0 + 1980, 760);
+  wf.add(itens('Config do grupo', '$json.config'), x0 + 2200, 680);
+  wf.add(dtUpdate('Gravar grupo.textos', 'bfx_config', 'chave', 'upsert'), x0 + 2420, 680);
+  wf.add(itens('Mensagem do grupo', '$json.chamadas'), x0 + 2200, 840);
+  wf.add(httpTelegram('Telegram (resumo do grupo)'), x0 + 2420, 840);
+  wf.chain('Resumo', 'Chamadas do grupo', 'Telegram (grupo)', 'Fixar mensagens', 'Telegram (fixar)', 'Resumo do grupo');
+  wf.chain('Resumo do grupo', 'Config do grupo', 'Gravar grupo.textos');
+  wf.chain('Resumo do grupo', 'Mensagem do grupo', 'Telegram (resumo do grupo)');
   return wf;
 }
 

@@ -69,6 +69,16 @@ def linhas(tabela, where=''):
     return [dict(r) for r in c.execute(f'select * from "data_table_user_{tid}" {where}')]
 
 
+print('0) Setup arrumou o grupo (descrição, Conversa, textos fixados, tópicos fechados)')
+cs = chamadas()
+met = [c['metodo'] for c in cs if c.get('token') == 'TOKGRUPO']
+topicos_cfg = sorted(int(r['valor']) for r in linhas('bfx_config', "where chave like 'topico.%' and valor != ''"))
+checar('descrição e General renomeado', 'setChatDescription' in met and any(c['metodo'] == 'editGeneralForumTopic' and c['payload'].get('name') == '💬 Conversa' for c in cs))
+checar('7 mensagens enviadas e fixadas', met.count('pinChatMessage') == 7 and len([c for c in cs if c['metodo'] == 'sendMessage' and c['token'] == 'TOKGRUPO']) == 7)
+checar('5 tópicos de oferta fechados', sorted(c['payload']['message_thread_id'] for c in cs if c['metodo'] == 'closeForumTopic') == topicos_cfg and len(topicos_cfg) == 5)
+checar('grupo.textos = ok', linhas('bfx_config', "where chave = 'grupo.textos'")[0]['valor'] == 'ok')
+checar('resumo do grupo para os admins', any('Arrumação do grupo' in c['payload'].get('text', '') for c in cs))
+
 print('1) Amazon: /oferta → card → ⭐ Aprovar + Top')
 limpar_log()
 update(msg('/oferta casa\nhttps://www.amazon.com.br/Air-Fryer/dp/B0ABCDEF12?ref=x\nAir Fryer Mondial 4L\npreço 349,90\n'

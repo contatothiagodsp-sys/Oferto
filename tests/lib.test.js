@@ -380,3 +380,35 @@ test('preposição da loja nos textos', () => {
   assert.match(L.textoX(Object.assign({ loja: 'shopee' }, base), cfg), /na Shopee/);
   assert.match(L.textoTelegram(Object.assign({ loja: 'outra' }, base), 'https://l', cfg), /na loja/);
 });
+
+test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', () => {
+  const cfg = cfgTeste();
+  const criados = Object.keys(cfg.categorias).map((k, i) => ({ chave: `topico.${k}`, valor: String(200 + i) }));
+  cfg.telegram.topicos = {};
+  assert.deepEqual(L.arrumarGrupoChamadas(cfg, []), [], 'sem tópicos não faz nada');
+  const a = L.arrumarGrupoChamadas(cfg, criados);
+  const metodos = a.map((c) => c.metodo);
+  assert.equal(metodos.filter((m) => m === 'sendMessage').length, 2 + Object.keys(cfg.categorias).length);
+  assert.equal(metodos.filter((m) => m === 'closeForumTopic').length, Object.keys(cfg.categorias).length);
+  assert.ok(a.every((c) => c.bot === 'grupo' && c.payload.chat_id === cfg.telegram.grupo_id));
+  const desc = a.find((c) => c.metodo === 'setChatDescription').payload.description;
+  assert.ok(desc.length <= 255 && desc.includes('afiliado'), desc);
+  assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => /afiliado/i.test(c.payload.text)));
+  assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => c.payload.text.length <= 4096));
+
+  const respA = a.map((c, i) => (c.metodo === 'sendMessage' ? { ok: true, result: { message_id: 900 + i } } : { ok: true, result: true }));
+  const b = L.fixarChamadas(a, respA, cfg);
+  assert.equal(b.length, 2 + Object.keys(cfg.categorias).length);
+  assert.ok(b.every((c) => c.metodo === 'pinChatMessage' && c.payload.disable_notification));
+  const ok = L.resumoGrupo(a.concat(b), respA.concat(b.map(() => ({ ok: true, result: true }))), cfg);
+  assert.deepEqual(ok.config, [{ chave: 'grupo.textos', valor: 'ok' }]);
+
+  const respSemPin = b.map(() => ({ ok: false, description: 'Bad Request: not enough rights to manage pinned messages in the chat' }));
+  const falha = L.resumoGrupo(a.concat(b), respA.concat(respSemPin), cfg);
+  assert.deepEqual(falha.config, []);
+  assert.match(falha.texto, /falta permissão/);
+
+  cfg.telegram.grupo_textos = 'ok';
+  assert.deepEqual(L.arrumarGrupoChamadas(cfg, criados), [], 'já arrumado não repete');
+  assert.equal(L.fixarChamadas([], [], cfg)[0].metodo, 'getMe');
+});

@@ -20,9 +20,8 @@ Marque `[x]` conforme avança.
 ## 17/11 (segunda): Telegram e bot
 
 - [ ] Montar o bot e o fluxo n8n: passos 1 a 7 do [README principal](../../README.md).
-- [ ] Supergrupo **Ofertô** com Tópicos. Usar os textos de [02-textos-fixados.md](02-textos-fixados.md#telegram).
-- [ ] Fechar os tópicos de oferta, para só o bot e os admins postarem; o 💬 Conversa fica aberto.
-- [ ] Fixar a mensagem de regras em cada tópico.
+- [ ] Supergrupo **Ofertô** com Tópicos e foto (logo). O setup escreve a descrição, renomeia o General, fixa os textos de [02-textos-fixados.md](02-textos-fixados.md#telegram) e fecha os tópicos de oferta (passo 6 do [README](../../README.md)).
+- [ ] Ativar o **modo lento** (30 s) no 💬 Conversa: só dá para fazer pelo app.
 - [ ] Adicionar o 2º admin.
 - [ ] Testar um post de verdade com o bot (`/oferta` + Aprovar).
 
