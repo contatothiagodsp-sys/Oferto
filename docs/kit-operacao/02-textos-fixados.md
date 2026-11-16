@@ -164,25 +164,57 @@ Todo post mostra a data e a hora do preço, porque preço muda rápido na BF.
 Promoções que valem a pena. Só desconto real: comparamos com o menor preço em 90 dias. Contém links de afiliado.
 ```
 
-- **Site:** a landing do Top do Dia, ou a página com a escolha de categoria.
+- **Link na bio:** o link de convite do Telegram `x_bio` (`/convite top x_bio`). Assim você sabe quantas pessoas entram pelo X.
 - **Post fixado:**
 
 ```
 Black Friday honesta: só postamos oferta com preço igual ou abaixo do menor dos últimos 90 dias.
 
-Escolha sua categoria e receba no WhatsApp ou no Telegram:
-🏠 Casa & Eletro
-🎁 Beleza & Presentes
-👶 Bebê & Família
-💻 Tech
+Escolha sua categoria:
 
-👉 [link da landing]
+Telegram (tudo num grupo só, com tópicos): [link x_fixado]
+
+WhatsApp (canais):
+🔥 Top do Dia: [link]
+🏠 Casa & Eletro: [link]
+🎁 Beleza & Presentes: [link]
+👶 Bebê & Família: [link]
+💻 Tech: [link]
 ```
 
 ---
 
-## Landing (rodapé obrigatório)
+## Vitrine de links (sem site)
+
+Como não há site, esta mensagem faz o papel da página inicial. Fixe no **Canal Top do Dia** e na descrição do grupo do Telegram, e use no Instagram e no X sempre que alguém perguntar "onde entro?".
 
 ```
-A Ofertô participa de programas de afiliados (Amazon, Shopee, Mercado Livre e outros) e pode receber comissão pelas compras feitas pelos links, sem custo extra para você. Preços conferidos na data e hora indicadas em cada oferta; podem mudar a qualquer momento. Critério do selo ✓ Desconto real: preço igual ou abaixo do menor preço dos últimos 90 dias, segundo o nosso histórico ou um comparador citado. Não coletamos dados de quem entra nos grupos. [Link da política de privacidade]
+📣 OFERTÔ: Promoções que valem a pena. Só desconto real.
+
+TELEGRAM (tudo num grupo só, cada categoria num tópico):
+[link de convite]
+
+WHATSAPP: canais (feed com 6 a 10 ofertas/dia)
+🔥 Top do Dia: [link]
+🏠 Casa & Eletro: [link]
+🎁 Beleza & Presentes: [link]
+👶 Bebê & Família: [link]
+💻 Tech (até 31/12): [link]
+
+WHATSAPP: alertas relâmpago (2 a 4/dia)
+Comunidade Ofertô: [link]
+
+🔒 Nunca pedimos pagamento nem dados no privado. Contém links de afiliado.
+```
+
+**Use um link de convite do Telegram diferente em cada lugar** (`/convite top vitrine_wac`, `/convite top ig_bio` etc.). O relatório do bot mostra qual vitrine traz mais gente.
+
+---
+
+## Aviso completo de afiliado
+
+Sem site, este texto vai na **descrição dos canais do WhatsApp** (no fim) e numa **mensagem fixada** no Telegram. Ajuste a frase da Amazon para o texto exato exigido pelos termos ([04](04-conformidade.md#amazon-associados)).
+
+```
+A Ofertô participa de programas de afiliados (Amazon, Shopee, Mercado Livre e outros) e pode receber comissão pelas compras feitas pelos links, sem custo extra para você. Como Associado da Amazon, recebemos por compras qualificadas. Preços conferidos na data e hora de cada post; podem mudar a qualquer momento. Não coletamos dados de quem entra nos grupos.
 ```

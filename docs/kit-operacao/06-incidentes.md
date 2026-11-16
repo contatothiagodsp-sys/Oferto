@@ -55,7 +55,7 @@
 
 ## Anúncio reprovado na Meta
 
-- **Motivo comum:** página-ponte ou promessa exagerada. Confira [04-conformidade.md](04-conformidade.md#meta-ads).
+- **Motivo comum:** promessa exagerada, ou destino (link do grupo ou canal) não aceito. Confira [04-conformidade.md](04-conformidade.md#meta-ads).
 - Corrija e peça revisão. Se a demora passar de 12 h na esquenta, duplique o anúncio com o criativo ajustado.
 
 ## Reclamação formal (loja, Procon, notificação)

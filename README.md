@@ -135,7 +135,7 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 
 Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: use **✏️ Editar** e informe o `ref90`.
 
-### Critério público do selo (para fixar no grupo e na landing)
+### Critério público do selo (para fixar nos grupos e canais)
 
 > **✓ Desconto real:** o preço está **igual ou abaixo do menor preço dos últimos 90 dias**. A referência vem do nosso histórico, quando ele já cobre 90 dias, ou de um comparador de preços citado como fonte. Se houver as duas, vale a mais baixa. Todo post traz a data e a hora do preço, e o preço pode mudar.
 

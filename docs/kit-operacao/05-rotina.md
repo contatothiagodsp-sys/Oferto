@@ -54,7 +54,7 @@ Na **esquenta (20–25/11)**, troque os blocos de caça por conteúdo de expecta
 
 Os links estão nos grupos 👇 #publi
 ```
-Na resposta: `Grupos por categoria no WhatsApp e no Telegram: [link da landing]`
+Na resposta: `Grupos por categoria no WhatsApp e no Telegram: [link de convite x_ranking]`
 
 **Anunciado × real** (1 por dia, com print e fonte; veja as regras em [04-conformidade.md](04-conformidade.md#conteúdo-desconto-falso-do-dia-x)):
 ```

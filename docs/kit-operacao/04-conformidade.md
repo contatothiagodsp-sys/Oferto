@@ -16,7 +16,7 @@
 - **Como cumprimos:**
   - "Contém link de afiliado" em todo post: Telegram, WhatsApp e na resposta do X;
   - `#publi` nos posts do X;
-  - aviso na descrição de cada espaço e no rodapé da landing.
+  - aviso na descrição de cada espaço e o aviso completo fixado (texto em [02](02-textos-fixados.md#aviso-completo-de-afiliado)).
 - O aviso vai **no próprio post**, não só na bio. Quem recebe um encaminhamento não vê a bio.
 
 ## CDC: preço e oferta
@@ -46,9 +46,7 @@
   - não exporte listas de membros;
   - não adicione ninguém sem pedido.
 - **Comunidade do WhatsApp:** use o formato com números ocultos para os membros (**VERIFICAR**), para reduzir a exposição a golpistas.
-- **Landing:**
-  - tem Pixel da Meta, então precisa de **aviso de cookies** e de **política de privacidade**: o que coleta, para quê, como desativar;
-  - o e-mail (opcional no plano) só com consentimento explícito e link para descadastrar.
+- **Sem site, sem Pixel:** não há cookies nem formulário, então não é preciso política de cookies. Se um dia houver lista de e-mail, só com consentimento explícito e link para descadastrar.
 - **Prints de reclamação:** não poste print com dados de outra pessoa; corte antes.
 
 ## Termos dos programas de afiliados
@@ -58,21 +56,22 @@
 ### Amazon (Associados)
 
 - [ ] **Divulgação obrigatória:**
-  - a Amazon exige uma frase de identificação específica no site, algo como "Como Associado da Amazon, recebo por compras qualificadas";
-  - conferir o texto exato e incluir no rodapé da landing e na descrição dos canais.
+  - a Amazon exige uma frase de identificação específica, algo como "Como Associado da Amazon, recebo por compras qualificadas";
+  - conferir o texto exato e incluir na descrição dos canais e na mensagem fixada do Telegram.
 - [ ] **Exibição de preço:**
   - os termos têm regras sobre mostrar preço que não veio da API oficial (atualização e horário);
   - conferir se o preço manual com data e hora atende. **Ponto mais importante desta lista.**
-- [ ] **Canais permitidos:** conferir se WhatsApp, Telegram e grupos são aceitos e declarar todos em "Sites e apps móveis".
+- [ ] **Cadastro sem site:** conferir se a Amazon aceita perfis (X, Instagram) e canais de mensagem (WhatsApp, Telegram) como "Sites e apps móveis". **Sem site, é o 2º ponto mais importante:** se não aceitar, declare o X e o Instagram e confirme com o suporte do Associates se os grupos podem receber os links.
+- [ ] **Canais permitidos:** declarar todos os espaços onde os links aparecem.
 - [ ] **Anúncios:**
   - proibido usar a marca Amazon em anúncios pagos e comprar palavras-chave com a marca;
-  - os anúncios levam à landing, não direto ao link de afiliado.
+  - os anúncios levam aos grupos e canais, **nunca** direto a um link de afiliado.
 - [ ] **Tags:** a separação por categoria e plataforma é permitida (há limite de quantidade de tags: conferir se 16 cabem).
 - [ ] **Encurtadores:** conferir se link encurtado de terceiros é permitido (o bot usa o link completo com `?tag=`, que é seguro).
 
 ### Shopee (Afiliados)
 
-- [ ] Tráfego pago: é permitido anunciar com link de afiliado? (Nosso anúncio leva à landing.)
+- [ ] Tráfego pago: os anúncios levam ao grupo, não ao link de afiliado. Conferir se isso é permitido.
 - [ ] Uso do nome e do logo "Shopee" em anúncios e no nome dos espaços.
 - [ ] Regras dos subIds: caracteres e tamanho (o bot usa só letras minúsculas e números).
 
@@ -85,6 +84,7 @@
 ## Meta Ads
 
 - [ ] Sem logo nem nome das lojas na arte do anúncio (regra do plano).
-- [ ] Landing com conteúdo próprio (ofertas reais com histórico), não uma página-ponte.
+- [ ] Destino do anúncio: link de convite do Telegram (`t.me/+…`), link de canal do WhatsApp (`whatsapp.com/channel/…`) ou da Comunidade. **VERIFICAR** se a Meta aceita esses destinos no objetivo Tráfego. Teste com R$ 10 no aquecimento.
+- [ ] O anúncio diz o que a pessoa vai encontrar ("grupo de ofertas no WhatsApp/Telegram"), sem fingir que é uma loja.
 - [ ] Sem promessa absoluta: "o menor preço garantido" não; "só desconto real, com critério público" sim.
 - [ ] Categoria especial: não se aplica (não é crédito, emprego nem moradia), mas **VERIFICAR** se o gerenciador pedir.

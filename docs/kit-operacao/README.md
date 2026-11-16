@@ -10,7 +10,7 @@ Material para montar e operar os canais da marca, de 16/11 a 31/12/2026. É base
 | [04-conformidade.md](04-conformidade.md) | CONAR, CDC, LGPD e termos dos programas de afiliados | Antes de publicar e de anunciar |
 | [05-rotina.md](05-rotina.md) | Agenda diária, limites de posts por plataforma, formatos do X e metas por fase | 20/11 em diante |
 | [06-incidentes.md](06-incidentes.md) | O que fazer quando algo dá errado | Quando precisar |
-| [07-acompanhamento.md](07-acompanhamento.md) | Nomes de campanha, métricas diárias e decisão de janeiro | Todo dia, às 22h, e em janeiro |
+| [07-acompanhamento.md](07-acompanhamento.md) | Funil sem site, nomes de campanha, métricas diárias e decisão de janeiro | Todo dia, às 22h, e em janeiro |
 
 ## Marca
 
@@ -18,11 +18,11 @@ Material para montar e operar os canais da marca, de 16/11 a 31/12/2026. É base
 
 | Item | Uso |
 |---|---|
-| **Nome** | **Ofertô** (com acento nos textos; `oferto` sem acento em @, domínio, tags e sub-IDs) |
+| **Nome** | **Ofertô** (com acento nos textos; `oferto` sem acento em @, tags e sub-IDs) |
 | **Slogan** (está no logo) | *Promoções que valem a pena!* |
 | **Promessa** (critério do selo) | *Só desconto real.* Toda oferta tem preço igual ou abaixo do menor preço dos últimos 90 dias. |
 | **Logo** | `assets/logo-oferto.jpeg`. Foto de perfil em todos os espaços, inclusive nos 2 bots (no @BotFather, use `/setuserpic`). |
-| **Cores** (do logo) | Amarelo/laranja de fundo, vermelho do megafone, contorno roxo-escuro. Use amarelo + texto escuro nos criativos e na landing. |
+| **Cores** (do logo) | Amarelo/laranja de fundo, vermelho do megafone, contorno roxo-escuro. Use amarelo + texto escuro nos criativos. |
 
 O slogan diz **o que** a marca entrega. A promessa diz **como** ela garante isso. Use os dois juntos sempre que houver espaço: "Promoções que valem a pena. Só desconto real." 
 
