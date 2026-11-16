@@ -5,7 +5,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 
 | Chave | Padrão | Para que serve |
 |---|---|---|
-| `marca` | `Desconto Real` | Nome da marca (aparece nos textos e no relatório) |
+| `marca` | `Ofertô` | Nome da marca (aparece nos textos e no relatório) |
 | `admins` |  | IDs do Telegram de quem aprova (separados por vírgula). Descubra mandando /id ao bot de aprovação |
 | `bot_token` |  | Token do BOT DE APROVAÇÃO (@BotFather). Conversa privada com os admins |
 | `bot_token_grupo` |  | Token do BOT PUBLICADOR (admin do supergrupo). Vazio = usa o bot de aprovação |

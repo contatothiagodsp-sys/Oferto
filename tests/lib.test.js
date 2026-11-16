@@ -60,7 +60,7 @@ test('config: padrões, listas e bot único', () => {
   assert.equal(unico.telegram.dois_bots, false);
   const semBusca = L.montarConfig([{ chave: 'shopee.busca.tech', valor: '' }, { chave: 'marca', valor: '' }]);
   assert.deepEqual(semBusca.shopee.buscas.tech, []);
-  assert.equal(semBusca.marca, 'Desconto Real');
+  assert.equal(semBusca.marca, 'Ofertô');
   const falt = L.linhasFaltantes([{ chave: 'marca', valor: 'X' }]);
   assert.ok(!falt.some((r) => r.chave === 'marca'));
   assert.ok(falt.some((r) => r.chave === 'amazon.tag.tech_x'));

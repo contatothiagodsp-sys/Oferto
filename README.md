@@ -1,4 +1,4 @@
-# Ofertas BF: bot do Telegram + n8n Cloud
+# Ofertô: bot de ofertas (Telegram + n8n Cloud)
 
 Automação da seção 4 do plano ("publicar uma vez, distribuir em quatro"):
 
@@ -41,8 +41,8 @@ Você **não precisa** rodar nada no computador: basta importar os 4 arquivos `.
 
 ### 1. Criar os dois bots (Telegram, @BotFather)
 
-1. `/newbot` → nome e @ do **bot de aprovação** (ex.: `marca_aprova_bot`). Guarde o token.
-2. `/newbot` → **bot publicador** (ex.: `marca_ofertas_bot`). Guarde o token.
+1. `/newbot` → nome e @ do **bot de aprovação** (ex.: `oferto_aprova_bot`). Guarde o token.
+2. `/newbot` → **bot publicador** (ex.: `oferto_ofertas_bot`). Guarde o token.
 
 ### 2. Importar no n8n Cloud
 
@@ -55,7 +55,7 @@ Preencha agora:
 
 | chave | valor |
 |---|---|
-| `marca` | nome da marca (pode trocar depois) |
+| `marca` | `Ofertô` (já vem preenchido; pode trocar depois) |
 | `bot_token` | token do bot de aprovação |
 | `bot_token_grupo` | token do bot publicador |
 
@@ -98,7 +98,7 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 
 ### 8. Programas de afiliados
 
-- **Amazon:** no Associates Central, em **Gerenciar IDs de rastreamento**, crie uma tag por **categoria × plataforma** (16 tags; ex.: `marcacasatg-20`, `marcacasawac-20`…).
+- **Amazon:** no Associates Central, em **Gerenciar IDs de rastreamento**, crie uma tag por **categoria × plataforma** (16 tags; ex.: `ofertocasatg-20`, `ofertocasawac-20`…).
   - Preencha as linhas `amazon.tag.casa_tg`, `amazon.tag.casa_wac` etc.
   - `amazon.tag_padrao` serve de fallback, mas aí você perde a separação por plataforma.
 - **Shopee:** com acesso à **Affiliate Open API**, preencha `shopee.app_id` e `shopee.secret`. Ajuste as palavras-chave em `shopee.busca.<categoria>`, separadas por `;`. Depois, **Publish** no **02 · Coleta Shopee**.
@@ -199,3 +199,7 @@ python3 teste-local/cenarios.py
 ```bash
 ./teste-local/parar.sh
 ```
+
+## Kit de operação
+
+Textos fixados, moderação, conformidade (CONAR, CDC, LGPD), rotina diária, incidentes e métricas: [docs/kit-operacao](docs/kit-operacao/README.md).
