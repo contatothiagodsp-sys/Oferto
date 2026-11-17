@@ -77,7 +77,27 @@ checar('descrição e General renomeado', 'setChatDescription' in met and any(c[
 checar('7 mensagens enviadas e fixadas', met.count('pinChatMessage') == 7 and len([c for c in cs if c['metodo'] == 'sendMessage' and c['token'] == 'TOKGRUPO']) == 7)
 checar('5 tópicos de oferta fechados', sorted(c['payload']['message_thread_id'] for c in cs if c['metodo'] == 'closeForumTopic') == topicos_cfg and len(topicos_cfg) == 5)
 checar('grupo.textos = ok', linhas('bfx_config', "where chave = 'grupo.textos'")[0]['valor'] == 'ok')
-checar('resumo do grupo para os admins', any('Arrumação do grupo' in c['payload'].get('text', '') for c in cs))
+checar('resumo do grupo para os admins', any('Grupo arrumado' in c['payload'].get('text', '') for c in cs))
+checar('IDs das mensagens gravados', len(json.loads(linhas('bfx_config', "where chave = 'grupo.mensagens'")[0]['valor'])) == 7)
+
+print('0b) Setup de novo: com mensagem fixada não duplica; modo atualizar só edita')
+def config_set(chave, valor):
+    c = sqlite3.connect(DB)
+    tid = c.execute('select id from data_table where name = ?', ('bfx_config',)).fetchone()[0]
+    c.execute(f'update "data_table_user_{tid}" set valor = ? where chave = ?', (valor, chave))
+    c.commit()
+config_set('grupo.textos', 'pendente')
+limpar_log()
+hook('wfSetup000000001', espera=12)
+cs = chamadas()
+checar('pendente + grupo já fixado: nada enviado', not any(c['metodo'] in ('sendMessage', 'pinChatMessage') and c['token'] == 'TOKGRUPO' for c in cs))
+checar('setup tudo ok: sem mensagem no privado', not any(c['metodo'] == 'sendMessage' for c in cs))
+config_set('grupo.textos', 'atualizar')
+limpar_log()
+hook('wfSetup000000001', espera=70)
+cs = chamadas()
+checar('atualizar: 7 edições e nada novo', len([c for c in cs if c['metodo'] == 'editMessageText']) == 7 and not any(c['metodo'] in ('pinChatMessage', 'closeForumTopic') for c in cs) and not any(c['metodo'] == 'sendMessage' and c['token'] == 'TOKGRUPO' for c in cs))
+checar('atualizar: volta para ok', linhas('bfx_config', "where chave = 'grupo.textos'")[0]['valor'] == 'ok')
 
 print('1) Amazon: /oferta → card → ⭐ Aprovar + Top')
 limpar_log()

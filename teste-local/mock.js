@@ -4,12 +4,13 @@ const fs = require('fs');
 const crypto = require('crypto');
 const LOG = process.argv[2] || require('path').join(__dirname, 'tmp', 'mock-log.jsonl');
 const SHOPEE_APP = '123456', SHOPEE_SECRET = 'segredo-shopee';
-let msgId = 100, thread = 500;
+let msgId = 100, thread = 500, fixada = null;
 
 function resultado(metodo, p) {
   switch (metodo) {
     case 'getMe': return { id: 1, is_bot: true, username: 'teste_bot' };
-    case 'getChat': return { id: p.chat_id, title: 'Grupo Teste', type: 'supergroup', is_forum: true };
+    case 'getChat': return Object.assign({ id: p.chat_id, title: 'Grupo Teste', type: 'supergroup', is_forum: true }, fixada ? { pinned_message: { message_id: fixada } } : {});
+    case 'pinChatMessage': fixada = p.message_id; return true;
     case 'createForumTopic': return { message_thread_id: ++thread, name: p.name };
     case 'createChatInviteLink': return { invite_link: 'https://t.me/+CONVITE' + (p.name || ''), name: p.name };
     case 'sendMessage': case 'sendPhoto': return { message_id: ++msgId, chat: { id: p.chat_id }, message_thread_id: p.message_thread_id };

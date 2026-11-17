@@ -426,15 +426,27 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   assert.equal(b.length, 2 + Object.keys(cfg.categorias).length);
   assert.ok(b.every((c) => c.metodo === 'pinChatMessage' && c.payload.disable_notification));
   const ok = L.resumoGrupo(a.concat(b), respA.concat(b.map(() => ({ ok: true, result: true }))), cfg);
-  assert.deepEqual(ok.config, [{ chave: 'grupo.textos', valor: 'ok' }]);
+  assert.equal(ok.config[0].valor, 'ok');
+  const ids = JSON.parse(ok.config.find((c) => c.chave === 'grupo.mensagens').valor);
+  assert.equal(Object.keys(ids).length, 2 + Object.keys(cfg.categorias).length);
+  assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => c.payload.parse_mode === 'HTML' && !/&(?!amp;|lt;|gt;)/.test(c.payload.text)), 'HTML escapado');
 
   const respSemPin = b.map(() => ({ ok: false, description: 'Bad Request: not enough rights to manage pinned messages in the chat' }));
   const falha = L.resumoGrupo(a.concat(b), respA.concat(respSemPin), cfg);
-  assert.deepEqual(falha.config, [{ chave: 'grupo.textos', valor: 'ok' }], 'com falha também não repete');
+  assert.equal(falha.config[0].valor, 'ok', 'com falha também não repete');
   assert.match(falha.texto, /falta permissão/);
 
   assert.deepEqual(L.arrumarGrupoChamadas(cfg, criados, true), [], 'grupo com mensagem fixada não é arrumado de novo');
   cfg.telegram.grupo_textos = 'ok';
   assert.deepEqual(L.arrumarGrupoChamadas(cfg, criados), [], 'já arrumado não repete');
+
+  // atualizar: só edita as mensagens gravadas, mesmo com o grupo já arrumado.
+  cfg.telegram.grupo_textos = 'atualizar';
+  cfg.telegram.grupo_mensagens = ids;
+  const up = L.arrumarGrupoChamadas(cfg, criados, true);
+  assert.ok(!up.some((c) => ['sendMessage', 'pinChatMessage', 'closeForumTopic'].includes(c.metodo)));
+  assert.equal(up.filter((c) => c.metodo === 'editMessageText').length, Object.keys(ids).length);
+  const upRes = L.resumoGrupo(up, up.map(() => ({ ok: false, description: 'Bad Request: message is not modified' })), cfg);
+  assert.match(upRes.texto, /atualizados/);
   assert.equal(L.fixarChamadas([], [], cfg)[0].metodo, 'getMe');
 });

@@ -96,7 +96,7 @@ Preencha agora:
    - publica e fixa as regras e a mensagem de segurança (com o critério do selo e o aviso de afiliado) no Conversa, e um texto de apresentação em cada tópico;
    - **fecha** os tópicos de oferta: só admins e o bot postam neles;
    - manda 2 resumos no seu Telegram: "⚙️ Setup" e "🧩 Arrumação do grupo".
-6. A arrumação roda **uma vez** (a linha `grupo.textos` vira `ok`). Se algum passo falhar por permissão, corrija a permissão, volte `grupo.textos` para `pendente`, apague as mensagens que já saíram e rode o setup de novo.
+6. A arrumação roda **uma vez**, mesmo se algum passo falhar, para nunca duplicar mensagens. O que falhar você faz à mão no app. Para **mudar os textos** depois, troque `grupo.textos` para `atualizar` e rode o setup: ele reescreve as mensagens fixadas no lugar, sem mandar nada novo.
 
 ### 7. Teste
 
