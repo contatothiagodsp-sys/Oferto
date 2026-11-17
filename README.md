@@ -81,6 +81,8 @@ Preencha agora:
 
 ### 6. Criar o supergrupo com Tópicos
 
+> **Por que um grupo com tópicos, e não um grupo por categoria?** No Telegram, um só link serve para todos os anúncios. O membro silencia os tópicos que não quer, e o 💬 Conversa reúne a comunidade num lugar só, então o grupo cresce mais rápido e parece mais vivo. Com o bot, publicar num tópico ou em outro dá o mesmo trabalho. A medição por anúncio continua separada pelos links de convite nomeados. Separar por categoria faz sentido no **WhatsApp**, que não tem tópicos: lá, use um canal ou grupo por categoria (veja o kit de operação).
+
 1. Crie um grupo e, em **Configurações do grupo**, ative **Tópicos**.
 2. Adicione o **bot publicador** como **administrador** com estas permissões:
    - **Alterar informações do grupo**: para escrever a descrição;
@@ -95,8 +97,10 @@ Preencha agora:
    - escreve a descrição do grupo e renomeia o **General** para **💬 Conversa**;
    - publica e fixa as regras e a mensagem de segurança (com o critério do selo e o aviso de afiliado) no Conversa, e um texto de apresentação em cada tópico;
    - **fecha** os tópicos de oferta: só admins e o bot postam neles;
-   - manda 2 resumos no seu Telegram: "⚙️ Setup" e "🧩 Arrumação do grupo".
-6. A arrumação roda **uma vez**, mesmo se algum passo falhar, para nunca duplicar mensagens. O que falhar você faz à mão no app. Para **mudar os textos** depois, troque `grupo.textos` para `atualizar` e rode o setup: ele reescreve as mensagens fixadas no lugar, sem mandar nada novo.
+   - manda no seu Telegram o resumo "🧩 Grupo arrumado" (e o "⚙️ Setup" só quando há algo a fazer).
+6. A arrumação roda **uma vez**, mesmo se algum passo falhar, para nunca duplicar mensagens. O que falhar você faz à mão no app. Valores de `grupo.textos`:
+   - `atualizar`: reescreve as mensagens fixadas no lugar, sem mandar nada novo. Use para **mudar os textos**.
+   - `limpar`: **apaga todas as mensagens do grupo**, inclusive as de membros (os tópicos ficam), e arruma tudo de novo. Leva cerca de 4 minutos. Use para zerar o grupo de teste antes de abrir ao público; precisa da permissão **Apagar mensagens**.
 
 ### 7. Teste
 
@@ -109,7 +113,10 @@ Air Fryer Mondial 4L
 preço 349,90
 ref90 399,90 https://link-do-comparador-com-o-historico
 img https://link-da-imagem.jpg
+cupom BF10
 ```
+
+As linhas `img` e `cupom` são opcionais. Com cupom, informe em `preço` o valor **já com o cupom**; o post mostra o código para copiar com um toque.
 
 Você deve receber o card. Clique **✅ Aprovar** e confira o post no tópico Casa & Eletro e as mensagens com os textos para WhatsApp e X.
 Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e não mostra o botão de aprovar.

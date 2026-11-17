@@ -13,7 +13,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `grupo_link` |  | Link público do grupo (opcional, usado em respostas) |
 | `n8n_webhook_url` |  | Production URL do nó Webhook do workflow 01 (copie do n8n) |
 | `webhook_secret` |  | Gerado pelo setup. Não precisa mexer |
-| `grupo.textos` | `pendente` | pendente = o setup arruma o grupo uma vez (descrição, 💬 Conversa, textos fixados, tópicos fechados) · atualizar = reescreve os textos já fixados, sem mandar mensagem nova · ok = não mexe |
+| `grupo.textos` | `pendente` | pendente = o setup arruma o grupo uma vez (descrição, 💬 Conversa, textos fixados, tópicos fechados) · atualizar = reescreve os textos já fixados, sem mandar mensagem nova · limpar = apaga TODAS as mensagens do grupo (inclusive de membros) e arruma de novo; leva ~4 min · ok = não mexe |
 | `grupo.mensagens` |  | Gerado pelo setup: IDs das mensagens fixadas (usado pelo modo atualizar). Não precisa mexer |
 | `grupo.limpar_avisos` | `sim` | sim/nao: o bot publicador apaga os avisos automáticos do grupo (entrou, saiu, fixou, fechou tópico, mudou nome/foto). Precisa da permissão Apagar mensagens. Com o bot admin, cada mensagem do grupo vira 1 execução do n8n |
 | `rastrear_entradas` | `sim` | sim/nao: grava entradas e saídas por link de convite (1 execução do n8n por evento) |

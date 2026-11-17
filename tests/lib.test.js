@@ -177,6 +177,23 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
   assert.ok(x.length <= 280, `X com ${x.length}`);
   assert.match(x, /#publi/);
   assert.match(L.textoXResposta('https://l/x'), /afiliado/);
+  assert.doesNotMatch(tg, /Cupom/);
+  assert.deepEqual(L.botaoCompra(oferta, 'https://l/tg'), { inline_keyboard: [[{ text: '🛒 Ver na Amazon', url: 'https://l/tg' }]] });
+});
+
+test('cupom: lido no /oferta, guardado nos links manuais e mostrado nos textos', () => {
+  const cfg = cfgTeste();
+  const r = L.parseOferta('/oferta casa\nhttps://www.amazon.com.br/dp/B0ABCDEFGH\nAir Fryer\npreço 299,90\ncupom BF<10>\nref90 349,90 https://fonte', cfg);
+  assert.ok(r.ok, JSON.stringify(r.erros));
+  assert.equal(r.oferta.links_manuais.cupom, 'BF<10>');
+  const o = Object.assign({}, r.oferta, { links_manuais: JSON.stringify(r.oferta.links_manuais), min90: 349.9, desconto_pct: 14.3, data: new Date(AGORA).toISOString() });
+  assert.match(L.textoTelegram(o, 'https://l', cfg), /<code>BF&lt;10&gt;<\/code>/);
+  assert.match(L.textoWhatsAppCanal(o, 'https://l', cfg), /Cupom: \*BF<10>\*/);
+  assert.match(L.textoX(o, cfg), /Cupom: BF<10>/);
+  assert.match(L.comandoEdicao(o), /cupom BF<10>/);
+  // o cupom não vira link de plataforma
+  const planos = L.planejarLinks(Object.assign({}, o, { oferta_id: 'o1' }), cfg, AGORA);
+  assert.ok(planos.every((p) => p.url !== 'BF<10>'));
 });
 
 test('classificarUpdate: apaga avisos automáticos do grupo, nunca a criação de tópico', () => {
@@ -461,4 +478,21 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   const upRes = L.resumoGrupo(up, up.map(() => ({ ok: false, description: 'Bad Request: message is not modified' })), cfg);
   assert.match(upRes.texto, /atualizados/);
   assert.equal(L.fixarChamadas([], [], cfg)[0].metodo, 'getMe');
+
+  // limpar: apaga tudo (menos a criação dos tópicos), reabre, arruma de novo e grava IDs novos.
+  cfg.telegram.grupo_textos = 'limpar';
+  const li = L.arrumarGrupoChamadas(cfg, criados, true, 1800);
+  const dels = li.filter((c) => c.metodo === 'deleteMessages');
+  const apagados = dels.flatMap((c) => c.payload.message_ids);
+  assert.ok(dels.every((c) => c.payload.message_ids.length <= 100));
+  assert.ok(apagados.includes(1) && apagados.includes(2300) && apagados.includes(1800));
+  assert.ok(!apagados.includes(200) && !apagados.includes(204), 'não apaga a criação dos tópicos');
+  assert.ok(li.findIndex((c) => c.metodo === 'sendMessage') > li.findIndex((c) => c.metodo === 'deleteMessages'));
+  const respLi = li.map((c, i) => (c.metodo === 'deleteMessages' && i > 3 ? { ok: false, description: 'Bad Request: message to delete not found' } : c.metodo === 'sendMessage' ? { ok: true, result: { message_id: 3000 + i } } : { ok: true, result: true }));
+  const liRes = L.resumoGrupo(li, respLi, cfg);
+  assert.match(liRes.texto, /limpo/);
+  assert.ok(Object.values(JSON.parse(liRes.config.find((c) => c.chave === 'grupo.mensagens').valor)).every((v) => v >= 3000), 'só IDs novos');
+  assert.equal(liRes.config[0].valor, 'ok');
+  const semDireito = L.resumoGrupo(li, li.map(() => ({ ok: false, description: "Bad Request: message can't be deleted: not enough rights" })), cfg);
+  assert.match(semDireito.texto, /Apagar mensagens/);
 });
