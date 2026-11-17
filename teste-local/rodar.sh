@@ -20,7 +20,7 @@ node prep.js
 nohup node "$PWD/mock.js" > tmp/mock.out 2>&1 &
 echo $! > tmp/pids
 for f in tmp/wf/*.json; do node "$N8N" import:workflow --input="$f" >/dev/null 2>&1; done
-for id in wfSetup000000001 wfRouter00000001 wfShopee00000001 wfRelat000000001 wfConfTeste00001 wfTunel000000001; do node "$N8N" publish:workflow --id=$id >/dev/null 2>&1; done
+for id in wfSetup000000001 wfRouter00000001 wfShopee00000001 wfRelat000000001 wfConfTeste00001 wfTunel000000001 wfSaude000000001; do node "$N8N" publish:workflow --id=$id >/dev/null 2>&1; done
 nohup node "$N8N" start > tmp/n8n.out 2>&1 &
 echo $! >> tmp/pids
 for i in $(seq 1 60); do sleep 2; curl -s http://127.0.0.1:5678/healthz | grep -q ok && break; done

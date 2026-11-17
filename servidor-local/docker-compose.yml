@@ -1,6 +1,8 @@
 # Ofertô: n8n Community no seu computador, com túnel público só para o webhook do Telegram.
 # Uso (nesta pasta):  docker compose up -d      Parar:  docker compose down
 # Guia completo: servidor-local/README.md
+# Opcional: arquivo .env nesta pasta (veja o README): HC_URL (healthchecks.io), TUNEL/COMPOSE_PROFILES/NGROK_* (endereço fixo).
+# Nunca coloque tokens de bot no .env: eles ficam só na Data Table bfx_config.
 name: oferto
 
 x-n8n-env: &n8n-env
@@ -11,9 +13,14 @@ x-n8n-env: &n8n-env
   N8N_DIAGNOSTICS_ENABLED: "false"
   N8N_PERSONALIZATION_ENABLED: "false"
   N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
-  # Apaga execuções com mais de 14 dias (o disco não enche).
+  # Apaga execuções com mais de 7 dias ou além das 20 000 mais recentes (o disco não enche).
   EXECUTIONS_DATA_PRUNE: "true"
-  EXECUTIONS_DATA_MAX_AGE: "336"
+  EXECUTIONS_DATA_MAX_AGE: "168"
+  EXECUTIONS_DATA_PRUNE_MAX_COUNT: "20000"
+  # No máximo 5 execuções de produção ao mesmo tempo; as outras esperam na fila (pico da BF).
+  N8N_CONCURRENCY_PRODUCTION_LIMIT: "5"
+  # Limite total das Data Tables: 500 MB (o padrão do n8n 2.47.7 é 200 MB).
+  N8N_DATA_TABLES_MAX_SIZE_BYTES: "524288000"
 
 services:
   # Importa e publica os workflows desta pasta quando eles mudam (roda e termina antes do n8n subir).
@@ -55,13 +62,42 @@ services:
     depends_on: [filtro]
     restart: unless-stopped
 
+  # Alternativa com endereço fixo: ngrok com domínio estático. Só sobe com o perfil "ngrok"
+  # (COMPOSE_PROFILES=ngrok e TUNEL=ngrok no .env, mais NGROK_AUTHTOKEN e NGROK_DOMAIN). Veja o README.
+  tunel-ngrok:
+    image: ngrok/ngrok:3.39.13-alpine
+    profiles: [ngrok]
+    command: ["http", "filtro:80", "--url=${NGROK_DOMAIN:-}", "--log=stdout"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    depends_on: [filtro]
+    restart: unless-stopped
+
   # Vigia: quando o endereço do túnel muda, avisa o n8n (workflow 90), que refaz o webhook no Telegram.
+  # A cada 5 min confere a saúde (workflow 91) e, se HC_URL estiver no .env, faz o ping no healthchecks.io.
   vigia:
     image: curlimages/curl:8.11.1
     entrypoint: ["/bin/sh", "/oferto/vigia.sh"]
+    environment:
+      TUNEL: ${TUNEL:-cloudflare}
+      HC_URL: ${HC_URL:-}
     volumes:
       - ./vigia.sh:/oferto/vigia.sh:ro
     depends_on: [n8n, tunel]
+    restart: unless-stopped
+
+  # Backup: 1 vez por dia gera ./backups/oferto-AAAA-MM-DD.tar.gz (banco + chave de criptografia) e guarda 7 dias.
+  backup:
+    image: alpine:3.24.3
+    entrypoint: ["/bin/sh", "/oferto/backup.sh"]
+    environment:
+      TZ: America/Sao_Paulo
+      BACKUP_DIAS: "7"
+    volumes:
+      - n8n_data:/dados
+      - ./backups:/backups
+      - ./backup.sh:/oferto/backup.sh:ro
+    depends_on: [n8n]
     restart: unless-stopped
 
 volumes:

@@ -5,9 +5,15 @@ const crypto = require('crypto');
 const LOG = process.argv[2] || require('path').join(__dirname, 'tmp', 'mock-log.jsonl');
 const SHOPEE_APP = '123456', SHOPEE_SECRET = 'segredo-shopee';
 let msgId = 100, thread = 500, fixada = null, barrar = 0;
+// getWebhookInfo: URL registrada por token e erro de entrega simulável (/mock/erro-webhook/on|off).
+const webhooks = {};
+let erroWebhook = false;
 
-function resultado(metodo, p) {
+function resultado(metodo, p, token) {
   switch (metodo) {
+    case 'setWebhook': webhooks[token] = p.url; return true;
+    case 'getWebhookInfo': return Object.assign({ url: webhooks[token] || '', has_custom_certificate: false, pending_update_count: 0 },
+      erroWebhook ? { last_error_date: Math.floor(Date.now() / 1000) - 60, last_error_message: 'Wrong response from the webhook: 502 Bad Gateway' } : {});
     case 'getMe': return { id: 1, is_bot: true, username: 'teste_bot' };
     case 'getChat': return Object.assign({ id: p.chat_id, title: 'Grupo Teste', type: 'supergroup', is_forum: true }, fixada ? { pinned_message: { message_id: fixada } } : {});
     case 'pinChatMessage': fixada = p.message_id; return true;
@@ -24,13 +30,14 @@ http.createServer((req, res) => {
   req.on('end', () => {
     let saida;
     const m = req.url.match(/^\/bot([^/]+)\/(\w+)/);
-    if (req.url === '/mock/barrar') { barrar = 1; res.end('ok'); return; }
+    if (req.url.startsWith('/mock/barrar')) { barrar = Number(req.url.split('/')[3] || 1); res.end('ok'); return; }
+    if (req.url.startsWith('/mock/erro-webhook/')) { erroWebhook = req.url.endsWith('/on'); res.end('ok'); return; }
     if (m) {
       const p = body ? JSON.parse(body) : {};
       fs.appendFileSync(LOG, JSON.stringify({ api: 'telegram', token: m[1], metodo: m[2], payload: p }) + '\n');
       if (barrar > 0 && m[1] === 'TOKGRUPO' && ['sendMessage', 'sendPhoto'].includes(m[2])) { barrar--; saida = { ok: false, error_code: 429, description: 'Too Many Requests: retry after 2', parameters: { retry_after: 2 } }; }
       else if (m[2] === 'sendPhoto' && String(p.photo).includes('quebrada')) saida = { ok: false, error_code: 400, description: 'Bad Request: wrong file identifier/HTTP URL specified' };
-      else saida = { ok: true, result: resultado(m[2], p) };
+      else saida = { ok: true, result: resultado(m[2], p, m[1]) };
     } else if (req.url === '/graphql') {
       const auth = req.headers.authorization || '';
       const mm = auth.match(/Credential=(\w+), Timestamp=(\d+), Signature=(\w+)/);
