@@ -1094,3 +1094,16 @@ test('link curto (a.co) e /oferta de admin dentro do tópico do grupo', () => {
   const semCat = L.classificarUpdate(privado('/oferta https://www.amazon.com.br/dp/B0ABCDEF12\nT\npreço 10', 111), HS, cfg, AGORA);
   assert.match(semCat.chamadas[0].payload.text, /Faltou a categoria[\s\S]*\/oferta tech https:\/\/www\.amazon\.com\.br\/dp\/B0ABCDEF12/);
 });
+
+test('card: link grátis do histórico (Keepa) na Amazon e comparadores sem referência', () => {
+  const cfg = cfgTeste();
+  const base = { oferta_id: 'o1', categoria: 'casa', loja: 'amazon', produto_id: 'amz_B0ABCDEF12', url: 'https://www.amazon.com.br/dp/B0ABCDEF12', titulo: 'Fio dental', preco: 19.9, ts: AGORA };
+  const semRef = L.cardAprovacao(Object.assign({}, base, { selo: 'sem_ref', min90: null }), cfg, []).text;
+  assert.match(semRef, /keepa\.com\/#!product\/12-B0ABCDEF12/);
+  assert.match(semRef, /buscape\.com\.br\/search\?q=Fio%20dental/);
+  assert.match(semRef, /Responda a este card com o valor/);
+  const daKeepa = L.cardAprovacao(Object.assign({}, base, { selo: 'ok', min90: 21.9, ref90: 21.9, min90_origem: 'keepa' }), cfg, []).text;
+  assert.doesNotMatch(daKeepa, /gráfico da Keepa/);
+  const shopee = L.cardAprovacao(Object.assign({}, base, { loja: 'shopee', produto_id: 'shp_1_2', selo: 'sem_ref', min90: null }), cfg, []).text;
+  assert.doesNotMatch(shopee, /keepa/);
+});

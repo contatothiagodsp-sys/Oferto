@@ -249,7 +249,7 @@ Posts entre 22h e 8h e as cópias no Top do Dia saem **sem notificação**. O re
 
 Com `grupo.limpar_avisos = sim` e `grupo.antispam = sim` (padrão), o bot publicador apaga mensagens de membros com link de outro grupo (`t.me/`), WhatsApp ou encurtador (`bit.ly`, `amzn.to`, `s.shopee.com.br`, `mercadolivre.com/sec`…). Admins (IDs de `admins`, admin anônimo e posts do canal vinculado) ficam de fora. Link de produto da Amazon, Shopee ou Mercado Livre (`.com.br`) vira **sugestão**: o bot responde "Valeu! Vamos conferir o preço 👀" (no máximo 1 vez a cada 10 min por membro) e manda aos admins o link com um `/oferta` pré-preenchido.
 
-Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: o card traz um link de busca no Google Shopping para você achar a referência; **responda ao card** com o `ref90` (veja acima) ou use **✏️ Editar**. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
+Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: o card traz links grátis para achar a referência (gráfico de 90 dias da Keepa para Amazon, Google Shopping e Buscapé); **responda ao card** com o `ref90` (veja acima) ou use **✏️ Editar**. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
 
 ### Critério público do selo (para fixar nos grupos e canais)
 
