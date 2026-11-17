@@ -496,3 +496,224 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   const semDireito = L.resumoGrupo(li, li.map(() => ({ ok: false, description: "Bad Request: message can't be deleted: not enough rights" })), cfg);
   assert.match(semDireito.texto, /Apagar mensagens/);
 });
+
+/* ---------- Black Friday: bot de origem, /start, Top, Encerrar, antispam, sugestões, hash_sal ---------- */
+
+const HS = { 'x-telegram-bot-api-secret-token': 'segredo' };
+const privado = (texto, de) => ({ message: { message_id: 3, text: texto, chat: { id: de, type: 'private' }, from: { id: de } } });
+const noGrupo = (extra) => ({ message: Object.assign({ message_id: 88, chat: { id: -1001234567890, type: 'supergroup' }, from: { id: 5 } }, extra) });
+
+test('webhook do publicador com ?bot=grupo; resposta sai pelo bot que recebeu', () => {
+  const cfg = cfgTeste();
+  const s = L.setupChamadas(cfg);
+  const wh = (bot) => s.chamadas.find((c) => c.bot === bot && c.metodo === 'setWebhook').payload.url;
+  assert.equal(wh('admin'), 'https://x.app.n8n.cloud/webhook/telegram-ofertas');
+  assert.equal(wh('grupo'), 'https://x.app.n8n.cloud/webhook/telegram-ofertas?bot=grupo');
+  assert.ok(s.chamadas.find((c) => c.metodo === 'setMyCommands').payload.commands.some((c) => c.command === 'links'));
+  const unico = L.setupChamadas(L.montarConfig([{ chave: 'bot_token', valor: 'T' }, { chave: 'n8n_webhook_url', valor: 'https://h/w' }]));
+  assert.equal(unico.chamadas.find((c) => c.metodo === 'setWebhook').payload.url, 'https://h/w');
+
+  // /id: só no privado, pelo mesmo bot
+  const idG = L.classificarUpdate(privado('/id', 999), HS, cfg, AGORA, { bot: 'grupo' });
+  assert.deepEqual([idG.chamadas[0].bot, idG.chamadas[0].payload.chat_id], ['grupo', 999]);
+  assert.equal(L.classificarUpdate(privado('/id', 999), HS, cfg, AGORA).chamadas[0].bot, 'admin');
+  assert.equal(L.classificarUpdate(noGrupo({ text: '/id' }), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'ignorar');
+  // não-admin no bot de aprovação: responde pelo bot de aprovação, como antes
+  const intruso = L.classificarUpdate(privado('oi', 999), HS, cfg, AGORA);
+  assert.deepEqual([intruso.rota, intruso.chamadas[0].bot], ['responder', 'admin']);
+});
+
+test('/start no bot publicador: genérico, por tópico/campanha e gravação em bfx_entradas', () => {
+  const cfg = cfgTeste();
+  const st = L.classificarUpdate(privado('/start', 777), HS, cfg, AGORA, { bot: 'grupo' });
+  assert.deepEqual([st.rota, st.convite, st.categoria], ['start', 'bot_start', '']);
+  assert.deepEqual([st.linha.tipo, st.linha.convite_nome], ['start', 'sem_payload']);
+  assert.ok(!JSON.stringify(st.linha).includes('777'));
+  assert.deepEqual(L.colunasInvalidas('bfx_entradas', st.linha), []);
+
+  const camp = L.classificarUpdate(privado('/start beleza_meta1', 777), HS, cfg, AGORA, { bot: 'grupo' });
+  assert.deepEqual([camp.categoria, camp.convite, camp.linha.convite_nome], ['beleza', 'beleza_meta1', 'beleza_meta1']);
+  assert.deepEqual([L.lerStartPayload('top', cfg).convite, L.lerStartPayload('bel', cfg).categoria], ['top_bot', 'beleza']);
+  assert.equal(L.lerStartPayload('xyz_1', cfg), null);
+  assert.equal(L.classificarUpdate(privado('/start xyz', 777), HS, cfg, AGORA, { bot: 'grupo' }).convite, 'bot_start');
+  // admin no publicador também recebe o /start de membro (comandos de admin só no bot de aprovação)
+  assert.equal(L.classificarUpdate(privado('/oferta casa', 111), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'start');
+  // mensagem que não é /start: responde, mas não grava
+  assert.equal(L.classificarUpdate(privado('oi', 777), HS, cfg, AGORA, { bot: 'grupo' }).linha, null);
+
+  // convite ainda não existe: cria; depois responde com os botões
+  const cria = L.boasVindasStart(camp, [{}], cfg);
+  assert.deepEqual([cria[0].bot, cria[0].metodo, cria[0].payload.name], ['grupo', 'createChatInviteLink', 'beleza_meta1']);
+  const fim = L.startComConvite(camp, cria, [{ ok: true, result: { invite_link: 'https://t.me/+abc' } }], cfg);
+  assert.deepEqual(L.colunasInvalidas('bfx_convites', fim.linha), []);
+  assert.equal(fim.linha.nome, 'beleza_meta1');
+  const m = fim.chamadas[0];
+  assert.equal(m.bot, 'grupo');
+  assert.match(m.payload.text, /🎁 Bem-vindo às ofertas de Beleza & Presentes!/);
+  assert.deepEqual(m.payload.reply_markup.inline_keyboard[0][0], { text: 'Entrar no grupo', url: 'https://t.me/+abc' });
+  // convite já existe: reaproveita, sem chamar o Telegram de novo
+  const reuso = L.boasVindasStart(camp, [{ nome: 'beleza_meta1', url: 'https://t.me/+abc' }], cfg);
+  assert.equal(reuso[0].metodo, 'sendMessage');
+  assert.deepEqual(L.startComConvite(camp, reuso, [{ ok: true }], cfg), { linha: null, chamadas: [] });
+  // tópico casa (thread 10): botão "Abrir"
+  const casa = L.boasVindasStart(L.classificarUpdate(privado('/start casa', 7), HS, cfg, AGORA, { bot: 'grupo' }), [{ nome: 'casa_bot', url: 'https://t.me/+c' }], cfg)[0];
+  assert.deepEqual(casa.payload.reply_markup.inline_keyboard[1][0], { text: 'Abrir 🏠 Casa & Eletro', url: 'https://t.me/c/1234567890/10' });
+  // falha ao criar convite: responde mesmo assim, sem link
+  const falhou = L.startComConvite(camp, cria, [{ ok: false, description: 'not enough rights' }], cfg);
+  assert.equal(falhou.linha, null);
+  assert.equal(falhou.chamadas[0].metodo, 'sendMessage');
+
+  // genérico com grupo_link: não precisa de convite; links de todos os tópicos
+  const comLink = cfgTeste([{ chave: 'grupo_link', valor: 'https://t.me/ofertoGrupo' }]);
+  const gen = L.classificarUpdate(privado('/start', 7), HS, comLink, AGORA, { bot: 'grupo' });
+  assert.equal(gen.convite, '');
+  const g = L.boasVindasStart(gen, [], comLink)[0];
+  assert.match(g.payload.text, /https:\/\/t\.me\/ofertoGrupo\n/);
+  assert.match(g.payload.text, /Casa & Eletro: https:\/\/t\.me\/ofertoGrupo\/10/);
+  assert.match(g.payload.text, /Top do Dia: https:\/\/t\.me\/ofertoGrupo\/2/);
+
+  // /links do admin
+  assert.match(L.classificarUpdate(privado('/links', 111), HS, cfg, AGORA).chamadas[0].payload.text, /rode o 00-setup/);
+  const comUser = cfgTeste([{ chave: 'bot_grupo_username', valor: '@oferto_bot' }]);
+  const links = L.classificarUpdate(privado('/links', 111), HS, comUser, AGORA).chamadas[0];
+  assert.equal(links.bot, 'admin');
+  assert.match(links.payload.text, /https:\/\/t\.me\/oferto_bot\?start=beleza/);
+  assert.match(links.payload.text, /https:\/\/t\.me\/oferto_bot\?start=top/);
+  assert.equal(L.classificarUpdate(privado('/links', 999), HS, comUser, AGORA).chamadas[0].payload.text.includes('start='), false, 'só admin');
+
+  // setup grava o @ do publicador
+  const s = L.setupChamadas(cfg);
+  const res = L.resumoSetup(s.chamadas, s.chamadas.map((c) => ({ ok: true, result: { username: c.bot === 'grupo' ? 'pub_bot' : 'adm_bot', title: 'G', is_forum: true, message_thread_id: 9 } })), [], cfg);
+  assert.deepEqual(res.config, [{ chave: 'bot_grupo_username', valor: 'pub_bot' }]);
+
+  // relatório: start conta por payload e não vira saída
+  const rel = L.relatorioDiario({ entradas: [
+    { tipo: 'entrada', convite_nome: 'beleza_meta1', user_hash: 'a', ts: AGORA },
+    { tipo: 'start', convite_nome: 'beleza_meta1', user_hash: 'a', ts: AGORA },
+  ] }, cfg, AGORA).chamadas[0].payload.text;
+  assert.match(rel, /beleza_meta1: \+1 hoje · 1 total · 0 saíram/);
+  assert.match(rel, /\/start no bot publicador hoje: 1\n {2}beleza_meta1: 1/);
+});
+
+function publicada(cfg, acao, ts) {
+  const t0 = ts || AGORA;
+  const cls = L.classificarUpdate({ message: { text: '/oferta casa\nhttps://www.amazon.com.br/dp/B0ABCDEF12\nAir Fryer\npreço 349,90\nref90 399,90 https://f', chat: { id: 111, type: 'private' }, from: { id: 111 } } }, HS, cfg, t0);
+  const av = L.avaliarNovaOferta(cls, [], cfg);
+  const dec = L.decidirCallback({ acao: acao || 'a', oferta_id: av.oferta.oferta_id, callback_id: 'q', chat_id: 111, message_id: 9, user_id: 111, ts: t0 }, [av.oferta], cfg);
+  return { av, dec, pub: L.prepararPublicacao(dec.oferta, dec.linkItens, cfg, { ts: t0, chat_id: 111, message_id: 9 }) };
+}
+
+test('posts silenciosos: 22h–8h e cópia do Top; relâmpago sempre notifica', () => {
+  const cfg = cfgTeste();
+  const grupo = (r) => r.pub.chamadas.filter((c) => c.bot === 'grupo');
+  const dia = grupo(publicada(cfg, 't'));
+  assert.deepEqual(dia.map((c) => [c.ref.categoria, !!c.payload.disable_notification]), [['casa', false], ['top', true]]);
+  const noite = new Date('2026-11-25T02:30:00Z').getTime(); // 23:30 em São Paulo
+  assert.equal(grupo(publicada(cfg, 'a', noite))[0].payload.disable_notification, true);
+  const madrugada = new Date('2026-11-25T10:59:00Z').getTime(); // 07:59
+  assert.equal(grupo(publicada(cfg, 'a', madrugada))[0].payload.disable_notification, true);
+  const oito = new Date('2026-11-25T11:00:00Z').getTime(); // 08:00
+  assert.equal(grupo(publicada(cfg, 'a', oito))[0].payload.disable_notification, undefined);
+  assert.ok(grupo(publicada(cfg, 'r', noite)).every((c) => !c.payload.disable_notification), 'relâmpago notifica');
+  assert.equal(L.inicioDoDia(noite, 'America/Sao_Paulo'), new Date('2026-11-24T03:00:00Z').getTime());
+});
+
+test('card publicado: ⭐ Mandar ao Top (limite 5/dia) e ⛔ Encerrar', () => {
+  const cfg = cfgTeste();
+  const { av, pub } = publicada(cfg);
+  const id = av.oferta.oferta_id;
+  const final = pub.chamadas[pub.chamadas.length - 1];
+  assert.equal(final.metodo, 'editMessageReplyMarkup');
+  assert.deepEqual(final.payload.reply_markup.inline_keyboard[1].map((b) => b.callback_data), [`p|${id}`, `z|${id}`]);
+  const cb = (acao) => L.classificarUpdate({ callback_query: { id: 'q', data: `${acao}|${id}`, from: { id: 111 }, message: { message_id: 9, chat: { id: 111 } } } }, HS, cfg, AGORA);
+  const p = cb('p');
+  assert.deepEqual([p.rota, p.acao, p.desde], ['pospub', 'p', new Date('2026-11-24T03:00:00Z').getTime()]);
+  assert.equal(L.classificarUpdate({ callback_query: { id: 'q', data: `p|${id}`, from: { id: 3 } } }, HS, cfg, AGORA).rota, 'responder');
+
+  const oferta = Object.assign({}, av.oferta, { status: 'aprovada' });
+  const postCasa = { oferta_id: id, plataforma: 'tg', categoria: 'casa', message_id: 42, ts: AGORA };
+  const link = { oferta_id: id, plataforma: 'tg', url: 'https://www.amazon.com.br/dp/B0ABCDEF12?tag=marca-casatg-20' };
+  const topDe = (n, ts) => Array.from({ length: n }, (_, i) => ({ oferta_id: 'o' + i + ts, plataforma: 'tg', categoria: 'top', message_id: 100 + i, ts }));
+
+  const ok = L.decidirPosPublicacao(p, [oferta], [postCasa].concat(topDe(2, AGORA), topDe(3, AGORA - DIA)), [link], cfg);
+  assert.deepEqual(ok.update, { oferta_id: id, top: true });
+  assert.equal(ok.top_hoje, 2);
+  assert.match(ok.chamadas[0].payload.text, /3\/5 hoje/);
+  const post = ok.chamadas.find((c) => c.bot === 'grupo');
+  assert.deepEqual([post.metodo, post.payload.message_thread_id, post.payload.disable_notification, post.ref.categoria], ['sendMessage', 2, true, 'top']);
+  assert.match(post.payload.text, /tag=marca-casatg-20/);
+  const res = L.resultadoChamadas(ok.chamadas, ok.chamadas.map(() => ({ ok: true, result: { message_id: 55 } })), cfg, AGORA);
+  assert.deepEqual(res.posts.map((r) => [r.categoria, r.message_id]), [['top', 55]]);
+
+  const cheio = L.decidirPosPublicacao(p, [oferta], [postCasa].concat(topDe(5, AGORA)), [link], cfg);
+  assert.equal(cheio.update, null);
+  assert.deepEqual([cheio.chamadas.length, cheio.chamadas[0].metodo, cheio.chamadas[0].payload.show_alert], [1, 'answerCallbackQuery', true]);
+  assert.match(cheio.chamadas[0].payload.text, /5\/5/);
+  const ja = L.decidirPosPublicacao(p, [oferta], [postCasa, Object.assign({}, postCasa, { categoria: 'top', message_id: 43 })], [link], cfg);
+  assert.equal(ja.update, null);
+  assert.match(ja.chamadas[0].payload.text, /Já está no Top/);
+  assert.equal(L.decidirPosPublicacao(p, [Object.assign({}, oferta, { status: 'pendente' })], [], [link], cfg).update, null);
+
+  // Encerrar: edita os posts tg (sem botão) e marca encerrada
+  const z = cb('z');
+  const enc = L.decidirPosPublicacao(z, [oferta], [postCasa, Object.assign({}, postCasa, { categoria: 'top', message_id: 43 }), { oferta_id: id, plataforma: 'x', message_id: 1 }], [], cfg);
+  assert.deepEqual(enc.update, { oferta_id: id, status: 'encerrada' });
+  const eds = enc.chamadas.filter((c) => c.metodo === 'editMessageText');
+  assert.deepEqual(eds.map((c) => [c.bot, c.payload.message_id]), [['grupo', 42], ['grupo', 43]]);
+  assert.deepEqual(eds[0].payload.reply_markup, { inline_keyboard: [] });
+  assert.match(eds[0].payload.text, /Oferta encerrada/);
+  assert.match(eds[0].payload.text, /R\$ 349,90/);
+  assert.equal(L.decidirPosPublicacao(z, [Object.assign({}, oferta, { status: 'encerrada' })], [postCasa], [], cfg).update, null);
+  assert.deepEqual(L.colunasInvalidas('bfx_ofertas', enc.update), []);
+});
+
+test('antispam no 💬 Conversa e sugestões de membros', () => {
+  const cfg = cfgTeste();
+  const cls = (extra, c) => L.classificarUpdate(noGrupo(extra), HS, c || cfg, AGORA, { bot: 'grupo' });
+  for (const texto of ['entra aí https://t.me/outrogrupo', 'chat.whatsapp.com/AbC', 'me chama wa.me/5511999', 'bit.ly/xyz', 'https://s.shopee.com.br/abc',
+    'https://amzn.to/abc', 'https://mercadolivre.com/sec/123', 'telegram.me/x', 'encurtador.com.br/abc']) {
+    const r = cls({ text: texto });
+    assert.deepEqual([r.rota, r.chamadas[0].bot, r.chamadas[0].metodo, r.chamadas[0].payload.message_id], ['responder', 'grupo', 'deleteMessage', 88], texto);
+  }
+  assert.equal(cls({ caption: 'foto t.me/x' }).chamadas[0].metodo, 'deleteMessage');
+  assert.equal(cls({ text: 'clique aqui', entities: [{ type: 'text_link', offset: 0, length: 5, url: 'https://t.me/x' }] }).chamadas[0].metodo, 'deleteMessage');
+  // não é spam: admin, admin anônimo, post do canal vinculado, link do próprio grupo, texto comum, antispam desligado
+  assert.equal(cls({ text: 't.me/x', from: { id: 111 } }).rota, 'ignorar');
+  assert.equal(cls({ text: 't.me/x', from: { id: 1087968824 }, sender_chat: { id: -1001234567890 } }).rota, 'ignorar');
+  assert.equal(cls({ text: 't.me/x', is_automatic_forward: true }).rota, 'ignorar');
+  assert.equal(cls({ text: 'olha esse post https://t.me/c/1234567890/10/42' }).rota, 'ignorar');
+  assert.equal(cls({ text: 'alguém sabe do bitly? me.com' }).rota, 'ignorar');
+  assert.equal(cls({ text: 't.me/x' }, cfgTeste([{ chave: 'grupo.antispam', valor: 'nao' }])).rota, 'ignorar');
+  assert.equal(cls({ text: 't.me/x' }, cfgTeste([{ chave: 'grupo.limpar_avisos', valor: 'nao' }])).rota, 'ignorar');
+
+  // sugestão: link de produto da Amazon/Shopee/ML (.com.br)
+  const s = cls({ text: 'Achei essa: https://www.amazon.com.br/Air-Fryer/dp/B0ABCDEF12?ref=x e shopee.com.br/Kit-i.1.2', message_thread_id: 1 });
+  assert.equal(s.rota, 'sugestao');
+  const [resp, ...admins] = s.chamadas;
+  assert.deepEqual([resp.bot, resp.payload.text, resp.payload.reply_parameters.message_id, resp.payload.message_thread_id], ['grupo', 'Valeu! Vamos conferir o preço 👀', 88, undefined]);
+  assert.deepEqual(admins.map((c) => [c.bot, c.payload.chat_id]), [['admin', 111], ['admin', 222]]);
+  assert.match(admins[0].payload.text, /<pre>\/oferta CATEGORIA\nhttps:\/\/www\.amazon\.com\.br\/dp\/B0ABCDEF12\n/);
+  assert.match(admins[0].payload.text, /https:\/\/shopee\.com\.br\/product\/1\/2/);
+  assert.match(admins[0].payload.text, /https:\/\/t\.me\/c\/1234567890\/88/);
+  assert.equal(admins[0].payload.parse_mode, 'HTML');
+  assert.equal(cls({ text: 'https://produto.mercadolivre.com.br/MLB-1234567-x', is_topic_message: true, message_thread_id: 7 }).chamadas[0].payload.message_thread_id, 7);
+  assert.equal(cls({ text: 'https://www.amazon.com.br/s?k=fone' }).rota, 'ignorar', 'busca não é produto');
+  assert.equal(cls({ text: 'https://www.amazon.com.br/dp/B0ABCDEF12', from: { id: 111 } }).rota, 'ignorar', 'admin não vira sugestão');
+  // spam junto com link de loja: apaga
+  assert.equal(cls({ text: 'https://www.amazon.com.br/dp/B0ABCDEF12 e t.me/x' }).chamadas[0].metodo, 'deleteMessage');
+
+  // antiflood: 1 "Valeu!" por membro a cada 10 min; aviso aos admins sempre
+  const estado = {};
+  assert.equal(L.filtrarSugestao(s, estado, AGORA).length, 3);
+  assert.equal(L.filtrarSugestao(s, estado, AGORA + 60000).length, 2);
+  assert.equal(L.filtrarSugestao(s, estado, AGORA + 11 * 60000).length, 3);
+});
+
+test('hash_sal: sal próprio, gerado no setup; sem ele usa o webhook_secret', () => {
+  const sem = cfgTeste();
+  const com = cfgTeste([{ chave: 'hash_sal', valor: 'outro-sal' }]);
+  assert.equal(L.hashUsuario(5, sem), L.sha256Hex('segredo:5').slice(0, 16));
+  assert.equal(L.hashUsuario(5, com), L.sha256Hex('outro-sal:5').slice(0, 16));
+  assert.equal(com.hash_sal, 'outro-sal');
+  assert.ok(L.linhasFaltantes([]).some((r) => r.chave === 'hash_sal'));
+});

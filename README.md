@@ -146,8 +146,15 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 |---|---|
 | `/oferta <categoria> [top]` + linhas | Cria a oferta e manda o card. Categorias: `casa`, `beleza`, `bebe`, `tech`. `top` também publica no Top do Dia. |
 | `/convite <categoria> <nome>` | Cria um **link de convite nomeado** (ex.: `/convite beleza meta_beleza_v1`). Use um link por anúncio: o relatório mostra entradas, saídas e retenção por link. |
+| `/links` | Lista os **links de divulgação por tópico** (`t.me/<bot publicador>?start=beleza`). Para campanha, acrescente `_nome`: `?start=beleza_meta1`. |
 | `/id` | Mostra seu ID. |
 | `/ajuda` | Lista os comandos. |
+
+### Bot publicador no privado (membros)
+
+- `/start` responde **pelo próprio bot publicador** (o webhook dele é registrado com `?bot=grupo`): boas-vindas, link do grupo e links dos tópicos. Sem `grupo_link`, o bot cria (uma vez) e reaproveita o convite nomeado `bot_start`.
+- `/start beleza_meta1` (link do `/links`): boas-vindas do tópico, botão **Entrar no grupo** (convite nomeado `beleza_meta1`, criado uma vez e reaproveitado) e botão **Abrir 🎁 Beleza & Presentes**. Cada `/start` é gravado em `bfx_entradas` (`tipo = start`, payload em `convite_nome`) e aparece no relatório.
+- `/id` só responde no privado.
 
 ### Botões do card
 
@@ -157,6 +164,16 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 - **⭐ Aprovar + Top do Dia** publica também no tópico Top do Dia.
 - **✏️ Editar** devolve o `/oferta` preenchido para você corrigir (normalmente o `ref90`) e reenviar.
 - **❌ Rejeitar** descarta a oferta.
+
+Depois de publicada, o card ganha:
+- **⭐ Mandar ao Top**: copia o post para o Top do Dia (até **5 por dia**, contados desde a meia-noite; acima disso o bot avisa e não publica).
+- **⛔ Encerrar**: edita os posts da oferta no grupo para "Oferta encerrada", tira o botão de compra e marca a oferta como `encerrada`.
+
+Posts entre 22h e 8h e as cópias no Top do Dia saem **sem notificação**. O relâmpago sempre notifica.
+
+### Moderação automática do 💬 Conversa
+
+Com `grupo.limpar_avisos = sim` e `grupo.antispam = sim` (padrão), o bot publicador apaga mensagens de membros com link de outro grupo (`t.me/`), WhatsApp ou encurtador (`bit.ly`, `amzn.to`, `s.shopee.com.br`, `mercadolivre.com/sec`…). Admins (IDs de `admins`, admin anônimo e posts do canal vinculado) ficam de fora. Link de produto da Amazon, Shopee ou Mercado Livre (`.com.br`) vira **sugestão**: o bot responde "Valeu! Vamos conferir o preço 👀" (no máximo 1 vez a cada 10 min por membro) e manda aos admins o link com um `/oferta` pré-preenchido.
 
 Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: use **✏️ Editar** e informe o `ref90`.
 

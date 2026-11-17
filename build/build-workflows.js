@@ -241,15 +241,17 @@ function wfSetup() {
   wf.add(code('Config', `
 const linhas = $input.all().map((i) => i.json).filter((r) => r.chave);
 const upserts = LIB.linhasFaltantes(linhas);
-const atual = linhas.find((r) => r.chave === 'webhook_secret');
-if (!atual || !String(atual.valor || '').trim()) {
-  const s = upserts.find((r) => r.chave === 'webhook_secret');
+// Segredos gerados uma vez: webhook_secret (Telegram) e hash_sal (hash de quem entra/sai do grupo).
+for (const chave of ['webhook_secret', 'hash_sal']) {
+  const atual = linhas.find((r) => r.chave === chave);
+  if (atual && String(atual.valor || '').trim()) continue;
+  const s = upserts.find((r) => r.chave === chave);
   const valor = LIB.segredoAleatorio(Date.now());
-  if (s) s.valor = valor; else upserts.push({ chave: 'webhook_secret', valor });
+  if (s) s.valor = valor; else upserts.push({ chave, valor });
 }
 const cfg = LIB.montarConfig(linhas.concat(upserts));
 const { avisos } = LIB.setupChamadas(cfg);
-return [{ json: { cfg, upserts, avisos, linhas_novas: upserts.length } }];`, { lib: true, cfg: false, nota: 'Monta a configuração, gera o webhook_secret e lista o que falta.' }), x0 + 220, 300);
+return [{ json: { cfg, upserts, avisos, linhas_novas: upserts.length } }];`, { lib: true, cfg: false, nota: 'Monta a configuração, gera o webhook_secret e o hash_sal e lista o que falta.' }), x0 + 220, 300);
   wf.link('Ler config', 'Config');
 
   wf.add(itens('Linhas novas de config', '$json.upserts'), x0 + 440, 160);
@@ -269,6 +271,10 @@ return [{ json: LIB.resumoSetup(chamadas, resp, $('Config').first().json.avisos,
   wf.chain('Config', 'Chamadas de setup', 'Telegram (setup)', 'Resumo');
   wf.chain('Resumo', 'Tópicos criados', 'Gravar tópicos');
   wf.chain('Resumo', 'Mensagem de resumo', 'Telegram (resumo)');
+  // @ do bot publicador (getMe) para os links de divulgação do /links.
+  wf.add(itens('Config do bot', '$json.config'), x0 + 1100, 200);
+  wf.add(dtUpdate('Gravar @ do bot', 'bfx_config', 'chave', 'upsert'), x0 + 1320, 200);
+  wf.chain('Resumo', 'Config do bot', 'Gravar @ do bot');
 
   // Arrumação do grupo (só com grupo.textos = pendente e todos os tópicos criados).
   wf.add(code('Chamadas do grupo', `
@@ -308,9 +314,9 @@ function wfRouter() {
   wf.link('Webhook Telegram', 'Ler config');
   wf.add(code('Classificar', `
 const w = $('Webhook Telegram').first().json;
-return [{ json: LIB.classificarUpdate(w.body, w.headers, cfg, Date.now()) }];`, { lib: true }), 660, 600);
+return [{ json: LIB.classificarUpdate(w.body, w.headers, cfg, Date.now(), w.query) }];`, { lib: true }), 660, 600);
   wf.link('Config', 'Classificar');
-  wf.add(switchExpr('Rota', "({ oferta: 0, callback: 1, membro: 2, convite: 3, responder: 4 })[$json.rota] ?? 5", 6), 880, 600);
+  wf.add(switchExpr('Rota', "({ oferta: 0, callback: 1, membro: 2, convite: 3, responder: 4, pospub: 5, start: 6, sugestao: 7 })[$json.rota] ?? 8", 9), 880, 600);
   wf.link('Classificar', 'Rota');
 
   // 0 · /oferta
@@ -433,6 +439,66 @@ return [{ json: LIB.registrarConvite($('Classificar').first().json, $input.first
   wf.add(httpTelegram('Telegram (respostas)'), 1320, 1300);
   wf.link('Rota', 'Respostas', 4);
   wf.chain('Respostas', 'Telegram (respostas)');
+
+  // 5 · card já publicado: ⭐ Mandar ao Top (p) e ⛔ Encerrar (z)
+  const CLS = "$('Classificar').first().json";
+  wf.add(dtGet('Oferta publicada', 'bfx_ofertas', [['oferta_id', 'eq', '={{ $json.oferta_id }}']], { returnAll: false, limit: 1 }), 1100, 1460);
+  wf.add(dtGet('Posts da oferta e de hoje', 'bfx_posts', [
+    ['oferta_id', 'eq', `={{ ${CLS}.oferta_id }}`],
+    ['ts', 'gte', `={{ ${CLS}.desde }}`],
+  ], { match: 'anyCondition' }), 1320, 1460);
+  wf.add(dtGet('Links da oferta', 'bfx_links', [['oferta_id', 'eq', `={{ ${CLS}.oferta_id }}`]]), 1540, 1460);
+  wf.add(code('Decidir (publicada)', `
+const pega = (n) => $(n).all().map((i) => i.json);
+return [{ json: LIB.decidirPosPublicacao(${CLS}, pega('Oferta publicada'), pega('Posts da oferta e de hoje'), pega('Links da oferta'), cfg) }];`, { lib: true }), 1760, 1460);
+  wf.add(itens('Atualização (publicada)', '$json.update'), 1980, 1380);
+  wf.add(dtUpdate('Atualizar oferta publicada', 'bfx_ofertas', 'oferta_id'), 2200, 1380);
+  wf.add(itens('Chamadas (publicada)', "$('Decidir (publicada)').first().json.chamadas"), 1980, 1540);
+  wf.add(httpTelegram('Telegram (publicada)'), 2200, 1540);
+  wf.add(code('Resultado (publicada)', `
+const chamadas = $('Chamadas (publicada)').all().map((i) => i.json);
+return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json), cfg, Date.now()) }];`, { lib: true }), 2420, 1540);
+  wf.add(itens('Post do Top', '$json.posts'), 2640, 1480);
+  wf.add(dtInsert('Gravar post do Top', 'bfx_posts'), 2860, 1480);
+  wf.add(itens('Alertas (publicada)', "$('Resultado (publicada)').first().json.alertas"), 2640, 1620);
+  wf.add(httpTelegram('Telegram (alertas da publicada)'), 2860, 1620);
+  wf.link('Rota', 'Oferta publicada', 5);
+  wf.chain('Oferta publicada', 'Posts da oferta e de hoje', 'Links da oferta', 'Decidir (publicada)');
+  wf.chain('Decidir (publicada)', 'Atualização (publicada)', 'Atualizar oferta publicada');
+  wf.chain('Decidir (publicada)', 'Chamadas (publicada)', 'Telegram (publicada)', 'Resultado (publicada)');
+  wf.chain('Resultado (publicada)', 'Post do Top', 'Gravar post do Top');
+  wf.chain('Resultado (publicada)', 'Alertas (publicada)', 'Telegram (alertas da publicada)');
+
+  // 6 · /start no bot publicador: grava o start, reaproveita ou cria o convite nomeado e responde
+  wf.add(itens('Linha do start', '$json.linha'), 1100, 1760);
+  wf.add(dtInsert('Gravar start', 'bfx_entradas'), 1320, 1760);
+  wf.add(dtGet('Convite do start', 'bfx_convites', [['nome', 'eq', `={{ ${CLS}.convite || '-' }}`]], { returnAll: false, limit: 1 }), 1100, 1900);
+  wf.add(code('Boas-vindas', `
+return LIB.boasVindasStart(${CLS}, $input.all().map((i) => i.json), cfg).map((c) => ({ json: c }));`, { lib: true }), 1320, 1900);
+  wf.add(httpTelegram('Telegram (boas-vindas)'), 1540, 1900);
+  wf.add(code('Convite criado', `
+const chamadas = $('Boas-vindas').all().map((i) => i.json);
+return [{ json: LIB.startComConvite(${CLS}, chamadas, $input.all().map((i) => i.json), cfg) }];`, { lib: true }), 1760, 1900);
+  wf.add(itens('Linha do convite do start', '$json.linha'), 1980, 1840);
+  wf.add(dtInsert('Gravar convite do start', 'bfx_convites'), 2200, 1840);
+  wf.add(itens('Resposta do start', "$('Convite criado').first().json.chamadas"), 1980, 1980);
+  wf.add(httpTelegram('Telegram (start)'), 2200, 1980);
+  wf.link('Rota', 'Linha do start', 6);
+  wf.chain('Linha do start', 'Gravar start');
+  wf.link('Rota', 'Convite do start', 6);
+  wf.chain('Convite do start', 'Boas-vindas', 'Telegram (boas-vindas)', 'Convite criado');
+  wf.chain('Convite criado', 'Linha do convite do start', 'Gravar convite do start');
+  wf.chain('Convite criado', 'Resposta do start', 'Telegram (start)');
+
+  // 7 · sugestão de membro no 💬 Conversa: 1 "Valeu!" por membro a cada 10 min; aviso aos admins sempre
+  wf.add(code('Antiflood', `
+let estado = {};
+try { estado = $getWorkflowStaticData('global'); } catch (e) { /* sem estado: responde sempre */ }
+const cls = ${CLS};
+return LIB.filtrarSugestao(cls, estado, cls.ts).map((c) => ({ json: c }));`, { lib: true, cfg: false }), 1100, 2120);
+  wf.add(httpTelegram('Telegram (sugestão)'), 1320, 2120);
+  wf.link('Rota', 'Antiflood', 7);
+  wf.chain('Antiflood', 'Telegram (sugestão)');
   return wf;
 }
 
