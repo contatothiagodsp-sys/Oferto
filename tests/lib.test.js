@@ -179,6 +179,25 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
   assert.match(L.textoXResposta('https://l/x'), /afiliado/);
 });
 
+test('classificarUpdate: apaga avisos automáticos do grupo, nunca a criação de tópico', () => {
+  const cfg = cfgTeste();
+  const H = { 'x-telegram-bot-api-secret-token': 'segredo' };
+  const g = cfg.telegram.grupo_id;
+  const servico = (extra) => ({ message: Object.assign({ message_id: 77, chat: { id: Number(g), type: 'supergroup' }, from: { id: 5 } }, extra) });
+  for (const extra of [{ new_chat_members: [{ id: 5 }] }, { left_chat_member: { id: 5 } }, { pinned_message: { message_id: 3 } }, { forum_topic_closed: {} }]) {
+    const r = L.classificarUpdate(servico(extra), H, cfg, AGORA);
+    assert.equal(r.rota, 'responder');
+    assert.deepEqual([r.chamadas[0].bot, r.chamadas[0].metodo, r.chamadas[0].payload.message_id], ['grupo', 'deleteMessage', 77]);
+  }
+  assert.equal(L.classificarUpdate(servico({ forum_topic_created: { name: 'x' } }), H, cfg, AGORA).rota, 'ignorar');
+  assert.equal(L.classificarUpdate(servico({ text: 'oi pessoal' }), H, cfg, AGORA).rota, 'ignorar');
+  cfg.limpar_avisos = false;
+  assert.equal(L.classificarUpdate(servico({ new_chat_members: [{ id: 5 }] }), H, cfg, AGORA).rota, 'ignorar');
+  assert.ok(!L.setupChamadas(cfg).chamadas.some((c) => (c.payload.allowed_updates || []).includes('message') && c.bot === 'grupo'));
+  cfg.limpar_avisos = true;
+  assert.ok(L.setupChamadas(cfg).chamadas.some((c) => c.bot === 'grupo' && c.metodo === 'setWebhook' && c.payload.allowed_updates.includes('message')));
+});
+
 test('classificarUpdate: segredo, /oferta, callback, entrada por convite', () => {
   const cfg = cfgTeste();
   const H = { 'x-telegram-bot-api-secret-token': 'segredo' };
@@ -329,7 +348,7 @@ test('relatório diário e setup', () => {
   const metodos = s.chamadas.map((c) => `${c.bot}.${c.metodo}`);
   assert.ok(metodos.includes('grupo.setWebhook'));
   const wh = s.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'setWebhook');
-  assert.deepEqual(wh.payload.allowed_updates, ['my_chat_member', 'chat_member']);
+  assert.deepEqual(wh.payload.allowed_updates, ['my_chat_member', 'chat_member', 'message']);
   const topicos = s.chamadas.filter((c) => c.metodo === 'createForumTopic').map((c) => c.ref.topico);
   assert.deepEqual(topicos, ['beleza', 'bebe', 'tech']); // casa e top já existem
   const resp = s.chamadas.map((c) => (c.metodo === 'createForumTopic' ? { ok: true, result: { message_thread_id: 50 } } : { ok: true, result: { username: 'bot', title: 'G', is_forum: true } }));

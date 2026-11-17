@@ -86,7 +86,8 @@ Preencha agora:
    - **Alterar informações do grupo**: para escrever a descrição;
    - **Fixar mensagens**: para fixar as regras e os textos;
    - **Gerenciar tópicos**: para criar, renomear e fechar tópicos;
-   - **Convidar usuários via link**: para o `/convite`.
+   - **Convidar usuários via link**: para o `/convite`;
+   - **Apagar mensagens**: para apagar os avisos automáticos ("fulano entrou", "fixou uma mensagem", "fechou o tópico"). Para manter os avisos, mude `grupo.limpar_avisos` para `nao`.
 3. O bot avisa você no privado com o **ID do grupo** (`-100…`) e mostra quais permissões estão faltando. Copie o ID para `grupo_id`.
 4. Se quiser, preencha `grupo_link` com o link público do grupo.
 5. Rode o **00 · Setup** pela 3ª vez. Ele:

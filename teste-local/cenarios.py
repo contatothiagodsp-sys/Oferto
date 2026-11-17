@@ -163,6 +163,13 @@ checar('n8n_webhook_url gravada', any(r['valor'] == 'https://exemplo-novo.tryclo
 checar('segredo do webhook mantido', all(c['payload'].get('secret_token') == SEGREDO for c in sw))
 checar('arrumação do grupo não repetida', not any(c['metodo'] == 'setChatDescription' for c in cs))
 
+print('8) Avisos automáticos do grupo são apagados')
+limpar_log()
+update({'update_id': 9, 'message': {'message_id': 901, 'chat': {'id': -1001234567890, 'type': 'supergroup'}, 'from': {'id': 555}, 'new_chat_members': [{'id': 555}]}})
+update({'update_id': 10, 'message': {'message_id': 902, 'chat': {'id': -1001234567890, 'type': 'supergroup'}, 'from': {'id': 555}, 'message_thread_id': 5, 'forum_topic_created': {'name': 'x'}}})
+dl = [c for c in chamadas() if c['metodo'] == 'deleteMessage']
+checar('apaga "entrou" com o bot publicador', len(dl) == 1 and dl[0]['payload']['message_id'] == 901 and dl[0]['token'] == 'TOKGRUPO')
+
 c = sqlite3.connect(DB)
 erros = c.execute("select count(*) from execution_entity where status != 'success'").fetchone()[0]
 checar('nenhuma execução com erro no n8n', erros == 0)
