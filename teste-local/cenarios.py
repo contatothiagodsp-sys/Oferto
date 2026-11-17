@@ -16,8 +16,9 @@ def post(url, corpo, segredo=SEGREDO):
     urllib.request.urlopen(req).read()
 
 
-def update(u, segredo=SEGREDO, espera=7):
-    post('http://127.0.0.1:5678/webhook/telegram-ofertas', u, segredo)
+def update(u, segredo=SEGREDO, espera=7, bot=None):
+    # bot='grupo': update recebido pelo bot publicador (webhook registrado com ?bot=grupo)
+    post('http://127.0.0.1:5678/webhook/telegram-ofertas' + ('?bot=' + bot if bot else ''), u, segredo)
     time.sleep(espera)
 
 
@@ -217,7 +218,9 @@ post('http://127.0.0.1:5678/webhook/oferto-tunel', {'url': 'https://exemplo-novo
 time.sleep(12)
 cs = chamadas()
 sw = [c for c in cs if c['metodo'] == 'setWebhook']
-checar('setWebhook com a URL do túnel', len(sw) >= 1 and all(c['payload'].get('url') == 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas' for c in sw))
+URL_TUNEL = 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas'
+checar('setWebhook com a URL do túnel (publicador com ?bot=grupo)', len(sw) == 2 and all(
+    c['payload'].get('url') == (URL_TUNEL + '?bot=grupo' if c['token'] == 'TOKGRUPO' else URL_TUNEL) for c in sw))
 checar('n8n_webhook_url gravada', any(r['valor'] == 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas' for r in linhas('bfx_config', "where chave = 'n8n_webhook_url'")))
 checar('segredo do webhook mantido', all(c['payload'].get('secret_token') == SEGREDO for c in sw))
 checar('arrumação do grupo não repetida', not any(c['metodo'] == 'setChatDescription' for c in cs))
@@ -238,7 +241,7 @@ update({'update_id': 10, 'message': {'message_id': 902, 'chat': {'id': -10012345
 dl = [c for c in chamadas() if c['metodo'] == 'deleteMessage']
 checar('apaga "entrou" com o bot publicador', len(dl) == 1 and dl[0]['payload']['message_id'] == 901 and dl[0]['token'] == 'TOKGRUPO')
 
-print('9) Servidor local: saúde do webhook (workflow 91)')
+print('9s) Servidor local: saúde do webhook (workflow 91)')
 def saude():
     req = urllib.request.Request('http://127.0.0.1:5678/webhook/oferto-saude', data=b'{}', method='POST', headers={'content-type': 'application/json'})
     r = json.loads(urllib.request.urlopen(req, timeout=60).read())
@@ -270,6 +273,109 @@ limpar_log()
 r = saude()
 checar('webhook com URL diferente da config: alerta', r.get('problemas') == ['url_admin', 'url_grupo'] and len(avisos()) == 2)
 config_set('n8n_webhook_url', 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas')
+
+def grupo_msg(texto, de=555, mid=950):
+    return {'update_id': 20, 'message': {'message_id': mid, 'text': texto, 'chat': {'id': gid, 'type': 'supergroup'}, 'from': {'id': de}}}
+
+
+print('9) /start do membro no bot publicador: responde pelo mesmo bot, com convite bot_start')
+limpar_log()
+update(msg('/start', de=777), bot='grupo')
+cs = chamadas()
+resp = [c for c in cs if c['metodo'] == 'sendMessage']
+checar('resposta pelo bot publicador', len(resp) == 1 and resp[0]['token'] == 'TOKGRUPO' and resp[0]['payload']['chat_id'] == 777)
+checar('convite bot_start criado e no texto', any(c['metodo'] == 'createChatInviteLink' and c['payload']['name'] == 'bot_start' for c in cs)
+       and 'https://t.me/+CONVITEbot_start' in resp[0]['payload']['text'])
+checar('links dos tópicos no texto', resp[0]['payload']['text'].count('https://t.me/c/1234567890/') == 5)
+checar('nada pelo bot de aprovação', not any(c['token'] == 'TOKADMIN' for c in cs))
+limpar_log()
+update(msg('/start', de=778), bot='grupo')
+cs = chamadas()
+checar('2º /start reaproveita o convite', not any(c['metodo'] == 'createChatInviteLink' for c in cs) and any(
+    c['metodo'] == 'sendMessage' and 'CONVITEbot_start' in c['payload']['text'] for c in cs))
+checar('/start gravado em bfx_entradas', len(linhas('bfx_entradas', "where tipo = 'start' and convite_nome = 'sem_payload'")) == 2)
+
+print('9b) /start beleza_meta1: boas-vindas do tópico, convite da campanha e botão do tópico')
+limpar_log()
+update(msg('/start beleza_meta1', de=779), bot='grupo')
+cs = chamadas()
+resp = [c for c in cs if c['metodo'] == 'sendMessage']
+tb = int(linhas('bfx_config', "where chave = 'topico.beleza'")[0]['valor'])
+bt = resp[0]['payload'].get('reply_markup', {}).get('inline_keyboard', []) if resp else []
+checar('convite beleza_meta1 criado', any(c['metodo'] == 'createChatInviteLink' and c['payload']['name'] == 'beleza_meta1' for c in cs))
+checar('boas-vindas de Beleza pelo publicador', len(resp) == 1 and resp[0]['token'] == 'TOKGRUPO' and 'Bem-vindo às ofertas de Beleza' in resp[0]['payload']['text'])
+checar('botões Entrar e Abrir o tópico', len(bt) == 2 and bt[0][0]['url'] == 'https://t.me/+CONVITEbeleza_meta1'
+       and bt[1][0]['url'] == f'https://t.me/c/1234567890/{tb}' and bt[1][0]['text'].startswith('Abrir'))
+checar('start com payload gravado', len(linhas('bfx_entradas', "where tipo = 'start' and convite_nome = 'beleza_meta1'")) == 1
+       and len(linhas('bfx_convites', "where nome = 'beleza_meta1'")) == 1)
+checar('start sem ID do usuário', all('779' not in json.dumps(e) for e in linhas('bfx_entradas')))
+
+print('9c) /links no bot de aprovação (@ do publicador gravado pelo setup)')
+limpar_log()
+update(msg('/links'))
+cs = chamadas()
+checar('links de divulgação por categoria', len(cs) == 1 and cs[0]['token'] == 'TOKADMIN' and all(
+    f'https://t.me/teste_bot?start={k}' in cs[0]['payload']['text'] for k in ['top', 'casa', 'beleza', 'bebe', 'tech']))
+limpar_log()
+update(msg('/id', de=780), bot='grupo')
+cs = chamadas()
+checar('/id no publicador responde pelo publicador', len(cs) == 1 and cs[0]['token'] == 'TOKGRUPO' and 'Seu ID: 780' in cs[0]['payload']['text'])
+
+print('10) ⭐ Mandar ao Top depois de publicada (limite 5/dia)')
+limpar_log()
+update(clique('p', oid2), espera=8)
+cs = chamadas()
+top = int(linhas('bfx_config', "where chave = 'topico.top'")[0]['valor'])
+envio = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']
+checar('post no Top, silencioso', len(envio) == 1 and envio[0]['payload'].get('message_thread_id') == top and envio[0]['payload'].get('disable_notification') is True)
+checar('resposta com contagem do dia', any(c['metodo'] == 'answerCallbackQuery' and '2/5' in c['payload'].get('text', '') for c in cs))
+checar('post do Top gravado e oferta marcada top', len(linhas('bfx_posts', f"where oferta_id = '{oid2}' and categoria = 'top'")) == 1
+       and linhas('bfx_ofertas', f"where oferta_id = '{oid2}'")[0]['top'] in (1, True))
+# completa 5 no Top de hoje e tenta mais uma (a oferta Shopee publicada no cenário 4)
+db = sqlite3.connect(DB)
+tid = db.execute("select id from data_table where name = 'bfx_posts'").fetchone()[0]
+for i in range(3):
+    db.execute(f'insert into "data_table_user_{tid}" (oferta_id, plataforma, categoria, message_id, link, ts, data) values (?, ?, ?, ?, ?, ?, ?)',
+               (f'ofalsa{i}', 'tg', 'top', 9000 + i, '', time.time() * 1000, ''))
+db.commit()
+limpar_log()
+update(clique('p', sid), espera=8)
+cs = chamadas()
+checar('acima do limite: só o aviso', [c['metodo'] for c in cs] == ['answerCallbackQuery'] and '5/5' in cs[0]['payload']['text'] and cs[0]['payload'].get('show_alert'))
+
+print('11) ⛔ Encerrar: edita os posts do grupo e tira o botão')
+limpar_log()
+update(clique('z', oid), espera=8)
+cs = chamadas()
+eds = [c for c in cs if c['metodo'] == 'editMessageText']
+ids_posts = sorted(int(r['message_id']) for r in linhas('bfx_posts', f"where oferta_id = '{oid}'"))
+checar('2 posts editados pelo publicador', len(eds) == 2 and all(c['token'] == 'TOKGRUPO' for c in eds)
+       and sorted(c['payload']['message_id'] for c in eds) == ids_posts)
+checar('texto de encerrada e sem botão', all('encerrada' in c['payload']['text'].lower() and c['payload']['reply_markup'] == {'inline_keyboard': []} for c in eds))
+checar('status encerrada', linhas('bfx_ofertas', f"where oferta_id = '{oid}'")[0]['status'] == 'encerrada')
+
+print('12) Antispam no 💬 Conversa')
+limpar_log()
+update(grupo_msg('entra no meu grupo https://t.me/outrogrupo'), bot='grupo', espera=5)
+update(grupo_msg('grupo oficial t.me/outrogrupo', de=111, mid=951), bot='grupo', espera=5)
+cs = chamadas()
+checar('apaga link de outro grupo (só do membro)', [(c['token'], c['metodo'], c['payload'].get('message_id')) for c in cs] == [('TOKGRUPO', 'deleteMessage', 950)])
+
+print('13) Sugestão de membro (link de loja)')
+limpar_log()
+update(grupo_msg('achei barato https://www.amazon.com.br/Fone/dp/B0FONE0001?ref=x', de=556, mid=960), bot='grupo', espera=6)
+cs = chamadas()
+valeu = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']
+avisos = [c for c in cs if c['token'] == 'TOKADMIN' and c['metodo'] == 'sendMessage']
+checar('"Valeu!" no grupo, respondendo a mensagem', len(valeu) == 1 and valeu[0]['payload']['text'].startswith('Valeu!')
+       and valeu[0]['payload']['reply_parameters']['message_id'] == 960)
+checar('aviso aos 2 admins com /oferta pré-preenchido', len(avisos) == 2 and all('/oferta CATEGORIA\nhttps://www.amazon.com.br/dp/B0FONE0001' in c['payload']['text'] for c in avisos))
+checar('não apagou a sugestão', not any(c['metodo'] == 'deleteMessage' for c in cs))
+limpar_log()
+update(grupo_msg('e essa https://shopee.com.br/Kit-i.5.6', de=556, mid=961), bot='grupo', espera=6)
+cs = chamadas()
+checar('2ª sugestão do mesmo membro: sem novo "Valeu!", admins avisados', not any(c['token'] == 'TOKGRUPO' for c in cs)
+       and len([c for c in cs if c['token'] == 'TOKADMIN']) == 2)
 
 c = sqlite3.connect(DB)
 # A recusa do túnel (7b) é um erro esperado.
