@@ -34,6 +34,6 @@ hook() {
 }
 hook wfSetup000000001        # 1ª vez: cria tabelas e linhas de config
 hook wfConfTeste00001 4      # grava a config de teste (tokens falsos, API em localhost:8787)
-hook wfSetup000000001 85     # 2ª vez: webhooks, tópicos e arrumação do grupo (3,5 s entre chamadas no grupo)
+hook wfSetup000000001 140    # 2ª vez: webhooks, tópicos e arrumação do grupo (6 s entre chamadas no grupo)
 grep -o '"secret_token":"[^"]*"' tmp/mock-log.jsonl | head -1 | cut -d'"' -f4 > tmp/segredo || { echo "setup não chamou o Telegram falso; veja node teste-local/inspect.js wfSetup000000001 '*'"; exit 1; }
 echo "n8n de teste pronto em http://127.0.0.1:5678 (log das chamadas: teste-local/tmp/mock-log.jsonl)"
