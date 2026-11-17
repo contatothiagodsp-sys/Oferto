@@ -430,7 +430,7 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
 
   const respSemPin = b.map(() => ({ ok: false, description: 'Bad Request: not enough rights to manage pinned messages in the chat' }));
   const falha = L.resumoGrupo(a.concat(b), respA.concat(respSemPin), cfg);
-  assert.deepEqual(falha.config, []);
+  assert.deepEqual(falha.config, [{ chave: 'grupo.textos', valor: 'ok' }], 'com falha também não repete');
   assert.match(falha.texto, /falta permissão/);
 
   cfg.telegram.grupo_textos = 'ok';
