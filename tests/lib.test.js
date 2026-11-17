@@ -828,3 +828,51 @@ test('hash_sal: sal próprio, gerado no setup; sem ele usa o webhook_secret', ()
   assert.equal(com.hash_sal, 'outro-sal');
   assert.ok(L.linhasFaltantes([]).some((r) => r.chave === 'hash_sal'));
 });
+
+test('canais por categoria: posta no canal, grava tgc, encerra lá também e aparece nos links', () => {
+  const cfg = cfgTeste([
+    { chave: 'canal.casa', valor: '@ofertas_casa' },
+    { chave: 'canal.top', valor: '-1009876543210' },
+    { chave: 'canal_link.top', valor: 'https://t.me/+TOPCANAL' },
+    { chave: 'canal.tech', valor: 'invalido' },
+    { chave: 'bot_grupo_username', valor: '@teste_bot' },
+  ]);
+  assert.deepEqual(cfg.telegram.canais, { casa: '@ofertas_casa', top: '-1009876543210' });
+  assert.equal(L.linkCanal(cfg, 'casa'), 'https://t.me/ofertas_casa');
+  assert.equal(L.linkCanal(cfg, 'top'), 'https://t.me/+TOPCANAL');
+  assert.equal(L.linkCanal(cfg, 'tech'), '');
+
+  const { av, pub } = publicada(cfg, 't'); // Aprovar + Top
+  const grupo = pub.chamadas.filter((c) => c.bot === 'grupo');
+  assert.deepEqual(grupo.map((c) => [c.payload.chat_id, c.payload.message_thread_id, c.ref.plataforma, c.ref.categoria]), [
+    ['-1001234567890', 10, 'tg', 'casa'], ['-1001234567890', 2, 'tg', 'top'],
+    ['@ofertas_casa', undefined, 'tgc', 'casa'], ['-1009876543210', undefined, 'tgc', 'top'],
+  ]);
+  assert.match(grupo[2].payload.text, /tag=marca-casatg-20/);
+  assert.equal(grupo[2].payload.reply_markup.inline_keyboard[0][0].url.includes('tag=marca-casatg-20'), true);
+  assert.equal(grupo[3].payload.disable_notification, undefined); // canal do Top notifica (fora das 22h–8h)
+  assert.match(pub.chamadas.find((c) => c.metodo === 'sendMessage' && c.bot === 'admin').payload.text, /\+ 2 canal\(is\)/);
+  const res = L.resultadoChamadas(grupo, grupo.map((_, i) => ({ ok: true, result: { message_id: 60 + i } })), cfg, AGORA);
+  assert.deepEqual(res.posts.map((r) => [r.plataforma, r.link]), [
+    ['tg', 'https://t.me/c/1234567890/10/60'], ['tg', 'https://t.me/c/1234567890/2/61'],
+    ['tgc', 'https://t.me/ofertas_casa/62'], ['tgc', 'https://t.me/c/9876543210/63'],
+  ]);
+
+  const id = av.oferta.oferta_id;
+  const oferta = Object.assign({}, av.oferta, { status: 'aprovada' });
+  const z = L.classificarUpdate({ callback_query: { id: 'q', data: `z|${id}`, from: { id: 111 }, message: { message_id: 9, chat: { id: 111 } } } }, HS, cfg, AGORA);
+  const enc = L.decidirPosPublicacao(z, [oferta], res.posts.map((r) => Object.assign({ oferta_id: id, ts: AGORA }, r)), [], cfg);
+  assert.deepEqual(enc.chamadas.filter((c) => c.metodo === 'editMessageText').map((c) => [c.payload.chat_id, c.payload.message_id]), [
+    ['-1001234567890', 60], ['-1001234567890', 61], ['@ofertas_casa', 62], ['-1009876543210', 63],
+  ]);
+  // posts do canal não contam no limite do Top
+  const p = L.classificarUpdate({ callback_query: { id: 'q', data: `p|${id}`, from: { id: 111 }, message: { message_id: 9, chat: { id: 111 } } } }, HS, cfg, AGORA);
+  const casaSo = res.posts.filter((r) => r.categoria === 'casa').map((r) => Object.assign({ oferta_id: id, ts: AGORA }, r));
+  const top = L.decidirPosPublicacao(p, [oferta], casaSo, [{ oferta_id: id, plataforma: 'tg', url: 'https://www.amazon.com.br/dp/B0ABCDEF12?tag=marca-casatg-20' }], cfg);
+  assert.deepEqual(top.chamadas.filter((c) => c.bot === 'grupo').map((c) => c.payload.chat_id), ['-1001234567890', '-1009876543210']);
+  assert.equal(top.top_hoje, 0);
+
+  assert.match(L.textoLinks(cfg), /Canais por categoria[\s\S]*https:\/\/t\.me\/\+TOPCANAL[\s\S]*https:\/\/t\.me\/ofertas_casa/);
+  assert.match(L.textoStartMembro(cfg, 'https://t.me/+G'), /Siga o canal:[\s\S]*https:\/\/t\.me\/ofertas_casa/);
+  assert.doesNotMatch(L.textoStartMembro(cfgTeste(), 'https://t.me/+G'), /canal/);
+});

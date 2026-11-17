@@ -103,6 +103,17 @@ Preencha agora:
    - `atualizar`: reescreve as mensagens fixadas no lugar, sem mandar nada novo. Use para **mudar os textos**.
    - `limpar`: **apaga todas as mensagens do grupo**, inclusive as de membros (os tópicos ficam), e arruma tudo de novo. Leva cerca de 4 minutos. Use para zerar o grupo de teste antes de abrir ao público; precisa da permissão **Apagar mensagens**.
 
+### 6b. (Opcional) Canal só de uma categoria
+
+Para quem quer **só Tech**, por exemplo, sem conversa e sem os outros tópicos. O membro segue o canal e recebe só aquilo.
+
+1. No Telegram, crie um **canal** (ex.: "Ofertô Tech"). Pode ser público (`@ofertos_tech`) ou privado.
+2. Em **Administradores**, adicione o **bot publicador** com **Publicar mensagens** e **Editar mensagens de outros** (para o ⛔ Encerrar).
+3. Na `bfx_config`, preencha `canal.tech` com `@ofertos_tech` (ou o ID `-100…` do canal privado). Para canal privado, preencha também `canal_link.tech` com o link de convite.
+4. Pronto: toda oferta aprovada de Tech sai **no tópico e no canal**, com o mesmo texto e botão. O ⛔ Encerrar edita os dois, e `canal.top` recebe o Top do Dia.
+
+Os canais aparecem no `/links`, no 👋 Comece aqui (rode `grupo.textos = atualizar`) e no `/start` do bot publicador. Os posts ficam em `bfx_posts` com `plataforma = tgc`. Use quantos quiser: `canal.top`, `canal.casa`, `canal.beleza`, `canal.bebe` e `canal.tech`.
+
 ### 7. Teste
 
 Mande ao bot de aprovação:
