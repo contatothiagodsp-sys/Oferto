@@ -433,6 +433,7 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   assert.deepEqual(falha.config, [{ chave: 'grupo.textos', valor: 'ok' }], 'com falha também não repete');
   assert.match(falha.texto, /falta permissão/);
 
+  assert.deepEqual(L.arrumarGrupoChamadas(cfg, criados, true), [], 'grupo com mensagem fixada não é arrumado de novo');
   cfg.telegram.grupo_textos = 'ok';
   assert.deepEqual(L.arrumarGrupoChamadas(cfg, criados), [], 'já arrumado não repete');
   assert.equal(L.fixarChamadas([], [], cfg)[0].metodo, 'getMe');
