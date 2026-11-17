@@ -121,6 +121,18 @@ of = linhas('bfx_ofertas', f"where oferta_id = '{oid}'")[0]
 checar('status aprovada e top', of['status'] == 'aprovada' and of['top'] in (1, True))
 checar('posts gravados', len(linhas('bfx_posts', f"where oferta_id = '{oid}'")) == 2)
 
+print('1b) Limite do Telegram: post barrado é reenviado depois de esperar')
+limpar_log()
+update(msg('/oferta casa\nhttps://www.amazon.com.br/Ventilador/dp/B0VENTILA1\nVentilador Teste\npreço 99,90\nref90 129,90 https://comparador.example/p'))
+oid2 = id_do_card(chamadas())
+urllib.request.urlopen('http://127.0.0.1:8787/mock/barrar').read()
+limpar_log()
+update(clique('a', oid2), espera=14)
+cs = chamadas()
+envios = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']
+checar('post barrado reenviado (2 tentativas)', len(envios) == 2)
+checar('post gravado e sem alerta de falha', len(linhas('bfx_posts', f"where oferta_id = '{oid2}'")) == 1 and not any('Falhas' in c['payload'].get('text', '') for c in cs))
+
 print('2) Clique repetido não publica de novo')
 limpar_log()
 update(clique('a', oid, de=222))

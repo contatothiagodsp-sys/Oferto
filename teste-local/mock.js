@@ -4,7 +4,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const LOG = process.argv[2] || require('path').join(__dirname, 'tmp', 'mock-log.jsonl');
 const SHOPEE_APP = '123456', SHOPEE_SECRET = 'segredo-shopee';
-let msgId = 100, thread = 500, fixada = null;
+let msgId = 100, thread = 500, fixada = null, barrar = 0;
 
 function resultado(metodo, p) {
   switch (metodo) {
@@ -24,10 +24,12 @@ http.createServer((req, res) => {
   req.on('end', () => {
     let saida;
     const m = req.url.match(/^\/bot([^/]+)\/(\w+)/);
+    if (req.url === '/mock/barrar') { barrar = 1; res.end('ok'); return; }
     if (m) {
       const p = body ? JSON.parse(body) : {};
       fs.appendFileSync(LOG, JSON.stringify({ api: 'telegram', token: m[1], metodo: m[2], payload: p }) + '\n');
-      if (m[2] === 'sendPhoto' && String(p.photo).includes('quebrada')) saida = { ok: false, error_code: 400, description: 'Bad Request: wrong file identifier/HTTP URL specified' };
+      if (barrar > 0 && m[1] === 'TOKGRUPO' && ['sendMessage', 'sendPhoto'].includes(m[2])) { barrar--; saida = { ok: false, error_code: 429, description: 'Too Many Requests: retry after 2', parameters: { retry_after: 2 } }; }
+      else if (m[2] === 'sendPhoto' && String(p.photo).includes('quebrada')) saida = { ok: false, error_code: 400, description: 'Bad Request: wrong file identifier/HTTP URL specified' };
       else saida = { ok: true, result: resultado(m[2], p) };
     } else if (req.url === '/graphql') {
       const auth = req.headers.authorization || '';

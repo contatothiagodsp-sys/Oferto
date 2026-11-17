@@ -371,16 +371,40 @@ return [{ json: LIB.prepararPublicacao(d.oferta, itensLink, cfg, { ts: cls.ts, c
   wf.add(dtInsert('Gravar links', 'bfx_links'), 2860, 600);
   wf.add(itens('Mensagens', "$('Publicar').first().json.chamadas"), 2640, 740);
   wf.add(httpTelegram('Telegram (publicação)'), 2860, 740);
+  // Limite do Telegram (429): espera o tempo pedido e reenvia uma vez só o que foi barrado.
+  wf.add(code('Checar limite', `
+const chamadas = $('Mensagens').all().map((i) => i.json);
+return [{ json: LIB.limiteTelegram(chamadas, $input.all().map((i) => i.json)) }];`, { lib: true, cfg: false }), 3080, 740);
+  wf.add({
+    name: 'Barrado pelo limite?', type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'lim', leftValue: '={{ $json.indices.length }}', rightValue: 0, operator: { type: 'number', operation: 'gt' } }],
+        combinator: 'and',
+      },
+      options: {},
+    },
+  }, 3300, 740);
+  wf.add({ name: 'Esperar o Telegram', type: 'n8n-nodes-base.wait', typeVersion: 1.1, webhookId: uuid('wait-limite-telegram'), parameters: { resume: 'timeInterval', amount: '={{ $json.espera }}', unit: 'seconds' } }, 3520, 640);
+  wf.add(itens('Reenviar', '$json.reenviar'), 3740, 640);
+  wf.add(httpTelegram('Telegram (reenvio)'), 3960, 640);
   wf.add(code('Resultado', `
 const chamadas = $('Mensagens').all().map((i) => i.json);
-return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json), cfg, Date.now()) }];`, { lib: true }), 3080, 740);
-  wf.add(itens('Linhas de post', '$json.posts'), 3300, 680);
-  wf.add(dtInsert('Gravar posts', 'bfx_posts'), 3520, 680);
-  wf.add(itens('Alertas', "$('Resultado').first().json.alertas"), 3300, 820);
-  wf.add(httpTelegram('Telegram (alertas)'), 3520, 820);
+let resp = $('Telegram (publicação)').all().map((i) => i.json);
+const lim = $('Checar limite').first().json;
+if (lim.indices.length && $('Telegram (reenvio)').isExecuted) resp = LIB.juntarReenvio(resp, lim, $('Telegram (reenvio)').all().map((i) => i.json));
+return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), 4180, 740);
+  wf.add(itens('Linhas de post', '$json.posts'), 4400, 680);
+  wf.add(dtInsert('Gravar posts', 'bfx_posts'), 4620, 680);
+  wf.add(itens('Alertas', "$('Resultado').first().json.alertas"), 4400, 820);
+  wf.add(httpTelegram('Telegram (alertas)'), 4620, 820);
   wf.chain('Publicar', 'Status final', 'Atualizar status');
   wf.chain('Publicar', 'Linhas de link', 'Gravar links');
-  wf.chain('Publicar', 'Mensagens', 'Telegram (publicação)', 'Resultado');
+  wf.chain('Publicar', 'Mensagens', 'Telegram (publicação)', 'Checar limite', 'Barrado pelo limite?');
+  wf.link('Barrado pelo limite?', 'Esperar o Telegram', 0);
+  wf.chain('Esperar o Telegram', 'Reenviar', 'Telegram (reenvio)', 'Resultado');
+  wf.link('Barrado pelo limite?', 'Resultado', 1);
   wf.chain('Resultado', 'Linhas de post', 'Gravar posts');
   wf.chain('Resultado', 'Alertas', 'Telegram (alertas)');
 

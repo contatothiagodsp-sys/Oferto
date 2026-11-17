@@ -363,6 +363,18 @@ test('relatório diário e setup', () => {
   assert.equal(erro.chamadas.length, 2);
 });
 
+test('limite do Telegram: reenvia só o barrado, depois de esperar', () => {
+  const ch = [{ metodo: 'sendPhoto', i: 0 }, { metodo: 'sendPhoto', i: 1 }, { metodo: 'sendMessage', i: 2 }];
+  const resp = [{ ok: true, result: { message_id: 1 } }, { ok: false, error_code: 429, description: 'Too Many Requests: retry after 7', parameters: { retry_after: 7 } }, { ok: false, description: 'Bad Request: x' }];
+  const lim = L.limiteTelegram(ch, resp);
+  assert.deepEqual([lim.espera, lim.indices], [8, [1]]);
+  assert.equal(lim.reenviar[0].i, 1);
+  const junto = L.juntarReenvio(resp, lim, [{ ok: true, result: { message_id: 2 } }]);
+  assert.equal(junto[1].result.message_id, 2);
+  assert.equal(L.limiteTelegram(ch, [resp[0], resp[0], resp[0]]).indices.length, 0);
+  assert.equal(L.limiteTelegram([ch[0]], [{ ok: false, description: 'Too Many Requests: retry after 300' }]).espera, 60);
+});
+
 test('linhas geradas batem com o esquema das Data Tables', () => {
   const cfg = cfgTeste();
   const H = { 'x-telegram-bot-api-secret-token': 'segredo' };
