@@ -355,6 +355,12 @@ test('relatório diário e setup', () => {
   const res = L.resumoSetup(s.chamadas, resp, s.avisos, cfg);
   assert.equal(res.topicos.length, 3);
   assert.equal(res.topicos[0].chave, 'topico.beleza');
+  assert.equal(res.chamadas.length, 2); // tópico novo: avisa os 2 admins
+  const semTopico = s.chamadas.filter((c) => c.metodo !== 'createForumTopic');
+  const quieto = L.resumoSetup(semTopico, semTopico.map(() => ({ ok: true, result: { username: 'bot', title: 'G', is_forum: true } })), [], cfg);
+  assert.equal(quieto.chamadas.length, 0); // tudo ok: sem mensagem
+  const erro = L.resumoSetup(semTopico, semTopico.map(() => ({ ok: false, description: 'Unauthorized' })), [], cfg);
+  assert.equal(erro.chamadas.length, 2);
 });
 
 test('linhas geradas batem com o esquema das Data Tables', () => {
