@@ -22,7 +22,8 @@ function cfgTeste(extra) {
   ].concat(extra || []));
 }
 
-const info = (extra) => ({ ok: true, result: Object.assign({ url: URL_WH, has_custom_certificate: false, pending_update_count: 0 }, extra) });
+const info = (extra, url) => ({ ok: true, result: Object.assign({ url: url || URL_WH, has_custom_certificate: false, pending_update_count: 0 }, extra) });
+const infoG = (extra) => info(extra, URL_WH + '?bot=grupo'); // publicador: registrado com ?bot=grupo
 
 test('saúde: consulta os dois bots; sem token não consulta nada', () => {
   assert.deepEqual(L.saudeChamadas(cfgTeste()).map((c) => `${c.bot}.${c.metodo}`), ['admin.getWebhookInfo', 'grupo.getWebhookInfo']);
@@ -36,23 +37,24 @@ test('saúde: detecta erro recente, fila, URL diferente e token inválido', () =
   const cfg = cfgTeste();
   const ch = L.saudeChamadas(cfg);
   const tipos = (resp) => L.problemasSaude(ch, resp, cfg, AGORA).map((p) => p.tipo);
-  assert.deepEqual(tipos([info(), info()]), []);
+  assert.deepEqual(tipos([info(), infoG()]), []);
+  assert.deepEqual(tipos([info(), info()]), ['url_grupo']); // publicador sem ?bot=grupo
   // erro há 5 min conta; há 30 min já não conta
-  assert.deepEqual(tipos([info({ last_error_date: (AGORA - 5 * MIN) / 1000, last_error_message: 'Connection timed out' }), info()]), ['erro_admin']);
-  assert.deepEqual(tipos([info({ last_error_date: (AGORA - 30 * MIN) / 1000 }), info()]), []);
-  assert.deepEqual(tipos([info({ pending_update_count: 21 }), info({ pending_update_count: 20 })]), ['fila_admin']);
+  assert.deepEqual(tipos([info({ last_error_date: (AGORA - 5 * MIN) / 1000, last_error_message: 'Connection timed out' }), infoG()]), ['erro_admin']);
+  assert.deepEqual(tipos([info({ last_error_date: (AGORA - 30 * MIN) / 1000 }), infoG()]), []);
+  assert.deepEqual(tipos([info({ pending_update_count: 21 }), infoG({ pending_update_count: 20 })]), ['fila_admin']);
   assert.deepEqual(tipos([info(), info({ url: 'https://outro.trycloudflare.com/webhook/telegram-ofertas' })]), ['url_grupo']);
   assert.deepEqual(tipos([info(), info({ url: '' })]), ['url_grupo']);
-  assert.deepEqual(tipos([{ ok: false, error_code: 401, description: 'Unauthorized' }, info()]), ['token_admin']);
+  assert.deepEqual(tipos([{ ok: false, error_code: 401, description: 'Unauthorized' }, infoG()]), ['token_admin']);
   assert.deepEqual(tipos([info(), { error: { message: 'ECONNRESET' } }]), ['api_grupo']);
-  const texto = L.problemasSaude(ch, [info({ last_error_date: (AGORA - 3 * MIN) / 1000, last_error_message: 'Wrong response from the webhook: 502 Bad Gateway' }), info()], cfg, AGORA)[0].texto;
+  const texto = L.problemasSaude(ch, [info({ last_error_date: (AGORA - 3 * MIN) / 1000, last_error_message: 'Wrong response from the webhook: 502 Bad Gateway' }), infoG()], cfg, AGORA)[0].texto;
   assert.match(texto, /há 3 min/);
   assert.match(texto, /502 Bad Gateway/);
 });
 
 test('saúde: 1 alerta por tipo a cada 60 min e aviso quando resolve', () => {
   const ch = L.saudeChamadas(cfgTeste());
-  const ruim = [info({ last_error_date: (AGORA - MIN) / 1000, last_error_message: 'timeout' }), info()];
+  const ruim = [info({ last_error_date: (AGORA - MIN) / 1000, last_error_message: 'timeout' }), infoG()];
   // 1ª vez: alerta os 2 admins e grava o estado
   const r1 = L.avaliarSaude(ch, ruim, cfgTeste(), AGORA);
   assert.equal(r1.chamadas.length, 2);
@@ -63,34 +65,34 @@ test('saúde: 1 alerta por tipo a cada 60 min e aviso quando resolve', () => {
 
   // 5 min depois, mesmo problema: silêncio e estado igual (não grava)
   const cfg2 = cfgTeste([{ chave: 'saude.ultimo_alerta', valor: estado1 }]);
-  const r2 = L.avaliarSaude(ch, [info({ last_error_date: (AGORA + 4 * MIN) / 1000 }), info()], cfg2, AGORA + 5 * MIN);
+  const r2 = L.avaliarSaude(ch, [info({ last_error_date: (AGORA + 4 * MIN) / 1000 }), infoG()], cfg2, AGORA + 5 * MIN);
   assert.deepEqual([r2.chamadas.length, r2.linhas.length], [0, 0]);
 
   // 61 min depois do 1º alerta, ainda com problema: alerta de novo, guardando o "desde"
-  const r3 = L.avaliarSaude(ch, [info({ last_error_date: (AGORA + 60 * MIN) / 1000 }), info()], cfg2, AGORA + 61 * MIN);
+  const r3 = L.avaliarSaude(ch, [info({ last_error_date: (AGORA + 60 * MIN) / 1000 }), infoG()], cfg2, AGORA + 61 * MIN);
   assert.equal(r3.chamadas.length, 2);
   const e3 = JSON.parse(r3.linhas[0].valor);
   assert.deepEqual([e3.erro_admin.desde, e3.erro_admin.alerta], [AGORA, AGORA + 61 * MIN]);
 
   // outro problema aparece no meio: alerta só o novo
-  const r4 = L.avaliarSaude(ch, [ruim[0], info({ pending_update_count: 50 })], cfg2, AGORA + 5 * MIN);
+  const r4 = L.avaliarSaude(ch, [ruim[0], infoG({ pending_update_count: 50 })], cfg2, AGORA + 5 * MIN);
   assert.equal(r4.chamadas.length, 2);
   assert.doesNotMatch(r4.chamadas[0].payload.text, /timeout/);
   assert.match(r4.chamadas[0].payload.text, /50 atualizações/);
 
   // resolvido: avisa e limpa o estado
-  const r5 = L.avaliarSaude(ch, [info(), info()], cfg2, AGORA + 20 * MIN);
+  const r5 = L.avaliarSaude(ch, [info(), infoG()], cfg2, AGORA + 20 * MIN);
   assert.equal(r5.chamadas.length, 2);
   assert.match(r5.chamadas[0].payload.text, /resolvido/);
   assert.match(r5.chamadas[0].payload.text, /timeout/);
   assert.deepEqual(r5.linhas, [{ chave: 'saude.ultimo_alerta', valor: '{}' }]);
 
   // tudo ok e estado vazio: nada
-  const r6 = L.avaliarSaude(ch, [info(), info()], cfgTeste([{ chave: 'saude.ultimo_alerta', valor: '{}' }]), AGORA);
+  const r6 = L.avaliarSaude(ch, [info(), infoG()], cfgTeste([{ chave: 'saude.ultimo_alerta', valor: '{}' }]), AGORA);
   assert.deepEqual([r6.chamadas.length, r6.linhas.length, r6.resposta.ok], [0, 0, true]);
 
   // token do bot de aprovação inválido: o alerta não chega pelo Telegram → resposta ok:false (o vigia avisa o healthchecks.io)
-  const r7 = L.avaliarSaude(ch, [{ ok: false, error_code: 401, description: 'Unauthorized' }, info()], cfgTeste(), AGORA);
+  const r7 = L.avaliarSaude(ch, [{ ok: false, error_code: 401, description: 'Unauthorized' }, infoG()], cfgTeste(), AGORA);
   assert.equal(r7.resposta.ok, false);
 
   // estado corrompido não quebra
