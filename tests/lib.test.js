@@ -89,7 +89,7 @@ test('parseOferta: erros claros', () => {
   const cfg = cfgTeste();
   const r = L.parseOferta('/oferta moda\nhttps://amzn.to/x', cfg);
   assert.equal(r.ok, false);
-  assert.ok(r.erros.some((e) => e.includes('Categoria')));
+  assert.ok(r.erros.some((e) => e.includes('Faltou a categoria')));
   assert.ok(r.erros.some((e) => e.includes('título')));
   assert.ok(r.erros.some((e) => e.includes('preço')));
   assert.ok(r.erros.some((e) => e.includes('Link curto')));
@@ -1055,4 +1055,42 @@ test('min90_origem e min90_dias para a Marketing', () => {
   assert.equal(dec.oferta.min90_origem, 'keepa');
   assert.equal(dec.oferta.min90_dias, 90);
   assert.deepEqual(L.colunasInvalidas('bfx_ofertas', dec.update), []);
+});
+
+test('link curto (a.co) e /oferta de admin dentro do tópico do grupo', () => {
+  const cfg = cfgTeste([{ chave: 'topico.tech', valor: '7' }]);
+  const noTopico = (texto, de) => ({ message: { message_id: 50, message_thread_id: 7, text: texto, chat: { id: -1001234567890, type: 'supergroup', is_forum: true }, from: { id: de || 111 } } });
+  const body = noTopico('/oferta https://a.co/d/084jujzC\npreço 19,90\nFio dental\nref90 21,90 https://f');
+  assert.deepEqual(L.linkCurtoDoUpdate(body, cfg), { curto: 'https://a.co/d/084jujzC', url: 'https://a.co/d/084jujzC' });
+  assert.equal(L.linkCurtoDoUpdate(noTopico('oi https://a.co/d/x'), cfg), null); // só no /oferta
+  assert.equal(L.linkCurtoDoUpdate(noTopico('/oferta casa https://www.amazon.com.br/dp/B0ABCDEF12'), cfg), null);
+  assert.match(L.linkCurtoDoUpdate(body, cfgTeste([{ chave: 'link_curto_api', valor: 'http://mock/' }])).url, /^http:\/\/mock\/curto\?u=https%3A%2F%2Fa\.co/);
+
+  const resp = { statusCode: 301, headers: { location: 'https://www.amazon.com.br/dp/B0CURTO123?ref_=x' } };
+  const e = L.expandirUpdate(body, 'https://a.co/d/084jujzC', resp);
+  assert.equal(e.expandido, 'https://www.amazon.com.br/dp/B0CURTO123?ref_=x');
+  assert.match(e.body.message.text, /^\/oferta https:\/\/www\.amazon\.com\.br\/dp\/B0CURTO123/);
+  assert.match(body.message.text, /a\.co/); // não altera o original
+  assert.equal(L.expandirUpdate(body, 'https://a.co/d/084jujzC', { statusCode: 404, headers: {} }).body, body);
+  assert.equal(L.expandirUpdate(body, 'https://a.co/d/x', { headers: { location: 'https://amzn.to/y' } }).expandido, '');
+
+  // Admin no tópico Tech: apaga do grupo e vira /oferta tech no privado (card pelo bot de aprovação)
+  const r = L.classificarUpdate(e.body, HS, cfg, AGORA, { bot: 'grupo' });
+  assert.equal(r.rota, 'oferta');
+  assert.equal(r.chat_id, 111);
+  assert.equal(r.oferta.categoria, 'tech');
+  assert.equal(r.oferta.produto_id, 'amz_B0CURTO123');
+  assert.deepEqual(r.imediatas.map((c) => [c.bot, c.metodo, c.payload.message_id]), [['grupo', 'deleteMessage', 50]]);
+  // categoria escrita vale mais que a do tópico
+  assert.equal(L.classificarUpdate(noTopico('/oferta casa https://www.amazon.com.br/dp/B0ABCDEF12\nT\npreço 10'), HS, cfg, AGORA, { bot: 'grupo' }).oferta.categoria, 'casa');
+  // sem título e preço: devolve o /oferta pronto para completar
+  const falta = L.classificarUpdate(noTopico('/oferta https://www.amazon.com.br/dp/B0ABCDEF12'), HS, cfg, AGORA, { bot: 'grupo' });
+  assert.equal(falta.chamadas[0].bot, 'admin');
+  assert.match(falta.chamadas[0].payload.text, /Copie, complete e mande:\n\/oferta tech https:\/\/www\.amazon\.com\.br\/dp\/B0ABCDEF12\nTítulo do produto\npreço 0,00/);
+  assert.equal(falta.imediatas.length, 1);
+  // membro comum mandando /oferta no grupo: não vira oferta
+  assert.notEqual(L.classificarUpdate(noTopico('/oferta https://www.amazon.com.br/dp/B0ABCDEF12', 999), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'oferta');
+  // no privado, sem categoria: mostra o comando pronto por categoria
+  const semCat = L.classificarUpdate(privado('/oferta https://www.amazon.com.br/dp/B0ABCDEF12\nT\npreço 10', 111), HS, cfg, AGORA);
+  assert.match(semCat.chamadas[0].payload.text, /Faltou a categoria[\s\S]*\/oferta tech https:\/\/www\.amazon\.com\.br\/dp\/B0ABCDEF12/);
 });

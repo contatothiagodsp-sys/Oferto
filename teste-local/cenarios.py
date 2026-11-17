@@ -445,6 +445,24 @@ update({'update_id': 12, 'message': {'message_id': 78, 'text': 'quanto?', 'chat'
                                      'reply_to_message': {'message_id': 300, 'text': plano}}}, espera=4)
 checar('resposta sem valor explica o formato', any('responda ao card' in c['payload'].get('text', '') for c in chamadas()))
 
+print('16) Admin manda /oferta com link curto (a.co) dentro do tópico Tech')
+config_set('link_curto_api', 'http://127.0.0.1:8787')
+tth = int(linhas('bfx_config', "where chave = 'topico.tech'")[0]['valor'])
+limpar_log()
+update({'update_id': 30, 'message': {'message_id': 961, 'message_thread_id': tth, 'text': '/oferta https://a.co/d/084jujzC',
+                                     'chat': {'id': gid, 'type': 'supergroup', 'is_forum': True}, 'from': {'id': 111}}}, bot='grupo', espera=10)
+cs = chamadas()
+checar('abriu o link curto', any(c['api'] == 'curto' and c.get('u') == 'https://a.co/d/084jujzC' for c in cs))
+checar('apagou o /oferta do grupo', any(c['metodo'] == 'deleteMessage' and c['token'] == 'TOKGRUPO' and c['payload'].get('message_id') == 961 for c in cs))
+cid = id_do_card(cs)
+card = card_de(cs, cid)
+checar('card no privado do admin pelo bot de aprovação', cid and any(c['metodo'] == 'sendMessage' and c['token'] == 'TOKADMIN' and c['payload'].get('chat_id') == 111
+                                                                      and cid in c['payload'].get('text', '') for c in cs))
+of = linhas('bfx_ofertas', f"where oferta_id = '{cid}'") if cid else []
+checar('categoria do tópico (tech) e ASIN do link completo', len(of) == 1 and of[0]['categoria'] == 'tech' and of[0]['produto_id'] == 'amz_B0CURTO123')
+checar('nada publicado no grupo', not any(c['metodo'] == 'sendMessage' and c['token'] == 'TOKGRUPO' for c in cs))
+config_set('link_curto_api', '')
+
 c = sqlite3.connect(DB)
 # A recusa do túnel (7b) é um erro esperado.
 erros = c.execute("select count(*) from execution_entity where status != 'success' and not (workflowId = 'wfTunel000000001' and status = 'error')").fetchone()[0]

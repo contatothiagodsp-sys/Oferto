@@ -316,10 +316,40 @@ function wfRouter() {
   }, 0, 600);
   configNodes(wf, 220, 600);
   wf.link('Webhook Telegram', 'Ler config');
+  // Link curto no /oferta (a.co, amzn.to, s.shopee…): abre sem seguir o redirecionamento e usa o Location.
+  wf.add(code('Link curto?', `
+const w = $('Webhook Telegram').first().json;
+return [{ json: LIB.linkCurtoDoUpdate(w.body, cfg) || {} }];`, { lib: true }), 660, 380);
+  wf.add(switchExpr('Abrir link curto?', '$json.url ? 0 : 1', 2), 880, 380);
+  wf.add({
+    name: 'Abrir link curto', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
+    notes: 'Abre o link curto da loja sem seguir o redirecionamento: o endereço completo vem no cabeçalho Location.',
+    parameters: {
+      method: 'GET',
+      url: '={{ $json.url }}',
+      sendHeaders: true,
+      specifyHeaders: 'json',
+      jsonHeaders: '={{ JSON.stringify({ "User-Agent": "Mozilla/5.0 (compatible; OfertoBot/1.0)" }) }}',
+      options: {
+        redirect: { redirect: { followRedirects: false } },
+        response: { response: { fullResponse: true, neverError: true, responseFormat: 'text' } },
+        timeout: 10000,
+      },
+    },
+  }, 1100, 300);
+  wf.chain('Config', 'Link curto?', 'Abrir link curto?');
+  wf.link('Abrir link curto?', 'Abrir link curto', 0);
   wf.add(code('Classificar', `
 const w = $('Webhook Telegram').first().json;
-return [{ json: LIB.classificarUpdate(w.body, w.headers, cfg, Date.now(), w.query) }];`, { lib: true }), 660, 600);
-  wf.link('Config', 'Classificar');
+const lc = $('Link curto?').first().json;
+const body = lc.curto && $('Abrir link curto').isExecuted ? LIB.expandirUpdate(w.body, lc.curto, $('Abrir link curto').first().json).body : w.body;
+return [{ json: LIB.classificarUpdate(body, w.headers, cfg, Date.now(), w.query) }];`, { lib: true }), 660, 600);
+  wf.link('Abrir link curto', 'Classificar');
+  wf.link('Abrir link curto?', 'Classificar', 1);
+  // Chamadas imediatas de qualquer rota (ex.: apagar do grupo o /oferta que um admin mandou lá).
+  wf.add(itens('Chamadas imediatas', '$json.imediatas'), 880, 780);
+  wf.add(httpTelegram('Telegram (imediatas)'), 1100, 780);
+  wf.chain('Classificar', 'Chamadas imediatas', 'Telegram (imediatas)');
   wf.add(switchExpr('Rota', "({ oferta: 0, callback: 1, membro: 2, convite: 3, responder: 4, pospub: 5, start: 6, sugestao: 7 })[$json.rota] ?? 8", 9), 880, 600);
   wf.link('Classificar', 'Rota');
 

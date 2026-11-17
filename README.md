@@ -189,6 +189,8 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 |---|---|
 | `/oferta <categoria> [top]` + linhas | Cria a oferta e manda o card. Categorias: `casa`, `beleza`, `bebe`, `tech`. `top` também publica no Top do Dia. |
 | `/oferta <categoria> <link da Amazon>` | Formato curto (precisa da Keepa ligada, passo 9). Veja abaixo. |
+| Link de compartilhar do app (`a.co/…`, `amzn.to/…`) | Aceito: o bot abre o link e usa o endereço completo. |
+| `/oferta` mandado **dentro de um tópico** do grupo (por admin) | O bot apaga a mensagem do grupo e manda o card no seu privado. Sem categoria na 1ª linha, vale a do tópico. |
 | `/convite <categoria> <nome>` | Cria um **link de convite nomeado** (ex.: `/convite beleza meta_beleza_v1`). Use um link por anúncio: o relatório mostra entradas, saídas e retenção por link. |
 | `/links` | Lista os **links de divulgação por tópico** (`t.me/<bot publicador>?start=beleza`). Para campanha, acrescente `_nome`: `?start=beleza_meta1`. |
 | `/id` | Mostra seu ID. |
@@ -216,7 +218,7 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 - Quando o preço vem da Keepa, o card avisa: "💡 preço da Keepa (DD/MM HH:MM): confira na loja antes de aprovar". A Keepa atualiza o preço de tempos em tempos, então **abra a loja antes de aprovar**.
 - Se a Keepa falhar (sem tokens, chave inválida, produto sem dados), o card sai com o que você digitou e mostra o aviso, por exemplo "⚠️ Keepa sem tokens". Se faltar título ou preço, o bot pede as linhas que faltam.
 - A Keepa só é consultada quando falta alguma informação: com título, preço, `ref90` e `img` digitados, nenhum token é gasto.
-- Links curtos (`amzn.to`, `a.co`) continuam recusados: abra o link e copie o endereço completo da página (com `/dp/`).
+- Links curtos do app (`a.co`, `amzn.to`) funcionam: o bot abre o link e usa o endereço completo.
 
 ### Corrigir o ref90 respondendo ao card
 

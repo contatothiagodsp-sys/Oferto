@@ -32,6 +32,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `shopee.max_cards` | `8` | Máximo de cards de aprovação por coleta |
 | `shopee.enviar_sem_ref` | `sim` | sim/nao: enviar candidatas sem referência de 90 dias (para você informar o ref90) |
 | `telegram_api` | `https://api.telegram.org` | Endereço da Bot API (não altere; usado em testes) |
+| `link_curto_api` |  | Deixe vazio (usado só em testes para abrir links curtos a.co/amzn.to) |
 | `amazon.tag_padrao` |  | Tag usada quando não há tag específica (perde a atribuição por plataforma) |
 | `tunel.dominio` |  | Servidor local: domínio próprio aceito pelo workflow 90 · Túnel além de trycloudflare.com e ngrok (ex.: bot.seudominio.com.br). Vazio = só esses |
 | `saude.ultimo_alerta` |  | Servidor local: gerado pelo workflow 91 · Saúde (anti-spam dos alertas). Não precisa mexer |

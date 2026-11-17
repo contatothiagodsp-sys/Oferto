@@ -34,6 +34,14 @@ http.createServer((req, res) => {
     const m = req.url.match(/^\/bot([^/]+)\/(\w+)/);
     if (req.url.startsWith('/mock/barrar')) { barrar = Number(req.url.split('/')[3] || 1); res.end('ok'); return; }
     if (req.url.startsWith('/mock/erro-webhook/')) { erroWebhook = req.url.endsWith('/on'); res.end('ok'); return; }
+    if (req.url.startsWith('/curto?')) {
+      // Link curto (a.co): responde 301 com o endereço completo no Location, como a Amazon.
+      const u = new URL(req.url, 'http://mock').searchParams.get('u') || '';
+      fs.appendFileSync(LOG, JSON.stringify({ api: 'curto', u }) + '\n');
+      if (/a\.co\//.test(u)) { res.writeHead(301, { Location: 'https://www.amazon.com.br/dp/B0CURTO123?ref_=cm_sw_r_apan' }); res.end(); }
+      else { res.writeHead(404); res.end('not found'); }
+      return;
+    }
     if (req.url.startsWith('/product?')) {
       // Keepa: GET /product?key=K&domain=12&asin=X&stats=90&history=0. ASIN B0SEMTOKEN = sem tokens (429).
       const q = new URL(req.url, 'http://mock').searchParams;
