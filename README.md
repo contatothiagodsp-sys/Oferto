@@ -7,7 +7,7 @@ Automação da seção 4 do plano ("publicar uma vez, distribuir em quatro"):
         → cálculo do menor preço em 90 dias + selo ✓ Desconto real
         → card de aprovação no seu Telegram (1 clique)
         → post automático no tópico da categoria (supergrupo do Telegram)
-        → textos prontos para Canal WhatsApp, Grupo WhatsApp (relâmpago) e X
+        → textos prontos para Canal WhatsApp, Grupo WhatsApp (alerta de preço) e X
         → 1 link por plataforma, com sub-ID/tag próprio
 ```
 
@@ -41,7 +41,7 @@ Os workflows são os mesmos nas duas opções. No servidor local, os passos 2 e 
   - Motivo: no n8n Cloud cada evento recebido conta como **uma execução**. Um bot admin do grupo recebe todas as mensagens do tópico "Conversa"; com dois bots, o publicador só recebe entradas e saídas. Dá para usar um bot só (deixe `bot_token_grupo` vazio), mas não recomendo.
 - **Configuração e dados** ficam em Data Tables do n8n (`bfx_config`, `bfx_precos`, `bfx_ofertas`, `bfx_links`, `bfx_posts`, `bfx_convites`, `bfx_entradas`). Você edita a config direto no painel.
   - Não crie outras tabelas com nomes que contenham esses trechos: o n8n procura tabela "por nome" com busca do tipo *contém*.
-- **Privacidade (LGPD):** quem entra ou sai do grupo é gravado só como um código irreversível (`user_hash`), nunca com ID, nome ou telefone.
+- **Privacidade (LGPD):** de quem entra ou sai do grupo, o bot grava só um código pseudonimizado (`user_hash`), o nome do link de convite e a data, nunca ID, nome, @ ou telefone. A mensagem fixada 🔒 Segurança e privacidade conta isso aos membros e diz como pedir a exclusão (falar com um admin).
 
 ---
 
@@ -86,7 +86,7 @@ Preencha agora:
 1. Crie um grupo e, em **Configurações do grupo**, ative **Tópicos**.
 2. Adicione o **bot publicador** como **administrador** com estas permissões:
    - **Alterar informações do grupo**: para escrever a descrição;
-   - **Fixar mensagens**: para fixar as regras e os textos;
+   - **Fixar mensagens**: para fixar o 👋 Comece aqui, a segurança e os textos dos tópicos;
    - **Gerenciar tópicos**: para criar, renomear e fechar tópicos;
    - **Convidar usuários via link**: para o `/convite`;
    - **Apagar mensagens**: para apagar os avisos automáticos ("fulano entrou", "fixou uma mensagem", "fechou o tópico"). Para manter os avisos, mude `grupo.limpar_avisos` para `nao`.
@@ -95,7 +95,8 @@ Preencha agora:
 5. Rode o **00 · Setup** pela 3ª vez. Ele:
    - cria os tópicos 🔥 Top do Dia, 🏠 Casa & Eletro, 🎁 Beleza & Presentes, 👶 Bebê & Família e 💻 Tech e grava os IDs na config;
    - escreve a descrição do grupo e renomeia o **General** para **💬 Conversa**;
-   - publica e fixa as regras e a mensagem de segurança (com o critério do selo e o aviso de afiliado) no Conversa, e um texto de apresentação em cada tópico;
+   - publica e fixa no Conversa a mensagem 🔒 Segurança e privacidade (critério do selo, dados que guardamos e aviso de afiliado) e, por último, o **👋 Comece aqui** (boas-vindas, link direto para cada tópico, as 4 regras e o convite para chamar amigos), que fica no topo;
+   - fixa em cada tópico um texto com o que o membro encontra ali e quantas ofertas esperar por dia;
    - **fecha** os tópicos de oferta: só admins e o bot postam neles;
    - manda no seu Telegram o resumo "🧩 Grupo arrumado" (e o "⚙️ Setup" só quando há algo a fazer).
 6. A arrumação roda **uma vez**, mesmo se algum passo falhar, para nunca duplicar mensagens. O que falhar você faz à mão no app. Valores de `grupo.textos`:
@@ -116,9 +117,25 @@ img https://link-da-imagem.jpg
 cupom BF10
 ```
 
-As linhas `img` e `cupom` são opcionais. Com cupom, informe em `preço` o valor **já com o cupom**; o post mostra o código para copiar com um toque.
+As linhas `img` e `cupom` são opcionais. Com cupom, informe em `preço` o valor **já com o cupom**; o post mostra o código para copiar com um toque e avisa "preço com cupom da loja, sujeito a limite e validade".
 
-Você deve receber o card. Clique **✅ Aprovar** e confira o post no tópico Casa & Eletro e as mensagens com os textos para WhatsApp e X.
+Você deve receber o card. Clique **✅ Aprovar** e confira o post no tópico Casa & Eletro e as mensagens com os textos para WhatsApp e X. O post sai assim:
+
+```
+🏠 Casa & Eletro · #publi
+Air Fryer Mondial 4L
+
+💰 R$ 349,90 na Amazon
+🕒 Preço e disponibilidade de 24/11 às 12:30, sujeitos a alteração. Frete: confira na loja.
+✅ Desconto real: 12% abaixo do menor preço dos últimos 90 dias (R$ 399,90)
+🎟️ Cupom: BF10 (toque para copiar)
+Preço com cupom da loja, sujeito a limite e validade.
+
+👉 Ver na Amazon
+Contém link de afiliado. Como Associado da Amazon, ganhamos com compras qualificadas.
+[🛒 Ver na Amazon]
+[📣 Chamar amigos]   ← só com grupo_link preenchido
+```
 Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e não mostra o botão de aprovar.
 
 ### 8. Programas de afiliados
@@ -126,6 +143,7 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 - **Amazon:** no Associates Central, em **Gerenciar IDs de rastreamento**, crie uma tag por **categoria × plataforma** (16 tags; ex.: `ofertocasatg-20`, `ofertocasawac-20`…).
   - Preencha as linhas `amazon.tag.casa_tg`, `amazon.tag.casa_wac` etc.
   - `amazon.tag_padrao` serve de fallback, mas aí você perde a separação por plataforma.
+  - `amazon.mostrar_preco` (padrão `sim`): com `nao`, os posts da Amazon não mostram valor nem %; dizem "no menor preço dos últimos 90 dias" e "👉 Veja o preço atual na Amazon". Use se os termos exigirem preço vindo da API oficial.
 - **Shopee:** com acesso à **Affiliate Open API**, preencha `shopee.app_id` e `shopee.secret`. Ajuste as palavras-chave em `shopee.busca.<categoria>`, separadas por `;`. Depois, **Publish** no **02 · Coleta Shopee**.
 - **Mercado Livre:** sem API. Gere os links no gerador de links do ML e inclua no `/oferta`, um por plataforma:
   ```
@@ -152,17 +170,17 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 ### Botões do card
 
 - **✅ Aprovar** publica no tópico da categoria e manda 3 textos prontos: Canal WhatsApp, post do X e 1ª resposta do X (com o link).
-- **⚡ Relâmpago** faz o mesmo e manda também o texto do **Grupo WhatsApp**.
+- **⚡ Relâmpago** faz o mesmo, abre o post do Telegram com "⚡ ALERTA DE PREÇO" e manda também o texto do **Grupo WhatsApp** (alerta de preço, sem prometer escassez).
   - **Cole** esse texto no grupo em vez de encaminhar do canal: o encaminhamento leva o link do canal (`wac`) e você perde a medição do grupo (`wag`).
 - **⭐ Aprovar + Top do Dia** publica também no tópico Top do Dia.
 - **✏️ Editar** devolve o `/oferta` preenchido para você corrigir (normalmente o `ref90`) e reenviar.
 - **❌ Rejeitar** descarta a oferta.
 
-Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: use **✏️ Editar** e informe o `ref90`.
+Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: o card traz um link de busca no Google Shopping para você achar a referência; use **✏️ Editar** e informe o `ref90`. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
 
 ### Critério público do selo (para fixar nos grupos e canais)
 
-> **✓ Desconto real:** o preço está **igual ou abaixo do menor preço dos últimos 90 dias**. A referência vem do nosso histórico, quando ele já cobre 90 dias, ou de um comparador de preços citado como fonte. Se houver as duas, vale a mais baixa. Todo post traz a data e a hora do preço, e o preço pode mudar.
+> **✅ Como conferimos o preço:** só publicamos se o preço estiver **igual ou abaixo do menor preço dos últimos 90 dias**. A referência vem do nosso histórico ou de um comparador de preços. Se houver as duas, vale a mais baixa. Com desconto de 1% ou mais, o post diz "X% abaixo do menor preço dos últimos 90 dias (R$ Y)"; com 0%, "igual ao menor preço dos últimos 90 dias". Se o histórico for mais curto, "menor preço desde DD/MM". Todo post traz a data e a hora do preço, e o preço pode mudar.
 
 ### Sub-IDs gerados (seção 5 do plano)
 

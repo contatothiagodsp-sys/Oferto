@@ -171,14 +171,99 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
   assert.match(tg, /12% abaixo do menor preço dos últimos 90 dias \(R\$ 399,90\)/);
   assert.match(tg, /24\/11 às 12:30/);
   assert.ok(tg.length < 1024);
-  assert.match(L.textoWhatsAppCanal(oferta, 'https://l/wac', cfg), /_Contém link de afiliado\._/);
-  assert.match(L.textoWhatsAppGrupo(oferta, 'https://l/wag', cfg), /RELÂMPAGO[\s\S]*afiliado/);
+  assert.match(L.textoWhatsAppCanal(oferta, 'https://l/wac', cfg), /_Contém link de afiliado\. Como Associado da Amazon, ganhamos com compras qualificadas\._/);
+  const wag = L.textoWhatsAppGrupo(oferta, 'https://l/wag', cfg);
+  assert.match(wag, /^⚡ \*ALERTA DE PREÇO\*[\s\S]*afiliado/);
+  assert.doesNotMatch(wag, /RELÂMPAGO|acabar|corra|últimas/i, 'sem urgência falsa');
   const x = L.textoX(oferta, cfg);
-  assert.ok(x.length <= 280, `X com ${x.length}`);
-  assert.match(x, /#publi/);
+  assert.ok(x.length <= 280 && L.tamanhoX(x) <= 280, `X com ${L.tamanhoX(x)}`);
+  assert.match(x, /^#publi/);
   assert.match(L.textoXResposta('https://l/x'), /afiliado/);
   assert.doesNotMatch(tg, /Cupom/);
   assert.deepEqual(L.botaoCompra(oferta, 'https://l/tg'), { inline_keyboard: [[{ text: '🛒 Ver na Amazon', url: 'https://l/tg' }]] });
+});
+
+test('textos: #publi na 1ª linha, aviso de preço, selo honesto e cobertura do histórico', () => {
+  const cfg = cfgTeste();
+  const base = { titulo: 'Air Fryer', preco: 349.9, min90: 399.9, desconto_pct: 12.5, loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString() };
+  const todos = (o) => [L.textoTelegram(o, 'https://l', cfg), L.textoWhatsAppCanal(o, 'https://l', cfg), L.textoWhatsAppGrupo(o, 'https://l', cfg), L.textoX(o, cfg)];
+  for (const t of todos(base)) {
+    assert.match(t.split('\n')[0], /#publi/);
+    assert.match(t, /24\/11 às 12:30/);
+  }
+  assert.match(L.textoTelegram(base, 'https://l', cfg), /Preço e disponibilidade de 24\/11 às 12:30, sujeitos a alteração\. Frete: confira na loja\./);
+  assert.match(L.textoTelegram(base, 'https://l', cfg), /Como Associado da Amazon, ganhamos com compras qualificadas\./);
+  assert.doesNotMatch(L.textoTelegram(Object.assign({}, base, { loja: 'shopee' }), 'https://l', cfg), /Associado da Amazon/);
+  // 0%: sem a palavra "desconto"
+  const zero = Object.assign({}, base, { preco: 399.9, desconto_pct: 0 });
+  for (const t of todos(zero)) {
+    assert.doesNotMatch(t, /desconto/i, t);
+    assert.match(t, /igual ao menor preço dos últimos 90 dias/i);
+  }
+  // histórico com menos de 90 dias: "desde DD/MM"; ausente = 90
+  const curto = Object.assign({}, base, { min90_dias: 56, min90_origem: 'keepa' });
+  for (const t of todos(curto)) {
+    assert.match(t, /12% abaixo do menor preço desde 29\/09/);
+    assert.doesNotMatch(t, /90 dias|keepa/i);
+  }
+  assert.equal(L.fraseDesconto(Object.assign({}, base, { min90_dias: 90 }), cfg), '12% abaixo do menor preço dos últimos 90 dias (R$ 399,90)');
+  // relâmpago no Telegram
+  assert.match(L.textoTelegram(Object.assign({}, base, { relampago: true }), 'https://l', cfg).split('\n')[0], /⚡ <b>ALERTA DE PREÇO<\/b>.*#publi/);
+  // X: link na resposta, com #publi e a frase da Amazon
+  assert.match(L.textoXResposta('https://www.amazon.com.br/dp/B0X?tag=a-20'), /#publi[\s\S]*Associado da Amazon/);
+  assert.doesNotMatch(L.textoXResposta('https://s.shopee.com.br/x', { loja: 'shopee' }), /Amazon/);
+});
+
+test('amazon.mostrar_preco = nao: posts da Amazon sem valor nem %', () => {
+  const cfg = cfgTeste([{ chave: 'amazon.mostrar_preco', valor: 'nao' }]);
+  assert.equal(cfg.amazon.mostrar_preco, false);
+  assert.equal(cfgTeste().amazon.mostrar_preco, true);
+  const o = { titulo: 'Air Fryer', preco: 349.9, min90: 399.9, desconto_pct: 12.5, loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString() };
+  const ts = [L.textoTelegram(o, 'https://l', cfg), L.textoWhatsAppCanal(o, 'https://l', cfg), L.textoWhatsAppGrupo(o, 'https://l', cfg), L.textoX(o, cfg)];
+  for (const t of ts) {
+    assert.doesNotMatch(t, /R\$|%/, t);
+    assert.match(t, /no menor preço dos últimos 90 dias/i);
+    assert.match(t, /Veja o preço atual na Amazon/);
+  }
+  const share = L.botaoCompra(o, 'https://l', Object.assign({}, cfg, { telegram: Object.assign({}, cfg.telegram, { grupo_link: 'https://t.me/+g' }) }));
+  assert.doesNotMatch(decodeURIComponent(share.inline_keyboard[1][0].url), /R\$/);
+  // outras lojas continuam com preço
+  assert.match(L.textoTelegram(Object.assign({}, o, { loja: 'shopee' }), 'https://l', cfg), /R\$ 349,90/);
+});
+
+test('botaoCompra: compra + Chamar amigos (só com grupo_link)', () => {
+  const o = { titulo: 'Air Fryer & Cia', preco: 349.9, loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString() };
+  assert.deepEqual(L.botaoCompra(o, 'https://l/tg', cfgTeste()), { inline_keyboard: [[{ text: '🛒 Ver na Amazon', url: 'https://l/tg' }]] });
+  const cfg = cfgTeste([{ chave: 'grupo_link', valor: 'https://t.me/+AbC' }]);
+  const b = L.botaoCompra(o, 'https://l/tg', cfg).inline_keyboard;
+  assert.equal(b.length, 2);
+  assert.equal(b[1][0].text, '📣 Chamar amigos');
+  const m = b[1][0].url.match(/^https:\/\/t\.me\/share\/url\?url=([^&]+)&text=(.+)$/);
+  assert.ok(m, b[1][0].url);
+  assert.equal(decodeURIComponent(m[1]), 'https://t.me/+AbC');
+  assert.match(decodeURIComponent(m[2]), /Air Fryer & Cia por R\$ 349,90/);
+});
+
+test('textoEncerrado: riscado, sem link de compra', () => {
+  const cfg = cfgTeste();
+  const o = { titulo: 'Air Fryer <4L>', preco: 349.9, min90: 399.9, desconto_pct: 12.5, loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString() };
+  const t = L.textoEncerrado(o, cfg, AGORA + 100 * 60000);
+  assert.match(t, /^⛔ <b>Oferta encerrada às 14:10<\/b> · o preço mudou/);
+  assert.match(t, /<s>Air Fryer &lt;4L&gt;<\/s>/);
+  assert.doesNotMatch(t, /href|https?:/);
+  assert.match(L.textoEncerrado(o, cfg, AGORA + 2 * DIA), /encerrada em 26\/11 às 12:30/);
+});
+
+test('card: origem do min90, cobertura e busca no comparador quando sem_ref', () => {
+  const cfg = cfgTeste();
+  const o = { oferta_id: 'o1', titulo: 'Fone X', preco: 99.9, min90: 129.9, desconto_pct: 23.1, loja: 'amazon', categoria: 'casa', selo: 'ok', url: 'https://a', min90_origem: 'keepa', min90_dias: 40, data: new Date(AGORA).toISOString() };
+  const ok = L.cardAprovacao(o, cfg, []).text;
+  assert.match(ok, /origem: Keepa/);
+  assert.match(ok, /menor preço desde 15\/10/);
+  assert.doesNotMatch(ok, /google\.com/);
+  const sem = L.cardAprovacao(Object.assign({}, o, { selo: 'sem_ref', min90: null, desconto_pct: null, min90_origem: null, min90_dias: null }), cfg, []).text;
+  assert.match(sem, /https:\/\/www\.google\.com\/search\?tbm=shop&amp;q=Fone%20X/);
+  assert.match(L.cardAprovacao(Object.assign({}, o, { min90_origem: 'historico' }), cfg, []).text, /origem: histórico próprio/);
 });
 
 test('cupom: lido no /oferta, guardado nos links manuais e mostrado nos textos', () => {
@@ -187,9 +272,11 @@ test('cupom: lido no /oferta, guardado nos links manuais e mostrado nos textos',
   assert.ok(r.ok, JSON.stringify(r.erros));
   assert.equal(r.oferta.links_manuais.cupom, 'BF<10>');
   const o = Object.assign({}, r.oferta, { links_manuais: JSON.stringify(r.oferta.links_manuais), min90: 349.9, desconto_pct: 14.3, data: new Date(AGORA).toISOString() });
-  assert.match(L.textoTelegram(o, 'https://l', cfg), /<code>BF&lt;10&gt;<\/code>/);
-  assert.match(L.textoWhatsAppCanal(o, 'https://l', cfg), /Cupom: \*BF<10>\*/);
-  assert.match(L.textoX(o, cfg), /Cupom: BF<10>/);
+  assert.match(L.textoTelegram(o, 'https://l', cfg), /<code>BF&lt;10&gt;<\/code>[\s\S]*Preço com cupom da loja, sujeito a limite e validade/);
+  assert.match(L.textoWhatsAppCanal(o, 'https://l', cfg), /Cupom: \*BF<10>\*\n_Preço com cupom da loja, sujeito a limite e validade\._/);
+  const x = L.textoX(o, cfg);
+  assert.match(x, /Cupom BF<10>: preço com cupom da loja, sujeito a limite e validade/);
+  assert.ok(L.tamanhoX(x) <= 280);
   assert.match(L.comandoEdicao(o), /cupom BF<10>/);
   // o cupom não vira link de plataforma
   const planos = L.planejarLinks(Object.assign({}, o, { oferta_id: 'o1' }), cfg, AGORA);
@@ -449,10 +536,27 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   assert.ok(desc.length <= 255 && desc.includes('afiliado'), desc);
   assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => /afiliado/i.test(c.payload.text)));
   assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => c.payload.text.length <= 4096));
+  // Conversa: "Comece aqui" é a última enviada (e fixada) para ficar no topo; tem link de cada tópico.
+  const conversa = a.filter((c) => c.metodo === 'sendMessage' && !c.payload.message_thread_id);
+  assert.deepEqual(conversa.map((c) => c.ref.chave), ['seguranca', 'comece']);
+  const comece = conversa[1].payload.text;
+  assert.match(comece, /^👋 <b>Comece aqui<\/b>/);
+  for (const [i, k] of Object.keys(cfg.categorias).entries()) assert.ok(comece.includes(`href="https://t.me/c/1234567890/${200 + i}"`), k);
+  assert.match(comece, /🔕/);
+  assert.match(comece, /sugestão/);
+  const seg = conversa[0].payload.text;
+  assert.doesNotMatch(seg, /Não coletamos/);
+  assert.match(seg, /código[\s\S]*link de convite[\s\S]*data[\s\S]*admin/);
+  assert.match(seg, /Como Associado da Amazon, ganhamos com compras qualificadas\./);
+  assert.match(a.find((c) => c.ref.chave === 'top').payload.text, /Até 5 ofertas por dia/);
 
   const respA = a.map((c, i) => (c.metodo === 'sendMessage' ? { ok: true, result: { message_id: 900 + i } } : { ok: true, result: true }));
   const b = L.fixarChamadas(a, respA, cfg);
   assert.equal(b.length, 2 + Object.keys(cfg.categorias).length);
+  const idComece = respA[a.findIndex((c) => c.ref && c.ref.chave === 'comece')].result.message_id;
+  const idSeg = respA[a.findIndex((c) => c.ref && c.ref.chave === 'seguranca')].result.message_id;
+  const ordemPin = b.map((c) => c.payload.message_id);
+  assert.ok(ordemPin.indexOf(idSeg) < ordemPin.indexOf(idComece), 'Comece aqui é fixada depois da segurança');
   assert.ok(b.every((c) => c.metodo === 'pinChatMessage' && c.payload.disable_notification));
   const ok = L.resumoGrupo(a.concat(b), respA.concat(b.map(() => ({ ok: true, result: true }))), cfg);
   assert.equal(ok.config[0].valor, 'ok');
@@ -475,6 +579,13 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   const up = L.arrumarGrupoChamadas(cfg, criados, true);
   assert.ok(!up.some((c) => ['sendMessage', 'pinChatMessage', 'closeForumTopic'].includes(c.metodo)));
   assert.equal(up.filter((c) => c.metodo === 'editMessageText').length, Object.keys(ids).length);
+  // compatibilidade: grupo arrumado antes, com a chave antiga 'regras', recebe o texto do "Comece aqui"
+  cfg.telegram.grupo_mensagens = { regras: 5, seguranca: 6 };
+  const antigo = L.arrumarGrupoChamadas(cfg, criados, true).filter((c) => c.metodo === 'editMessageText');
+  assert.equal(antigo.length, 2);
+  assert.match(antigo.find((c) => c.payload.message_id === 5).payload.text, /Comece aqui/);
+  assert.equal(antigo.find((c) => c.payload.message_id === 5).ref.passo, 'Comece aqui');
+  cfg.telegram.grupo_mensagens = ids;
   const upRes = L.resumoGrupo(up, up.map(() => ({ ok: false, description: 'Bad Request: message is not modified' })), cfg);
   assert.match(upRes.texto, /atualizados/);
   assert.equal(L.fixarChamadas([], [], cfg)[0].metodo, 'getMe');

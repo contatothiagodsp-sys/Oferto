@@ -154,7 +154,7 @@ cs = chamadas()
 sh = [c for c in cs if c['api'] == 'shopee']
 checar('4 chamadas generateShortLink válidas', len(sh) == 4 and all(c['valido'] for c in sh))
 checar('sub-IDs por plataforma', sorted(c['variables']['subIds'][2] for c in sh) == ['tg', 'wac', 'wag', 'x'])
-checar('texto do grupo WhatsApp com link wag', any('RELÂMPAGO' in c['payload'].get('text', '') and '-wag-' in c['payload']['text'] for c in cs))
+checar('texto do grupo WhatsApp com link wag', any('ALERTA DE PREÇO' in c['payload'].get('text', '') and '-wag-' in c['payload']['text'] for c in cs))
 
 print('5) Convite nomeado + entrada/saída')
 limpar_log()
