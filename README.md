@@ -165,6 +165,20 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
   ```
 - Por último, **Publish** no **03 · Relatório diário**.
 
+### 9. Keepa (opcional): menor preço de 90 dias da Amazon automático
+
+Com a Keepa ligada, o `/oferta` da Amazon aceita **só o link**: título, preço, imagem e `ref90` vêm da [Keepa](https://keepa.com).
+
+1. Crie uma conta em keepa.com e assine o **plano da API** (pago; cerca de **€49/mês** no plano de entrada, com 20 tokens por minuto). **VERIFICAR** o preço e os tokens atuais em keepa.com → *API*. Cada consulta gasta cerca de 1 token.
+2. Copie a chave de acesso (*Private API access key*) na página da API da sua conta.
+3. Na `bfx_config`, cole a chave na linha **`keepa.chave`**. A chave fica **só nessa tabela**: não coloque em arquivo nem em `.env`.
+   - Linha vazia = Keepa desligada (tudo volta a ser digitado à mão).
+   - `keepa.buybox` = `sim` usa o preço da Buy Box (com frete) em vez do preço da Amazon ou do menor novo. Pode custar tokens extras (**VERIFICAR**). Padrão: `nao`.
+   - `keepa.api`: não altere (serve para o teste local).
+4. Se a linha `keepa.chave` ainda não existe, rode o **00 · Setup** uma vez: ele cria as linhas novas.
+
+Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o preço vendido pela Amazon, senão o menor preço de novo. O `ref90` é o menor preço desse mesmo tipo nos últimos 90 dias, contando o de hoje, e a fonte no card fica "Keepa · consultado DD/MM HH:MM". O `ref90` também vai para a `bfx_precos` (`fonte = ref90`, `fonte_url = keepa`).
+
 ---
 
 ## Uso diário
@@ -174,6 +188,7 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 | Comando | Faz |
 |---|---|
 | `/oferta <categoria> [top]` + linhas | Cria a oferta e manda o card. Categorias: `casa`, `beleza`, `bebe`, `tech`. `top` também publica no Top do Dia. |
+| `/oferta <categoria> <link da Amazon>` | Formato curto (precisa da Keepa ligada, passo 9). Veja abaixo. |
 | `/convite <categoria> <nome>` | Cria um **link de convite nomeado** (ex.: `/convite beleza meta_beleza_v1`). Use um link por anúncio: o relatório mostra entradas, saídas e retenção por link. |
 | `/links` | Lista os **links de divulgação por tópico** (`t.me/<bot publicador>?start=beleza`). Para campanha, acrescente `_nome`: `?start=beleza_meta1`. |
 | `/id` | Mostra seu ID. |
@@ -184,6 +199,34 @@ Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e n�
 - `/start` responde **pelo próprio bot publicador** (o webhook dele é registrado com `?bot=grupo`): boas-vindas, link do grupo e links dos tópicos. Sem `grupo_link`, o bot cria (uma vez) e reaproveita o convite nomeado `bot_start`.
 - `/start beleza_meta1` (link do `/links`): boas-vindas do tópico, botão **Entrar no grupo** (convite nomeado `beleza_meta1`, criado uma vez e reaproveitado) e botão **Abrir 🎁 Beleza & Presentes**. Cada `/start` é gravado em `bfx_entradas` (`tipo = start`, payload em `convite_nome`) e aparece no relatório.
 - `/id` só responde no privado.
+
+### `/oferta` curto (Amazon com Keepa)
+
+```
+/oferta casa https://www.amazon.com.br/dp/B0XXXXXXXX
+```
+
+- O link pode ir na 1ª linha, junto da categoria (e de `top`, se quiser).
+- Título, preço, `ref90` e imagem são **opcionais**: o que faltar vem da Keepa. **O que você digitar tem prioridade**. Exemplo, com o preço do cupom:
+  ```
+  /oferta casa https://www.amazon.com.br/dp/B0XXXXXXXX
+  preço 279,90
+  cupom BF10
+  ```
+- Quando o preço vem da Keepa, o card avisa: "💡 preço da Keepa (DD/MM HH:MM): confira na loja antes de aprovar". A Keepa atualiza o preço de tempos em tempos, então **abra a loja antes de aprovar**.
+- Se a Keepa falhar (sem tokens, chave inválida, produto sem dados), o card sai com o que você digitou e mostra o aviso, por exemplo "⚠️ Keepa sem tokens". Se faltar título ou preço, o bot pede as linhas que faltam.
+- A Keepa só é consultada quando falta alguma informação: com título, preço, `ref90` e `img` digitados, nenhum token é gasto.
+- Links curtos (`amzn.to`, `a.co`) continuam recusados: abra o link e copie o endereço completo da página (com `/dp/`).
+
+### Corrigir o ref90 respondendo ao card
+
+Para um card sem referência de 90 dias (ex.: coleta da Shopee), **responda à mensagem do card** (deslize para o lado ou toque em *Responder*) com o valor e a fonte:
+
+```
+399,90 https://link-do-comparador
+```
+
+Só o valor (`399,90`) também serve. O bot recalcula o selo e manda um **card novo**; o card antigo perde os botões ("↩️ Substituída pelo card novo") e a oferta antiga fica como `editada`. Não vale para oferta já aprovada.
 
 ### Botões do card
 
@@ -204,7 +247,7 @@ Posts entre 22h e 8h e as cópias no Top do Dia saem **sem notificação**. O re
 
 Com `grupo.limpar_avisos = sim` e `grupo.antispam = sim` (padrão), o bot publicador apaga mensagens de membros com link de outro grupo (`t.me/`), WhatsApp ou encurtador (`bit.ly`, `amzn.to`, `s.shopee.com.br`, `mercadolivre.com/sec`…). Admins (IDs de `admins`, admin anônimo e posts do canal vinculado) ficam de fora. Link de produto da Amazon, Shopee ou Mercado Livre (`.com.br`) vira **sugestão**: o bot responde "Valeu! Vamos conferir o preço 👀" (no máximo 1 vez a cada 10 min por membro) e manda aos admins o link com um `/oferta` pré-preenchido.
 
-Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: o card traz um link de busca no Google Shopping para você achar a referência; use **✏️ Editar** e informe o `ref90`. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
+Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: o card traz um link de busca no Google Shopping para você achar a referência; **responda ao card** com o `ref90` (veja acima) ou use **✏️ Editar**. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
 
 ### Critério público do selo (para fixar nos grupos e canais)
 
@@ -239,7 +282,8 @@ Estimativa para o mês de pico (novembro), com 1.500–2.500 entradas, ~30% de s
 
 - **Shopee Affiliate API:** endpoint, nomes dos campos (`productOfferV2`, `generateShortLink`), formato de `commissionRate` e caracteres aceitos nos subIds foram implementados conforme a documentação pública conhecida. Confira no painel e, se algo divergir, ajuste `lib/shopee.js` e rode o build. A assinatura foi testada contra um servidor falso.
 - **Histórico de 90 dias:** começa do zero hoje. Até completar 90 dias, o selo depende do `ref90` com fonte.
-- **Amazon e Mercado Livre:** preço e título são informados por você. Não há raspagem de páginas, para não violar os termos das lojas.
+- **Amazon e Mercado Livre:** preço e título são informados por você, ou vêm da Keepa na Amazon (passo 9). Não há raspagem de páginas, para não violar os termos das lojas.
+- **Keepa:** formato da API conferido no SDK oficial (`keepacom/api_backend`) e testado contra um servidor falso. **VERIFICAR** com a chave real: preço do plano e custo em tokens de `buybox=1`.
 - **Post com falha:** se o post no grupo falhar (ex.: bot sem permissão), a oferta fica como `aprovada` e você recebe um alerta "⚠️ Falhas na Bot API". Reenvie com `/oferta`.
 - **X:** o bot entrega o texto pronto; a postagem é manual ou por agendador. Posts com link externo costumam ter menos alcance, por isso o link vai na 1ª resposta.
 - **WhatsApp:** sem automação, de propósito: só a API oficial é segura contra banimento, e canais não têm API.

@@ -876,3 +876,183 @@ test('canais por categoria: posta no canal, grava tgc, encerra lá também e apa
   assert.match(L.textoStartMembro(cfg, 'https://t.me/+G'), /Siga o canal:[\s\S]*https:\/\/t\.me\/ofertas_casa/);
   assert.doesNotMatch(L.textoStartMembro(cfgTeste(), 'https://t.me/+G'), /canal/);
 });
+
+/* ---------- Keepa ---------- */
+
+const KEEPA_MOCK = {"tokensLeft":1180,"refillIn":2400,"tokensConsumed":1,"products":[{"asin":"B0TESTE123","domainId":12,"title":"Air Fryer 4L","images":[{"l":"71abcXYZ.jpg","m":"41abcXYZ.jpg"}],"lastUpdate":8351280,"stats":{"current":[29990,28990,-1,-1,49990,-1,-1,-1,-1,-1,-1,7,0,0,0,-1,46,1200,28990],"minInInterval":[[8285220,27990],[8285220,27490],null,null,[8285220,49990],null,null,null,null,null,null,null,null,null,null,null,null,null,[8285220,27990]]}}]};
+const cfgKeepa = (extra) => cfgTeste([{ chave: 'keepa.chave', valor: 'CHAVE' }].concat(extra || []));
+
+test('Keepa: config e requisição', () => {
+  const desligada = cfgTeste();
+  assert.equal(desligada.keepa.chave, '');
+  assert.equal(desligada.keepa.api, 'https://api.keepa.com');
+  assert.equal(desligada.keepa.buybox, false);
+  assert.throws(() => L.reqKeepa(desligada, 'B0TESTE123'), /keepa\.chave/);
+  const cfg = cfgKeepa([{ chave: 'keepa.api', valor: 'http://127.0.0.1:8787/' }]);
+  assert.equal(L.reqKeepa(cfg, 'amz_B0TESTE123').url, 'http://127.0.0.1:8787/product?key=CHAVE&domain=12&asin=B0TESTE123&stats=90&history=0');
+  const bb = cfgKeepa([{ chave: 'keepa.buybox', valor: 'sim' }]);
+  assert.match(L.reqKeepa(bb, 'https://www.amazon.com.br/x/dp/B0TESTE123?ref=1').url, /^https:\/\/api\.keepa\.com\/product\?.*asin=B0TESTE123.*&buybox=1$/);
+  assert.equal(L.asinDe('amz_b0teste123'), 'B0TESTE123');
+});
+
+test('lerKeepa: buybox (tipo 18), sem buybox (tipo 0), data e fonte', () => {
+  const agora = new Date('2026-11-17T17:32:00Z').getTime(); // 14:32 em São Paulo
+  const bb = L.lerKeepa(KEEPA_MOCK, cfgKeepa([{ chave: 'keepa.buybox', valor: 'sim' }]), agora);
+  assert.equal(bb.ok, true, bb.erro);
+  assert.equal(bb.tipo, 18);
+  assert.equal(bb.preco_atual, 289.9);
+  assert.equal(bb.ref90, 279.9);
+  const k = L.lerKeepa(KEEPA_MOCK, cfgKeepa(), agora);
+  assert.equal(k.tipo, 0);
+  assert.equal(k.preco_atual, 299.9);
+  assert.equal(k.ref90, 279.9);
+  assert.equal(k.ref90_data, new Date((8285220 + 21564000) * 60000).toISOString());
+  assert.equal(k.ref90_data, '2026-10-02T15:00:00.000Z');
+  assert.equal(k.ref90_fonte, 'Keepa · consultado 17/11 14:32');
+  assert.equal(k.titulo, 'Air Fryer 4L');
+  assert.equal(k.imagem, 'https://m.media-amazon.com/images/I/71abcXYZ.jpg');
+  assert.equal(k.tokens_restantes, 1180);
+  assert.equal(k.erro, '');
+  // resposta completa do nó HTTP (fullResponse) com corpo em texto
+  assert.equal(L.lerKeepa({ statusCode: 200, body: JSON.stringify(KEEPA_MOCK) }, cfgKeepa(), agora).ref90, 279.9);
+  // título com HTML
+  assert.equal(L.limparTitulo('<b>Air&nbsp;Fryer</b> 4L &amp; cesto'), 'Air Fryer 4L & cesto');
+});
+
+test('lerKeepa: -1/null, sem tokens, chave inválida e fora do ar', () => {
+  const sem = JSON.parse(JSON.stringify(KEEPA_MOCK));
+  sem.products[0].stats.current = sem.products[0].stats.current.map(() => -1);
+  sem.products[0].stats.minInInterval = sem.products[0].stats.minInInterval.map(() => null);
+  const r = L.lerKeepa(sem, cfgKeepa(), AGORA);
+  assert.equal(r.ok, false);
+  assert.equal(r.tipo, 1);
+  assert.equal(r.preco_atual, null);
+  assert.equal(r.ref90, null);
+  assert.match(r.erro, /sem oferta/);
+  assert.equal(r.titulo, 'Air Fryer 4L'); // o título vem mesmo assim
+  const soPreco = JSON.parse(JSON.stringify(KEEPA_MOCK));
+  soPreco.products[0].stats.minInInterval[0] = null;
+  assert.match(L.lerKeepa(soPreco, cfgKeepa(), AGORA).erro, /sem menor preço de 90 dias/);
+  assert.equal(L.lerKeepa({ statusCode: 429, body: { tokensLeft: -3, refillIn: 120000 } }, cfgKeepa(), AGORA).erro, 'Keepa sem tokens (recarrega em ~2 min)');
+  assert.match(L.lerKeepa({ tokensLeft: 0, refillIn: 0, products: [] }, cfgKeepa(), AGORA).erro, /^Keepa sem tokens/);
+  assert.match(L.lerKeepa({ statusCode: 402, body: { error: { type: 'paymentRequired' } } }, cfgKeepa(), AGORA).erro, /chave inválida/);
+  assert.match(L.lerKeepa({ statusCode: 400, body: { error: { message: 'Invalid key' } } }, cfgKeepa(), AGORA).erro, /chave inválida/);
+  assert.match(L.lerKeepa({ error: { message: 'timeout of 15000ms exceeded' } }, cfgKeepa(), AGORA).erro, /fora do ar/);
+  assert.match(L.lerKeepa({ products: [] }, cfgKeepa(), AGORA).erro, /sem dados/);
+});
+
+test('/oferta enxuto: só o link da Amazon com Keepa; o que o admin digita tem prioridade', () => {
+  const H = { 'x-telegram-bot-api-secret-token': 'segredo' };
+  const m = (text) => ({ message: { text, chat: { id: 111, type: 'private' }, from: { id: 111 } } });
+  // sem Keepa: erro curto, sem repetir a AJUDA
+  const semK = L.classificarUpdate(m('/oferta casa https://www.amazon.com.br/dp/B0TESTE123'), H, cfgTeste(), AGORA);
+  assert.equal(semK.rota, 'responder');
+  assert.match(semK.chamadas[0].payload.text, /Falta o título/);
+  assert.doesNotMatch(semK.chamadas[0].payload.text, /Formato completo/);
+  assert.match(L.AJUDA, /\/oferta casa https:\/\/www\.amazon\.com\.br\/dp\//);
+
+  const cfg = cfgKeepa();
+  const cls = L.classificarUpdate(m('/oferta casa top https://www.amazon.com.br/Air/dp/B0TESTE123?ref=x'), H, cfg, AGORA);
+  assert.equal(cls.rota, 'oferta');
+  assert.equal(cls.oferta.categoria, 'casa');
+  assert.equal(cls.oferta.top, true);
+  assert.equal(cls.oferta.produto_id, 'amz_B0TESTE123');
+  const prep = L.prepararOferta(cls, [], cfg);
+  assert.match(prep.keepa_http.url, /asin=B0TESTE123/);
+  const e = L.juntarKeepa(prep, { statusCode: 200, body: KEEPA_MOCK }, cfg);
+  assert.equal(e.rota, 'oferta');
+  assert.equal(e.oferta.titulo, 'Air Fryer 4L');
+  assert.equal(e.oferta.preco, 299.9);
+  assert.equal(e.oferta.ref90, 279.9);
+  const av = L.avaliarNovaOferta(e, [], cfg);
+  assert.equal(av.oferta.selo, 'acima');
+  assert.match(av.oferta.ref90_fonte, /^Keepa · consultado /);
+  assert.deepEqual(av.precosNovos.map((p) => [p.fonte, p.preco, p.fonte_url]), [['coleta', 299.9, ''], ['ref90', 279.9, 'keepa']]);
+  assert.deepEqual(L.colunasInvalidas('bfx_ofertas', av.oferta), []);
+  const card = av.chamadas[0].payload.text;
+  assert.match(card, /💡 preço da Keepa \(17\/11 09:00\): confira na loja antes de aprovar/);
+  assert.match(card, /Air Fryer 4L/);
+  assert.equal(av.chamadas[0].payload.link_preview_options.url, 'https://m.media-amazon.com/images/I/71abcXYZ.jpg');
+
+  // o admin digitou o preço: vale o dele, sem o aviso 💡; ref90 da Keepa
+  const cls2 = L.classificarUpdate(m('/oferta casa https://www.amazon.com.br/dp/B0TESTE123\npreço 269,90'), H, cfg, AGORA);
+  const e2 = L.juntarKeepa(L.prepararOferta(cls2, [], cfg), KEEPA_MOCK, cfg);
+  assert.equal(e2.oferta.preco, 269.9);
+  const av2 = L.avaliarNovaOferta(e2, [], cfg);
+  assert.equal(av2.oferta.selo, 'ok');
+  assert.doesNotMatch(av2.chamadas[0].payload.text, /💡/);
+
+  // tudo informado (com img): nem consulta a Keepa
+  const cls3 = L.classificarUpdate(m('/oferta casa\nhttps://www.amazon.com.br/dp/B0TESTE123\nT\npreço 10\nref90 12 f\nimg https://i/x.jpg'), H, cfg, AGORA);
+  assert.equal(L.prepararOferta(cls3, [], cfg).keepa_http, undefined);
+
+  // Keepa sem tokens: segue com o que o admin digitou e o card avisa
+  const cls4 = L.classificarUpdate(m('/oferta casa https://www.amazon.com.br/dp/B0TESTE123\nPanela\npreço 99,90'), H, cfg, AGORA);
+  const e4 = L.juntarKeepa(L.prepararOferta(cls4, [], cfg), { statusCode: 429, body: { tokensLeft: -2 } }, cfg);
+  const av4 = L.avaliarNovaOferta(e4, [], cfg);
+  assert.equal(av4.oferta.selo, 'sem_ref');
+  assert.match(av4.chamadas[0].payload.text, /⚠️ Keepa sem tokens/);
+  // Keepa sem tokens e sem preço: não dá para montar a oferta
+  const e5 = L.juntarKeepa(L.prepararOferta(cls, [], cfg), { statusCode: 429, body: {} }, cfg);
+  assert.equal(e5.rota, 'responder');
+  assert.match(e5.chamadas[0].payload.text, /Keepa sem tokens: falta o título e o preço/);
+});
+
+test('ref90 respondendo ao card: card novo com selo; a antiga vira editada', () => {
+  const cfg = cfgTeste();
+  const H = { 'x-telegram-bot-api-secret-token': 'segredo' };
+  const cls0 = L.classificarUpdate({ message: { text: '/oferta beleza\nhttps://shopee.com.br/Kit-i.1.2\nKit\npreço 149', chat: { id: 111, type: 'private' }, from: { id: 111 } } }, H, cfg, AGORA);
+  const av0 = L.avaliarNovaOferta(L.juntarKeepa(L.prepararOferta(cls0, [], cfg), null, cfg), [], cfg);
+  assert.equal(av0.oferta.selo, 'sem_ref');
+  const textoCard = av0.chamadas[0].payload.text.replace(/<[^>]+>/g, '');
+  const resp = (text) => ({ message: { message_id: 7, text, chat: { id: 111, type: 'private' }, from: { id: 111 }, reply_to_message: { message_id: 55, text: textoCard } } });
+  assert.match(L.classificarUpdate(resp('quanto?'), H, cfg, AGORA).chamadas[0].payload.text, /responda ao card/);
+  const cls = L.classificarUpdate(resp('R$ 159,90 https://fonte.example/h'), H, cfg, AGORA + 60000);
+  assert.equal(cls.rota, 'oferta');
+  assert.deepEqual(cls.resposta, { oferta_id: av0.oferta.oferta_id, ref90: 159.9, ref90_fonte: 'https://fonte.example/h', message_id: 55 });
+  const prep = L.prepararOferta(cls, [av0.oferta], cfg);
+  assert.equal(prep.keepa_http, undefined);
+  assert.deepEqual(prep.update, { oferta_id: av0.oferta.oferta_id, status: 'editada', decidida_por: 111, decidida_ts: AGORA + 60000 });
+  assert.deepEqual(L.colunasInvalidas('bfx_ofertas', prep.update), []);
+  const av = L.avaliarNovaOferta(L.juntarKeepa(prep, null, cfg), [], cfg);
+  assert.equal(av.oferta.selo, 'ok');
+  assert.notEqual(av.oferta.oferta_id, av0.oferta.oferta_id);
+  assert.equal(av.oferta.titulo, 'Kit');
+  assert.equal(av.oferta.ref90_fonte, 'https://fonte.example/h');
+  assert.ok(av.chamadas[0].payload.reply_markup.inline_keyboard.flat().some((b) => b.callback_data === `a|${av.oferta.oferta_id}`));
+  assert.equal(av.chamadas[1].metodo, 'editMessageReplyMarkup');
+  assert.equal(av.chamadas[1].payload.message_id, 55);
+  // só o valor também serve; oferta já aprovada não muda
+  assert.equal(L.classificarUpdate(resp('159,90'), H, cfg, AGORA).resposta.ref90_fonte, '');
+  const aprovada = L.prepararOferta(cls, [Object.assign({}, av0.oferta, { status: 'aprovada' })], cfg);
+  assert.equal(aprovada.rota, 'responder');
+  assert.equal(L.juntarKeepa(aprovada, null, cfg), aprovada);
+  // comando respondendo ao card continua sendo comando
+  assert.equal(L.classificarUpdate(resp('/id'), H, cfg, AGORA).rota, 'responder');
+});
+
+test('min90_origem e min90_dias para a Marketing', () => {
+  const cfg = cfgTeste();
+  const base = { min90: 279.9, ref90: 279.9, ts: AGORA };
+  assert.deepEqual(L.origemMin90(Object.assign({ ref90_fonte: 'Keepa · consultado 17/11 14:32' }, base)), { min90_origem: 'keepa', min90_dias: 90 });
+  assert.deepEqual(L.origemMin90(Object.assign({ ref90_fonte: 'keepa' }, base)), { min90_origem: 'keepa', min90_dias: 90 });
+  assert.deepEqual(L.origemMin90(Object.assign({ ref90_fonte: 'https://fonte' }, base)), { min90_origem: 'manual', min90_dias: 90 });
+  assert.deepEqual(L.origemMin90({ min90: 330, ref90: 399.9, hist_primeira: new Date(AGORA - 5 * DIA).toISOString(), ts: AGORA }), { min90_origem: 'historico', min90_dias: 5 });
+  assert.deepEqual(L.origemMin90({ min90: 420, ref90: null, hist_primeira: new Date(AGORA - 95 * DIA).toISOString(), ts: AGORA }), { min90_origem: 'historico', min90_dias: 90 });
+  assert.deepEqual(L.origemMin90({ min90: null }), { min90_origem: null, min90_dias: 0 });
+  // na view do card e na oferta da publicação
+  const textos = require('../lib/textos');
+  const orig = textos.cardAprovacao;
+  let visto = null;
+  textos.cardAprovacao = (o, c, p) => { visto = o; return orig(o, c, p); };
+  try {
+    L.chamadaCard({ oferta_id: 'o1', categoria: 'casa', loja: 'amazon', url: 'https://www.amazon.com.br/dp/B0TESTE123', titulo: 'T', preco: 10, min90: 12, ref90: 12, ref90_fonte: 'f', selo: 'ok', ts: AGORA }, cfg, 111);
+  } finally { textos.cardAprovacao = orig; }
+  assert.equal(visto.min90_origem, 'manual');
+  assert.equal(visto.min90_dias, 90);
+  const row = { oferta_id: 'o1', status: 'pendente', selo: 'ok', categoria: 'casa', loja: 'amazon', url: 'https://www.amazon.com.br/dp/B0TESTE123', titulo: 'T', preco: 10, min90: 12, ref90: 12, ref90_fonte: 'keepa', ts: AGORA };
+  const dec = L.decidirCallback({ acao: 'a', oferta_id: 'o1', callback_id: 'q', chat_id: 1, message_id: 2, user_id: 111, ts: AGORA }, [row], cfg);
+  assert.equal(dec.oferta.min90_origem, 'keepa');
+  assert.equal(dec.oferta.min90_dias, 90);
+  assert.deepEqual(L.colunasInvalidas('bfx_ofertas', dec.update), []);
+});

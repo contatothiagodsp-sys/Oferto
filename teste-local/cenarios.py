@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Cenários de ponta a ponta contra o n8n local (rode antes ./rodar.sh). Sai com erro se algo falhar."""
-import json, os, sqlite3, subprocess, sys, time, urllib.request
+import json, os, re, sqlite3, subprocess, sys, time, urllib.request
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 TMP = os.path.join(AQUI, 'tmp')
@@ -376,6 +376,74 @@ update(grupo_msg('e essa https://shopee.com.br/Kit-i.5.6', de=556, mid=961), bot
 cs = chamadas()
 checar('2ª sugestão do mesmo membro: sem novo "Valeu!", admins avisados', not any(c['token'] == 'TOKGRUPO' for c in cs)
        and len([c for c in cs if c['token'] == 'TOKADMIN']) == 2)
+
+def card_de(cs, oferta_id):
+    for c in cs:
+        if c['metodo'] == 'sendMessage' and f'Oferta {oferta_id}</b>' in c['payload'].get('text', ''):
+            return c['payload']
+    return {}
+
+
+print('14) Keepa: /oferta só com o link da Amazon')
+limpar_log()
+update(msg('/oferta casa https://www.amazon.com.br/Air-Fryer/dp/B0TESTE123?ref=x'), espera=9)
+cs = chamadas()
+kp = [c for c in cs if c['api'] == 'keepa']
+checar('1 consulta à Keepa com domínio 12 e stats 90', len(kp) == 1 and kp[0]['asin'] == 'B0TESTE123' and kp[0]['domain'] == '12' and kp[0]['stats'] == '90' and kp[0]['buybox'] is None)
+kid = id_do_card(cs)
+card = card_de(cs, kid)
+txt = card.get('text', '')
+checar('card com título, preço e ref90 da Keepa', 'Air Fryer 4L' in txt and 'R$ 299,90' in txt and 'Menor 90d: R$ 279,90' in txt and 'fonte: Keepa · consultado' in txt)
+checar('card avisa que o preço veio da Keepa', '💡 preço da Keepa (' in txt and 'confira na loja antes de aprovar' in txt)
+checar('imagem da Keepa na prévia', card.get('link_preview_options', {}).get('url') == 'https://m.media-amazon.com/images/I/71abcXYZ.jpg')
+of = linhas('bfx_ofertas', f"where oferta_id = '{kid}'")
+checar('oferta gravada com dados da Keepa', len(of) == 1 and of[0]['titulo'] == 'Air Fryer 4L' and of[0]['preco'] == 299.9 and of[0]['ref90'] == 279.9 and of[0]['selo'] == 'acima')
+pr = linhas('bfx_precos', "where produto_id = 'amz_B0TESTE123'")
+checar('bfx_precos: ref90 da Keepa e preço atual como coleta', sorted((r['fonte'], r['preco'], r['fonte_url']) for r in pr) == [('coleta', 299.9, ''), ('ref90', 279.9, 'keepa')])
+
+print('14b) Keepa sem tokens: card sai com o que o admin digitou e avisa')
+limpar_log()
+update(msg('/oferta casa https://www.amazon.com.br/dp/B0SEMTOKEN\nPanela Teste\npreço 99,90'), espera=9)
+cs = chamadas()
+sid2 = id_do_card(cs)
+txt = card_de(cs, sid2).get('text', '')
+checar('consultou a Keepa', any(c['api'] == 'keepa' and c['asin'] == 'B0SEMTOKEN' for c in cs))
+checar('card com aviso "Keepa sem tokens"', 'Panela Teste' in txt and 'R$ 99,90' in txt and '⚠️ Keepa sem tokens' in txt and '💡' not in txt)
+limpar_log()
+update(msg('/oferta casa https://www.amazon.com.br/dp/B0SEMTOKEN'), espera=9)
+cs = chamadas()
+checar('sem tokens e sem preço: pede as linhas que faltam', any('Keepa sem tokens (recarrega em ~2 min): falta o título e o preço' in c['payload'].get('text', '') for c in cs) and not id_do_card(cs))
+
+print('14c) Tudo digitado: não consulta a Keepa')
+limpar_log()
+update(msg('/oferta casa\nhttps://www.amazon.com.br/dp/B0TESTE123\nAir Fryer manual\npreço 269,90\nref90 279,90 https://fonte\nimg https://img.example/a.jpg'))
+cs = chamadas()
+checar('sem chamada à Keepa e card com os valores do admin', not any(c['api'] == 'keepa' for c in cs) and 'R$ 269,90' in card_de(cs, id_do_card(cs)).get('text', ''))
+
+print('15) ref90 respondendo ao card (Shopee)')
+limpar_log()
+update(msg('/oferta beleza\nhttps://shopee.com.br/Kit-i.987.111222\nKit Resposta\npreço 149'))
+cs = chamadas()
+rid = id_do_card(cs)
+card0 = card_de(cs, rid)
+checar('card inicial sem selo (só Editar/Rejeitar)', [b['text'] for l in card0.get('reply_markup', {}).get('inline_keyboard', []) for b in l] == ['✏️ Editar', '❌ Rejeitar'])
+plano = re.sub(r'<[^>]+>', '', card0.get('text', '')).replace('&amp;', '&')
+limpar_log()
+update({'update_id': 11, 'message': {'message_id': 77, 'text': '159,90 https://comparador.example/kit', 'chat': {'id': 111, 'type': 'private'},
+                                     'from': {'id': 111}, 'reply_to_message': {'message_id': 300, 'text': plano, 'chat': {'id': 111, 'type': 'private'}}}})
+cs = chamadas()
+nid = id_do_card(cs)
+card1 = card_de(cs, nid)
+checar('card novo com selo e botão de aprovar', nid and nid != rid and '✅ Desconto real' in card1.get('text', '') and any(
+    b['callback_data'] == 'a|' + nid for l in card1.get('reply_markup', {}).get('inline_keyboard', []) for b in l))
+checar('card novo com ref90 e fonte da resposta', 'Menor 90d: R$ 159,90' in card1.get('text', '') and 'comparador.example/kit' in card1.get('text', ''))
+checar('card antigo perde os botões', any(c['metodo'] == 'editMessageReplyMarkup' and c['payload'].get('message_id') == 300 for c in cs))
+checar('oferta antiga editada e nova pendente', linhas('bfx_ofertas', f"where oferta_id = '{rid}'")[0]['status'] == 'editada'
+       and linhas('bfx_ofertas', f"where oferta_id = '{nid}'")[0]['status'] == 'pendente')
+limpar_log()
+update({'update_id': 12, 'message': {'message_id': 78, 'text': 'quanto?', 'chat': {'id': 111, 'type': 'private'}, 'from': {'id': 111},
+                                     'reply_to_message': {'message_id': 300, 'text': plano}}}, espera=4)
+checar('resposta sem valor explica o formato', any('responda ao card' in c['payload'].get('text', '') for c in chamadas()))
 
 c = sqlite3.connect(DB)
 # A recusa do túnel (7b) é um erro esperado.

@@ -324,9 +324,44 @@ return [{ json: LIB.classificarUpdate(w.body, w.headers, cfg, Date.now(), w.quer
   wf.link('Classificar', 'Rota');
 
   // 0 · /oferta
+  // Antes do selo: resposta ao card (busca a oferta respondida) e Keepa (Amazon com keepa.chave e algo faltando).
+  wf.add(dtGet('Oferta respondida', 'bfx_ofertas', [['oferta_id', 'eq', "={{ ($json.resposta && $json.resposta.oferta_id) || '-' }}"]], { returnAll: false, limit: 1 }), 1100, -300);
+  wf.add(code('Preparar oferta', `
+const cls = $('Classificar').first().json;
+const rows = $input.all().map((i) => i.json).filter((r) => r.oferta_id);
+return [{ json: LIB.prepararOferta(cls, rows, cfg) }];`, { lib: true, nota: 'Monta a consulta à Keepa ou remonta a oferta respondida com o ref90 novo.' }), 1320, -300);
+  wf.add(switchExpr('Consultar Keepa?', '$json.keepa_http ? 0 : 1', 2), 1540, -300);
+  wf.add({
+    name: 'Keepa', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
+    notes: 'Keepa API: menor preço em 90 dias, preço atual, título e imagem (1 token por consulta). Erro não para o fluxo.',
+    parameters: {
+      method: 'GET',
+      url: '={{ $json.keepa_http.url }}',
+      options: { response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } }, timeout: 15000 },
+    },
+  }, 1760, -400);
+  wf.add(code('Juntar Keepa', `
+const e = $('Preparar oferta').first().json;
+const resp = e.keepa_http && $('Keepa').isExecuted ? $('Keepa').first().json : null;
+return [{ json: LIB.juntarKeepa(e, resp, cfg) }];`, { lib: true, nota: 'O que o admin digitou tem prioridade; a Keepa preenche o que falta.' }), 1980, -300);
+  wf.add(switchExpr('Oferta completa?', "$json.rota === 'oferta' ? 0 : 1", 2), 2200, -300);
+  wf.add(itens('Erro da oferta', '$json.chamadas'), 2420, -200);
+  wf.add(httpTelegram('Telegram (erro da oferta)'), 2640, -200);
+  wf.add(itens('Marcar substituída', '$json.update'), 1540, -500);
+  wf.add(dtUpdate('Atualizar substituída', 'bfx_ofertas', 'oferta_id'), 1760, -500);
+  wf.link('Rota', 'Oferta respondida', 0);
+  wf.chain('Oferta respondida', 'Preparar oferta', 'Consultar Keepa?');
+  wf.link('Consultar Keepa?', 'Keepa', 0);
+  wf.link('Keepa', 'Juntar Keepa');
+  wf.link('Consultar Keepa?', 'Juntar Keepa', 1);
+  wf.chain('Juntar Keepa', 'Oferta completa?');
+  wf.link('Oferta completa?', 'Histórico do produto', 0);
+  wf.link('Oferta completa?', 'Erro da oferta', 1);
+  wf.chain('Erro da oferta', 'Telegram (erro da oferta)');
+  wf.chain('Preparar oferta', 'Marcar substituída', 'Atualizar substituída');
   wf.add(dtGet('Histórico do produto', 'bfx_precos', [['produto_id', 'eq', '={{ $json.oferta.produto_id }}']]), 1100, 100);
   wf.add(code('Avaliar oferta', `
-const cls = $('Classificar').first().json;
+const cls = $('Juntar Keepa').first().json;
 const rows = $input.all().map((i) => i.json).filter((r) => r.produto_id);
 return [{ json: LIB.avaliarNovaOferta(cls, rows, cfg) }];`, { lib: true }), 1320, 100);
   wf.add(itens('Linhas de preço', '$json.precosNovos'), 1540, 0);
@@ -335,7 +370,6 @@ return [{ json: LIB.avaliarNovaOferta(cls, rows, cfg) }];`, { lib: true }), 1320
   wf.add(dtInsert('Gravar oferta', 'bfx_ofertas'), 1760, 180);
   wf.add(itens('Card de aprovação', "$('Avaliar oferta').first().json.chamadas"), 1980, 180);
   wf.add(httpTelegram('Telegram (card)'), 2200, 180);
-  wf.link('Rota', 'Histórico do produto', 0);
   wf.chain('Histórico do produto', 'Avaliar oferta');
   wf.chain('Avaliar oferta', 'Linhas de preço', 'Gravar preços');
   wf.chain('Avaliar oferta', 'Linha da oferta', 'Gravar oferta', 'Card de aprovação', 'Telegram (card)');
