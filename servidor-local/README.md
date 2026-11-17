@@ -9,22 +9,25 @@ Telegram ──https──▶ túnel Cloudflare ──▶ filtro ──▶ n8n (
                      (endereço público)    (só deixa passar o webhook do Telegram)
                                                       ▲
                                 vigia: quando o endereço do túnel muda, avisa o n8n,
-                                que grava a URL nova e refaz o webhook nos dois bots
+                                que grava a URL nova e refaz o webhook nos dois bots;
+                                a cada 5 min confere a saúde do webhook (workflow 91)
 ```
 
 | Contêiner | O que faz |
 |---|---|
-| `preparar` | Importa e publica os 5 workflows desta pasta e depois termina. Só repete quando os arquivos mudam. |
+| `preparar` | Importa e publica os 6 workflows desta pasta e depois termina. Só repete quando os arquivos mudam. |
 | `n8n` | O n8n. O painel abre **só neste computador**: http://localhost:5678 |
 | `filtro` | Só deixa a internet chegar ao `POST /webhook/telegram-ofertas`. O resto responde 404. |
 | `tunel` | Túnel rápido da Cloudflare: gera um endereço `https://…trycloudflare.com` sem conta e sem abrir portas no roteador. |
-| `vigia` | A cada 15 s lê o endereço do túnel. Quando o endereço muda, chama o workflow **90 · Túnel**, que grava `n8n_webhook_url` e roda o **00 · Setup**. |
+| `vigia` | A cada 15 s lê o endereço do túnel. Quando o endereço muda, chama o workflow **90 · Túnel**, que grava `n8n_webhook_url` e roda o **00 · Setup**. A cada 5 min chama o **91 · Saúde** e, se configurado, faz o ping no healthchecks.io (veja [Alertas](#alertas-saúde-do-bot)). |
+| `backup` | 1 vez por dia gera `backups/oferto-AAAA-MM-DD.tar.gz` (banco + chave de criptografia) e guarda os 7 mais recentes (veja [Backup](#backup)). |
+| `tunel-ngrok` | Só com o perfil `ngrok`: túnel com endereço fixo (veja [Endereço fixo](#endereço-fixo-com-ngrok)). |
 
 **Limitações (para validar está ótimo, mas leve em conta):**
 - **O computador precisa ficar ligado e acordado.** Desligado ou dormindo, o bot para de responder e a coleta da Shopee e o relatório das 22h não rodam. Desative a suspensão automática enquanto ele for o servidor.
 - **O endereço do túnel muda** sempre que o Docker ou o computador reiniciam. O vigia refaz o webhook sozinho em menos de 1 minuto, e você recebe o resumo "⚙️ Setup" no Telegram.
 - **O túnel rápido não tem garantia de disponibilidade.** Para a BF, use um túnel com endereço fixo (veja [Depois da validação](#depois-da-validação)).
-- **Backup:** os dados ficam no volume `oferto_n8n_data` do Docker (veja [Backup](#backup)).
+- **Backup:** os dados ficam no volume `oferto_n8n_data` do Docker. O contêiner `backup` copia tudo 1 vez por dia para a pasta `backups/` (veja [Backup](#backup)).
 
 ---
 
@@ -77,20 +80,21 @@ Na primeira vez, o Docker baixa cerca de 1 GB de imagens, o que leva alguns minu
 docker compose ps -a
 ```
 
-✋ Deve aparecer `n8n`, `filtro`, `tunel` e `vigia` como **Up**, e `preparar` como **Exited (0)**.
+✋ Deve aparecer `n8n`, `filtro`, `tunel`, `vigia` e `backup` como **Up**, e `preparar` como **Exited (0)**.
 
 ### 4. Criar sua conta no painel
 
 1. Abra http://localhost:5678 no navegador.
 2. Crie a conta de dono. Ela fica só no seu computador; use um e-mail seu e uma senha forte.
-3. Em **Overview**, confira se os 5 workflows estão lá e publicados:
+3. Em **Overview**, confira se os 6 workflows estão lá e publicados:
    - 00 · Setup
    - 01 · Telegram: aprovação e publicação
    - 02 · Coleta Shopee
    - 03 · Relatório diário
    - 90 · Túnel
+   - 91 · Saúde
 
-✋ Os 5 workflows aparecem na lista.
+✋ Os 6 workflows aparecem na lista.
 
 ### 5. Conferir o túnel
 
@@ -143,29 +147,76 @@ O `preparar` percebe que os arquivos mudaram e reimporta os workflows. **Atenç�
 
 ### Backup
 
-Os dados (config, ofertas, posts, entradas) ficam no volume do Docker. Para copiar o volume para um arquivo `.tar.gz` na pasta atual:
+O contêiner `backup` faz tudo sozinho, com o n8n ligado:
 
-1. Desligue o servidor:
+- 1 vez por dia cria `servidor-local/backups/oferto-AAAA-MM-DD.tar.gz` com:
+  - `database.sqlite`: o banco do n8n (workflows, execuções e as Data Tables: config, ofertas, posts, entradas), copiado com `sqlite3 .backup`, que é seguro com o n8n rodando;
+  - `config`: o arquivo com a **chave de criptografia** do n8n. Sem ela, o banco restaurado não abre as credenciais.
+- Guarda os **7** arquivos mais recentes e apaga os mais antigos.
+- Para conferir: `docker compose logs backup` e a pasta `backups/`.
+
+Copie de vez em quando o arquivo mais recente para fora do computador (Google Drive, por exemplo). Ele contém os tokens dos bots, então **não compartilhe**. A pasta `backups/` está no `.gitignore` e nunca vai para o GitHub.
+
+**Restaurar um backup** (no mesmo computador ou em outro, dentro da pasta `servidor-local`):
+
+1. Desligue tudo:
 
    ```bash
    docker compose down
    ```
 
-2. Copie o volume:
+2. Apague o volume atual e crie um vazio. **Atenção:** isto apaga os dados atuais; se estiver em dúvida, faça antes uma cópia da pasta `backups/`.
 
    ```bash
-   docker run --rm -v oferto_n8n_data:/dados -v "${PWD}:/backup" alpine tar czf /backup/backup-n8n.tar.gz -C /dados .
+   docker volume rm oferto_n8n_data
    ```
 
-3. Ligue de novo:
+   ```bash
+   docker volume create oferto_n8n_data
+   ```
+
+3. Descompacte o backup no volume (troque a data pelo arquivo que você quer):
+
+   ```bash
+   docker run --rm -v oferto_n8n_data:/dados -v "${PWD}/backups:/backups:ro" alpine:3.24.3 sh -c "tar xzf /backups/oferto-2026-11-26.tar.gz -C /dados && chown -R 1000:1000 /dados"
+   ```
+
+4. Ligue de novo:
 
    ```bash
    docker compose up -d
    ```
 
-Guarde o arquivo fora do computador (Google Drive, por exemplo). Ele contém os tokens dos bots, então **não compartilhe**.
+✋ Em http://localhost:5678 você entra com a mesma conta de antes, e as Data Tables têm os dados do dia do backup. O vigia refaz o webhook sozinho.
 
 **Cuidado:** `docker compose down -v` (com `-v`) **apaga** o volume e todos os dados.
+
+### Alertas: saúde do bot
+
+O workflow **91 · Saúde** roda a cada 5 min (chamado pelo vigia), consulta o `getWebhookInfo` dos dois bots e manda mensagem aos admins quando:
+
+- o Telegram não conseguiu entregar uma atualização ao n8n nos últimos 10 min (túnel ou filtro fora);
+- há mais de 20 atualizações esperando na fila do Telegram;
+- o webhook aponta para um endereço diferente de `n8n_webhook_url`;
+- algum token é inválido.
+
+Cada tipo de problema gera no máximo 1 alerta a cada 60 min (o controle fica na chave `saude.ultimo_alerta` da `bfx_config`), e chega uma mensagem "✅ resolvido" quando o problema some.
+
+Se o computador dormir ou o n8n cair, ninguém sobra para mandar o alerta. Para isso existe o **healthchecks.io** (grátis):
+
+1. Crie uma conta em healthchecks.io e um *check* com **Period 5 minutes** e **Grace 10 minutes**. Ligue o aviso por e-mail ou pelo Telegram (*Integrations*).
+2. Copie a URL de ping (`https://hc-ping.com/…`).
+3. Na pasta `servidor-local`, crie o arquivo `.env` com a linha (troque pela sua URL):
+
+   ```
+   HC_URL=https://hc-ping.com/sua-url
+   ```
+
+4. Rode `docker compose up -d`.
+
+✋ Em `docker compose logs vigia` aparece `healthchecks.io ligado`, e em até 5 min o check fica verde no site.
+
+O vigia só faz o ping quando o 91 responde `ok`. Se o token do bot de aprovação estiver inválido (o alerta não chegaria pelo Telegram), ele avisa o healthchecks.io como falha. O `.env` só guarda endereços e chaves de serviços de infraestrutura; **os tokens dos bots nunca vão para o `.env`**, ficam só na `bfx_config`.
 
 ---
 
@@ -177,6 +228,9 @@ Guarde o arquivo fora do computador (Google Drive, por exemplo). Ele contém os 
 | O vigia nunca mostra o endereço | Rode `docker compose logs tunel`. Redes corporativas ou antivírus podem bloquear a Cloudflare; teste em outra rede. |
 | O bot não responde ao `/id` | 1) Confira o `bot_token` na `bfx_config`. 2) Rode o **00 · Setup** e leia o nó **Resumo**. 3) Em **Executions** do **01 · Telegram**, procure execuções com erro. |
 | O resumo "⚙️ Setup" chega toda vez que você liga o computador | É normal: o endereço do túnel mudou e o webhook foi refeito. |
+| Alerta "🚨 problema no bot" | Leia o motivo na mensagem. Erro de entrega ou fila: `docker compose ps -a` e `docker compose logs tunel filtro n8n --tail 50`. Endereço diferente: `docker compose restart vigia`. |
+| `90 · Túnel` com erro "Endereço do túnel não permitido" | O túnel deu um endereço fora de trycloudflare.com e ngrok. Se for o seu domínio, preencha `tunel.dominio` na `bfx_config`. |
+| `backup` reiniciando | `docker compose logs backup`. Na primeira vez ele baixa o sqlite da internet. |
 | A porta 5678 está em uso | Outro programa usa a porta. No `docker-compose.yml`, troque `127.0.0.1:5678:5678` por `127.0.0.1:5679:5678` e abra http://localhost:5679. |
 
 ---
@@ -185,12 +239,48 @@ Guarde o arquivo fora do computador (Google Drive, por exemplo). Ele contém os 
 
 Para a BF, o bot precisa de um endereço fixo e de uma máquina que não desligue. As opções, da mais simples à mais robusta:
 
-1. **Endereço fixo com o mesmo computador:**
-   - **ngrok:** dá um domínio estático grátis por conta.
-   - **Cloudflare Tunnel nomeado:** exige um domínio próprio, de cerca de R$ 40 por ano.
-
-   Com qualquer um dos dois, o endereço deixa de mudar, mas o computador continua precisando ficar ligado.
-2. **Servidor na nuvem (VPS):** custa de R$ 25 a 40 por mês. Os mesmos arquivos desta pasta funcionam lá.
+1. **Endereço fixo com o mesmo computador:** ngrok com domínio estático grátis (abaixo). O computador continua precisando ficar ligado.
+2. **Servidor na nuvem (VPS):** custa de R$ 25 a 40 por mês. Os mesmos arquivos desta pasta funcionam lá (resumo abaixo).
 3. **n8n Cloud:** importe os arquivos de `n8n/workflows/`, seguindo o README principal. Os dados do servidor local não migram automaticamente; a config você copia à mão.
+
+### Endereço fixo com ngrok
+
+O compose já tem o túnel `tunel-ngrok`, desligado por padrão (perfil `ngrok`).
+
+1. Crie uma conta grátis em ngrok.com. Em **Getting Started → Your Authtoken**, copie o authtoken. Em **Domains**, pegue o seu domínio estático grátis (algo como `nome-aleatorio.ngrok-free.app`).
+2. Na pasta `servidor-local`, coloque no arquivo `.env` (junto com o `HC_URL`, se tiver):
+
+   ```
+   COMPOSE_PROFILES=ngrok
+   TUNEL=ngrok
+   NGROK_AUTHTOKEN=seu-authtoken-do-ngrok
+   NGROK_DOMAIN=nome-aleatorio.ngrok-free.app
+   ```
+
+   O authtoken é do ngrok, não de um bot: pode ficar no `.env`. Não compartilhe esse arquivo.
+3. Suba de novo:
+
+   ```bash
+   docker compose up -d
+   ```
+
+✋ Em `docker compose logs vigia` aparece `webhook do Telegram apontado para https://nome-aleatorio.ngrok-free.app/webhook/telegram-ofertas`, e o endereço não muda mais ao reiniciar.
+
+- O vigia lê o endereço na API local do ngrok (`http://tunel-ngrok:4040/api/tunnels`). Se ela não responder, veja `docker compose logs tunel-ngrok` (authtoken ou domínio errados são os erros mais comuns).
+- O túnel rápido da Cloudflare continua no ar, mas o webhook fica no ngrok. Para não usar mais a Cloudflare, pode rodar `docker compose stop tunel`.
+- Para voltar ao túnel rápido: apague as linhas `COMPOSE_PROFILES`, `TUNEL` e `NGROK_*` do `.env`, rode `docker compose --profile ngrok down` e depois `docker compose up -d`.
+- O workflow 90 só aceita endereços `trycloudflare.com`, `ngrok-free.app`, `ngrok-free.dev`, `ngrok.app` e `ngrok.dev`. Com um domínio próprio (Cloudflare Tunnel nomeado, VPS), preencha a chave `tunel.dominio` na `bfx_config` (por exemplo `bot.seudominio.com.br`).
+
+### Migrar para uma VPS (resumo)
+
+1. Contrate uma VPS com **Ubuntu 24.04** (1 vCPU e 2 GB de RAM bastam) e aponte um subdomínio seu (por exemplo `bot.seudominio.com.br`) para o IP dela (registro DNS tipo A).
+2. Na VPS: instale o Docker Engine com o plugin compose, clone o repositório e libere só as portas 22, 80 e 443 no firewall (`ufw allow OpenSSH`, `ufw allow 80,443/tcp`, `ufw enable`).
+3. Leve os dados: faça um backup aqui (pasta `backups/`), copie o `.tar.gz` para a VPS (`scp`) e restaure como em [Backup](#backup).
+4. Use o mesmo `docker-compose.yml`, com três mudanças:
+   - **sem túnel:** remova os serviços `tunel` e `tunel-ngrok`, e tire `tunel` do `depends_on` do vigia;
+   - **Caddy com TLS no domínio:** no `Caddyfile`, troque `:80 {` por `bot.seudominio.com.br {` e publique as portas no `filtro` (`ports: ["80:80", "443:443"]`) com um volume para `/data` (onde o Caddy guarda o certificado). O Caddy tira o certificado HTTPS sozinho e continua deixando passar só o webhook do Telegram;
+   - **vigia:** sem túnel, ele não acha endereço. Na `bfx_config`, preencha `tunel.dominio` = `bot.seudominio.com.br` e chame uma vez `curl -X POST http://localhost:5678/webhook/oferto-tunel -H 'content-type: application/json' -d '{"url":"https://bot.seudominio.com.br"}'` dentro da VPS (o vigia segue fazendo a conferência de saúde e o ping no healthchecks.io).
+5. **Painel só por túnel SSH:** o n8n continua preso em `127.0.0.1:5678`. Do seu computador, rode `ssh -L 5678:localhost:5678 usuario@ip-da-vps` e abra http://localhost:5678 enquanto a sessão SSH estiver aberta.
+6. Desligue o servidor do computador (`docker compose down`) só depois de o webhook apontar para a VPS, para os dois não responderem ao mesmo tempo.
 
 Me peça quando quiser montar qualquer uma delas.

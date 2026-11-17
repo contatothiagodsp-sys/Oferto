@@ -12,7 +12,7 @@ const SAIDA_LOCAL = path.join(RAIZ, 'servidor-local', 'workflows');
 // IDs fixos no servidor local: a CLI importa e publica por ID, e o workflow do túnel chama o setup por ID.
 const IDS_LOCAL = {
   '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001',
-  '03-relatorio-diario.json': 'wfRelat000000001', '90-tunel.json': 'wfTunel000000001',
+  '03-relatorio-diario.json': 'wfRelat000000001', '90-tunel.json': 'wfTunel000000001', '91-saude.json': 'wfSaude000000001',
 };
 
 /* ---------- bundle da lib ---------- */
@@ -139,12 +139,15 @@ function dtInsert(name, t) {
   return { name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1, parameters: { resource: 'row', operation: 'insert', dataTableId: tabela(t), columns: AUTOMAP, options: {} } };
 }
 
-function dtUpdate(name, t, chave, op) {
+function dtUpdate(name, t, chave, op, extras) {
+  // extras: condições a mais ([coluna, condição, valor]); a linha só muda se todas baterem.
+  const conditions = [{ keyName: chave, condition: 'eq', keyValue: `={{ $json.${chave} }}` }]
+    .concat((extras || []).map(([keyName, condition, keyValue]) => ({ keyName, condition, keyValue })));
   return {
     name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1,
     parameters: {
       resource: 'row', operation: op || 'update', dataTableId: tabela(t), matchType: 'allConditions',
-      filters: { conditions: [{ keyName: chave, condition: 'eq', keyValue: `={{ $json.${chave} }}` }] },
+      filters: { conditions },
       columns: AUTOMAP, options: {},
     },
   };
@@ -299,7 +302,8 @@ return [{ json: LIB.resumoGrupo(chamadas, resp, cfg) }];`, { lib: true }), x0 + 
 /* ---------- 01 · roteador do Telegram ---------- */
 
 function wfRouter() {
-  const wf = new WF('01 · Telegram: aprovação e publicação');
+  // Execuções com sucesso não são guardadas: elas levam a cfg com os tokens. As com erro continuam no histórico.
+  const wf = new WF('01 · Telegram: aprovação e publicação', { saveDataSuccessExecution: 'none' });
   wf.add({
     name: 'Webhook Telegram', type: 'n8n-nodes-base.webhook', typeVersion: 2, webhookId: uuid('webhook-telegram-ofertas'),
     parameters: { httpMethod: 'POST', path: 'telegram-ofertas', responseMode: 'onReceived', options: {} },
@@ -335,15 +339,18 @@ return [{ json: LIB.avaliarNovaOferta(cls, rows, cfg) }];`, { lib: true }), 1320
   wf.add(code('Decidir', `
 const cb = $('Classificar').first().json;
 return [{ json: LIB.decidirCallback(cb, $input.all().map((i) => i.json), cfg) }];`, { lib: true }), 1320, 520);
-  wf.add(itens('Atualização', '$json.update'), 1540, 360);
-  wf.add(dtUpdate('Atualizar oferta', 'bfx_ofertas', 'oferta_id'), 1760, 360);
-  wf.add(itens('Respostas do clique', "$('Decidir').first().json.chamadas"), 1540, 460);
-  wf.add(httpTelegram('Telegram (clique)'), 1760, 460);
+  // Ordem (v1, de cima para baixo): responde o clique, muda o status e só então publica.
+  wf.add(itens('Respostas do clique', "$('Decidir').first().json.chamadas"), 1540, 360);
+  wf.add(httpTelegram('Telegram (clique)'), 1760, 360);
+  wf.add(itens('Atualização', '$json.update'), 1540, 480);
+  // Só muda a linha que ainda está "pendente": num clique duplo simultâneo, o segundo não acha linha e não publica.
+  wf.add(dtUpdate('Atualizar oferta', 'bfx_ofertas', 'oferta_id', 'update', [['status', 'eq', 'pendente']]), 1760, 480);
   wf.add(code('Itens de link', `
 const d = $('Decidir').first().json;
-if (d.proximo !== 'publicar') return [];
+// Publica só se o "Atualizar oferta" mudou esta oferta de pendente para publicando.
+if (d.proximo !== 'publicar' || !$input.all().some((i) => i.json.oferta_id === d.oferta.oferta_id)) return [];
 const sh = d.linkItens.filter((i) => i.metodo === 'shopee');
-return (sh.length ? sh : d.linkItens).map((j) => ({ json: j }));`, { cfg: false }), 1540, 600);
+return (sh.length ? sh : d.linkItens).map((j) => ({ json: j }));`, { cfg: false }), 1980, 480);
   wf.add(switchExpr('Precisa da Shopee?', "$json.metodo === 'shopee' ? 0 : 1", 2), 1760, 600);
   wf.add(httpShopee('Shopee: link curto'), 1980, 540);
   wf.add(code('Ler links Shopee', `
@@ -358,9 +365,8 @@ const itensLink = $input.all().map((i) => i.json);
 return [{ json: LIB.prepararPublicacao(d.oferta, itensLink, cfg, { ts: cls.ts, chat_id: cls.chat_id, message_id: cls.message_id }) }];`, { lib: true }), 2420, 640);
   wf.link('Rota', 'Buscar oferta', 1);
   wf.chain('Buscar oferta', 'Decidir');
-  wf.chain('Decidir', 'Atualização', 'Atualizar oferta');
   wf.chain('Decidir', 'Respostas do clique', 'Telegram (clique)');
-  wf.chain('Decidir', 'Itens de link', 'Precisa da Shopee?');
+  wf.chain('Decidir', 'Atualização', 'Atualizar oferta', 'Itens de link', 'Precisa da Shopee?');
   wf.link('Precisa da Shopee?', 'Shopee: link curto', 0);
   wf.chain('Shopee: link curto', 'Ler links Shopee', 'Publicar');
   wf.link('Precisa da Shopee?', 'Publicar', 1);
@@ -395,6 +401,9 @@ let resp = $('Telegram (publicação)').all().map((i) => i.json);
 const lim = $('Checar limite').first().json;
 if (lim.indices.length && $('Telegram (reenvio)').isExecuted) resp = LIB.juntarReenvio(resp, lim, $('Telegram (reenvio)').all().map((i) => i.json));
 return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), 4180, 740);
+  // Post do grupo que não saiu nem no reenvio: status "falha" (o admin recebe o alerta).
+  wf.add(itens('Status de falha', '$json.update'), 4400, 560);
+  wf.add(dtUpdate('Gravar falha', 'bfx_ofertas', 'oferta_id'), 4620, 560);
   wf.add(itens('Linhas de post', '$json.posts'), 4400, 680);
   wf.add(dtInsert('Gravar posts', 'bfx_posts'), 4620, 680);
   wf.add(itens('Alertas', "$('Resultado').first().json.alertas"), 4400, 820);
@@ -405,6 +414,7 @@ return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { l
   wf.link('Barrado pelo limite?', 'Esperar o Telegram', 0);
   wf.chain('Esperar o Telegram', 'Reenviar', 'Telegram (reenvio)', 'Resultado');
   wf.link('Barrado pelo limite?', 'Resultado', 1);
+  wf.chain('Resultado', 'Status de falha', 'Gravar falha');
   wf.chain('Resultado', 'Linhas de post', 'Gravar posts');
   wf.chain('Resultado', 'Alertas', 'Telegram (alertas)');
 
@@ -507,11 +517,14 @@ function wfTunel() {
     notes: 'Chamado pelo contêiner "vigia". Este caminho não passa pelo filtro do túnel: só responde dentro do Docker e em localhost.',
   }, 0, 300);
   wf.add(dtCreate('Criar bfx_config', 'bfx_config'), 220, 300);
+  // Só a linha do domínio próprio (não carrega os tokens nesta execução).
+  wf.add(dtGet('Ler domínio', 'bfx_config', [['chave', 'eq', 'tunel.dominio']]), 440, 300);
   wf.add(code('Linha da URL', `
-const base = String(($('Novo endereço do túnel').first().json.body || {}).url || '').trim().replace(/\\/+$/, '');
-if (!/^https:\\/\\/[a-z0-9.-]+$/i.test(base)) throw new Error('URL do túnel inválida: ' + base);
-return [{ json: { chave: 'n8n_webhook_url', valor: base + '/webhook/telegram-ofertas' } }];`, { cfg: false, nota: 'Monta a Production URL do webhook do 01 a partir do endereço público do túnel.' }), 440, 300);
-  wf.add(Object.assign(dtUpdate('Gravar URL', 'bfx_config', 'chave', 'upsert'), { executeOnce: true }), 660, 300);
+const cfg = LIB.montarConfig($input.all().map((i) => i.json).filter((r) => r.chave));
+const r = LIB.validarUrlTunel(($('Novo endereço do túnel').first().json.body || {}).url, cfg.tunel.dominio);
+if (!r.ok) throw new Error(r.erro);
+return [{ json: { chave: 'n8n_webhook_url', valor: r.base + '/webhook/telegram-ofertas' } }];`, { lib: true, cfg: false, nota: 'Aceita só trycloudflare.com, ngrok ou o domínio de tunel.dominio, e monta a Production URL do webhook do 01.' }), 660, 300);
+  wf.add(Object.assign(dtUpdate('Gravar URL', 'bfx_config', 'chave', 'upsert'), { executeOnce: true }), 880, 300);
   wf.add({
     name: 'Rodar setup', type: 'n8n-nodes-base.executeWorkflow', typeVersion: 1.2,
     parameters: {
@@ -520,8 +533,48 @@ return [{ json: { chave: 'n8n_webhook_url', valor: base + '/webhook/telegram-ofe
       options: { waitForSubWorkflow: true },
     },
     notes: 'O setup registra o webhook no Telegram com a nova URL e manda o resumo aos admins.',
-  }, 880, 300);
-  wf.chain('Novo endereço do túnel', 'Criar bfx_config', 'Linha da URL', 'Gravar URL', 'Rodar setup');
+  }, 1100, 300);
+  wf.chain('Novo endereço do túnel', 'Criar bfx_config', 'Ler domínio', 'Linha da URL', 'Gravar URL', 'Rodar setup');
+  return wf;
+}
+
+/* ---------- 91 · saúde (só no servidor local) ---------- */
+
+function wfSaude() {
+  // Roda a cada 5 min (chamado pelo vigia). Sucesso não fica no histórico: a execução leva a cfg com os tokens.
+  const wf = new WF('91 · Saúde: conferir o webhook (servidor local)', { saveDataSuccessExecution: 'none' });
+  wf.add({
+    name: 'Conferir saúde', type: 'n8n-nodes-base.webhook', typeVersion: 2, webhookId: uuid('webhook-oferto-saude'),
+    parameters: { httpMethod: 'POST', path: 'oferto-saude', responseMode: 'responseNode', options: {} },
+    notes: 'Chamado pelo contêiner "vigia" a cada 5 min. Não passa pelo filtro do túnel: só responde dentro do Docker e em localhost.',
+  }, 0, 300);
+  configNodes(wf, 220, 300);
+  wf.link('Conferir saúde', 'Ler config');
+  wf.add(code('Consultas', `
+const c = LIB.saudeChamadas(cfg);
+// Sem bot_token não há o que consultar: segue direto para a avaliação.
+return (c.length ? c : [{ pular: true }]).map((j) => ({ json: j }));`, { lib: true }), 660, 300);
+  wf.add(switchExpr('Tem bot?', '$json.metodo ? 0 : 1', 2), 880, 300);
+  wf.add(httpTelegram('Telegram (getWebhookInfo)'), 1100, 220);
+  wf.add(code('Avaliar saúde', `
+const chamadas = $('Consultas').all().map((i) => i.json).filter((c) => c.metodo);
+const resp = chamadas.length ? $input.all().map((i) => i.json) : [];
+return [{ json: LIB.avaliarSaude(chamadas, resp, cfg, Date.now()) }];`, { lib: true, nota: 'Alerta: erro de entrega nos últimos 10 min, fila > 20, URL diferente de n8n_webhook_url ou token inválido. 1 alerta por tipo a cada 60 min; avisa quando resolve.' }), 1320, 300);
+  wf.add(itens('Estado do alerta', '$json.linhas'), 1540, 160);
+  wf.add(dtUpdate('Gravar estado', 'bfx_config', 'chave', 'upsert'), 1760, 160);
+  wf.add(itens('Alertas de saúde', "$('Avaliar saúde').first().json.chamadas"), 1540, 300);
+  wf.add(httpTelegram('Telegram (alertas)'), 1760, 300);
+  wf.add({
+    name: 'Responder ao vigia', type: 'n8n-nodes-base.respondToWebhook', typeVersion: 1.1,
+    parameters: { respondWith: 'json', responseBody: "={{ JSON.stringify($('Avaliar saúde').first().json.resposta) }}", options: {} },
+  }, 1540, 460);
+  wf.chain('Config', 'Consultas', 'Tem bot?');
+  wf.link('Tem bot?', 'Telegram (getWebhookInfo)', 0);
+  wf.link('Tem bot?', 'Avaliar saúde', 1);
+  wf.chain('Telegram (getWebhookInfo)', 'Avaliar saúde');
+  wf.chain('Avaliar saúde', 'Estado do alerta', 'Gravar estado');
+  wf.chain('Avaliar saúde', 'Alertas de saúde', 'Telegram (alertas)');
+  wf.chain('Avaliar saúde', 'Responder ao vigia');
   return wf;
 }
 
@@ -531,7 +584,7 @@ function main() {
   fs.mkdirSync(SAIDA, { recursive: true });
   const wfs = { '00-setup.json': wfSetup(), '01-telegram-router.json': wfRouter(), '02-coleta-shopee.json': wfShopee(), '03-relatorio-diario.json': wfRelatorio() };
   fs.mkdirSync(SAIDA_LOCAL, { recursive: true });
-  for (const [arq, wf] of Object.entries(Object.assign({}, wfs, { '90-tunel.json': wfTunel() }))) {
+  for (const [arq, wf] of Object.entries(Object.assign({}, wfs, { '90-tunel.json': wfTunel(), '91-saude.json': wfSaude() }))) {
     const j = wf.json();
     if (wfs[arq]) fs.writeFileSync(path.join(SAIDA, arq), JSON.stringify(j, null, 2) + '\n');
     fs.writeFileSync(path.join(SAIDA_LOCAL, arq), JSON.stringify(Object.assign({ id: IDS_LOCAL[arq] }, j), null, 2) + '\n');

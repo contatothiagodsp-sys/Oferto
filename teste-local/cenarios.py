@@ -133,11 +133,38 @@ envios = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMess
 checar('post barrado reenviado (2 tentativas)', len(envios) == 2)
 checar('post gravado e sem alerta de falha', len(linhas('bfx_posts', f"where oferta_id = '{oid2}'")) == 1 and not any('Falhas' in c['payload'].get('text', '') for c in cs))
 
+print('1c) Limite do Telegram duas vezes: oferta fica "falha" e o admin é avisado')
+limpar_log()
+update(msg('/oferta casa\nhttps://www.amazon.com.br/Cafeteira/dp/B0CAFETE01\nCafeteira Teste\npreço 89,90\nref90 119,90 https://comparador.example/c'))
+oid3 = id_do_card(chamadas())
+urllib.request.urlopen('http://127.0.0.1:8787/mock/barrar/2').read()
+limpar_log()
+update(clique('a', oid3), espera=14)
+cs = chamadas()
+checar('status falha (não fica aprovada sem post)', linhas('bfx_ofertas', f"where oferta_id = '{oid3}'")[0]['status'] == 'falha')
+checar('admins avisados e card marcado', len([c for c in cs if 'NÃO saiu no grupo' in c['payload'].get('text', '')]) == 2
+       and any(c['metodo'] == 'editMessageReplyMarkup' and 'Não saiu' in json.dumps(c['payload'], ensure_ascii=False) for c in cs))
+checar('nenhum post gravado', linhas('bfx_posts', f"where oferta_id = '{oid3}'") == [])
+
 print('2) Clique repetido não publica de novo')
 limpar_log()
 update(clique('a', oid, de=222))
 cs = chamadas()
 checar('só responde "já está aprovada"', [c['metodo'] for c in cs] == ['answerCallbackQuery'] and 'aprovada' in cs[0]['payload']['text'])
+
+print('2b) Dois cliques ao mesmo tempo publicam uma vez só')
+limpar_log()
+update(msg('/oferta casa\nhttps://www.amazon.com.br/Liquidificador/dp/B0LIQUID01\nLiquidificador Teste\npreço 79,90\nref90 99,90 https://comparador.example/l'))
+oid4 = id_do_card(chamadas())
+limpar_log()
+import threading
+ts_ = [threading.Thread(target=post, args=('http://127.0.0.1:5678/webhook/telegram-ofertas', clique('a', oid4, de=d))) for d in (111, 222)]
+for t in ts_: t.start()
+for t in ts_: t.join()
+time.sleep(14)
+cs = chamadas()
+checar('um post só no grupo', len([c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']) == 1)
+checar('oferta aprovada com 1 post', linhas('bfx_ofertas', f"where oferta_id = '{oid4}'")[0]['status'] == 'aprovada' and len(linhas('bfx_posts', f"where oferta_id = '{oid4}'")) == 1)
 
 print('3) Segredo errado é ignorado')
 limpar_log()
@@ -195,6 +222,15 @@ checar('n8n_webhook_url gravada', any(r['valor'] == 'https://exemplo-novo.tryclo
 checar('segredo do webhook mantido', all(c['payload'].get('secret_token') == SEGREDO for c in sw))
 checar('arrumação do grupo não repetida', not any(c['metodo'] == 'setChatDescription' for c in cs))
 
+print('7b) Túnel com domínio não permitido é recusado')
+limpar_log()
+post('http://127.0.0.1:5678/webhook/oferto-tunel', {'url': 'https://atacante.example.com'})
+time.sleep(6)
+checar('nenhum setWebhook', not any(c['metodo'] == 'setWebhook' for c in chamadas()))
+checar('n8n_webhook_url mantida', linhas('bfx_config', "where chave = 'n8n_webhook_url'")[0]['valor'] == 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas')
+erros_tunel = sqlite3.connect(DB).execute("select count(*) from execution_entity where workflowId = 'wfTunel000000001' and status = 'error'").fetchone()[0]
+checar('recusa registrada como erro no 90', erros_tunel == 1)
+
 print('8) Avisos automáticos do grupo são apagados')
 limpar_log()
 update({'update_id': 9, 'message': {'message_id': 901, 'chat': {'id': -1001234567890, 'type': 'supergroup'}, 'from': {'id': 555}, 'new_chat_members': [{'id': 555}]}})
@@ -202,8 +238,42 @@ update({'update_id': 10, 'message': {'message_id': 902, 'chat': {'id': -10012345
 dl = [c for c in chamadas() if c['metodo'] == 'deleteMessage']
 checar('apaga "entrou" com o bot publicador', len(dl) == 1 and dl[0]['payload']['message_id'] == 901 and dl[0]['token'] == 'TOKGRUPO')
 
+print('9) Servidor local: saúde do webhook (workflow 91)')
+def saude():
+    req = urllib.request.Request('http://127.0.0.1:5678/webhook/oferto-saude', data=b'{}', method='POST', headers={'content-type': 'application/json'})
+    r = json.loads(urllib.request.urlopen(req, timeout=60).read())
+    time.sleep(2)
+    return r
+def avisos():
+    return [c for c in chamadas() if c['metodo'] == 'sendMessage']
+limpar_log()
+r = saude()
+checar('tudo ok: responde ok e não avisa ninguém', r.get('ok') is True and r.get('problemas') == [] and avisos() == [])
+checar('consulta getWebhookInfo dos 2 bots', sorted(c['token'] for c in chamadas() if c['metodo'] == 'getWebhookInfo') == ['TOKADMIN', 'TOKGRUPO'])
+urllib.request.urlopen('http://127.0.0.1:8787/mock/erro-webhook/on').read()
+limpar_log()
+r = saude()
+av = avisos()
+checar('erro de entrega: alerta os 2 admins', r.get('problemas') == ['erro_admin', 'erro_grupo'] and len(av) == 2 and 'problema no bot' in av[0]['payload']['text'])
+checar('estado do alerta gravado na bfx_config', 'erro_admin' in json.loads(linhas('bfx_config', "where chave = 'saude.ultimo_alerta'")[0]['valor']))
+limpar_log()
+saude()
+checar('mesmo problema 5 min depois: sem alerta repetido', avisos() == [])
+urllib.request.urlopen('http://127.0.0.1:8787/mock/erro-webhook/off').read()
+limpar_log()
+r = saude()
+av = avisos()
+checar('resolvido: avisa os admins e limpa o estado', r.get('ok') is True and len(av) == 2 and 'resolvido' in av[0]['payload']['text']
+       and linhas('bfx_config', "where chave = 'saude.ultimo_alerta'")[0]['valor'] == '{}')
+config_set('n8n_webhook_url', 'https://outro.trycloudflare.com/webhook/telegram-ofertas')
+limpar_log()
+r = saude()
+checar('webhook com URL diferente da config: alerta', r.get('problemas') == ['url_admin', 'url_grupo'] and len(avisos()) == 2)
+config_set('n8n_webhook_url', 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas')
+
 c = sqlite3.connect(DB)
-erros = c.execute("select count(*) from execution_entity where status != 'success'").fetchone()[0]
+# A recusa do túnel (7b) é um erro esperado.
+erros = c.execute("select count(*) from execution_entity where status != 'success' and not (workflowId = 'wfTunel000000001' and status = 'error')").fetchone()[0]
 checar('nenhuma execução com erro no n8n', erros == 0)
 
 print(f'\n{len(falhas)} falha(s)' if falhas else '\nTudo certo.')
