@@ -275,12 +275,13 @@ return [{ json: LIB.resumoSetup(chamadas, resp, $('Config').first().json.avisos,
 const criados = $('Resumo').first().json.topicos;
 return LIB.arrumarGrupoChamadas(cfg, criados).map((c) => ({ json: c }));`, { lib: true, nota: 'Descrição, General → 💬 Conversa, textos fixados e tópicos de oferta fechados.' }), x0 + 1100, 760);
   // O Telegram limita ~20 mensagens por minuto num grupo: 3,5 s entre chamadas evita o erro 429.
-  wf.add(httpTelegram('Telegram (grupo)', 3500), x0 + 1320, 760);
+  // Queda de conexão: tenta de novo até 3 vezes (o 429 é evitado pelo ritmo de 3,5 s).
+  wf.add(Object.assign(httpTelegram('Telegram (grupo)', 3500), { retryOnFail: true, maxTries: 3, waitBetweenTries: 5000 }), x0 + 1320, 760);
   wf.add(code('Fixar mensagens', `
 const chamadas = $('Chamadas do grupo').all().map((i) => i.json);
 const resp = $input.all().map((i) => i.json);
 return LIB.fixarChamadas(chamadas, resp, cfg).map((c) => ({ json: c }));`, { lib: true }), x0 + 1540, 760);
-  wf.add(httpTelegram('Telegram (fixar)', 3500), x0 + 1760, 760);
+  wf.add(Object.assign(httpTelegram('Telegram (fixar)', 3500), { retryOnFail: true, maxTries: 3, waitBetweenTries: 5000 }), x0 + 1760, 760);
   wf.add(code('Resumo do grupo', `
 const chamadas = $('Chamadas do grupo').all().map((i) => i.json).concat($('Fixar mensagens').all().map((i) => i.json));
 const resp = $('Telegram (grupo)').all().map((i) => i.json).concat($input.all().map((i) => i.json));

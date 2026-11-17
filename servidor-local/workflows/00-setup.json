@@ -725,6 +725,9 @@
           "timeout": 20000
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "id": "a5f0f2a3-f133-4fea-a733-b2f2cd7402d8",
       "position": [
         2940,
@@ -773,6 +776,9 @@
           "timeout": 20000
         }
       },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "id": "286520b8-bc0e-428f-a09f-debdc5e8db1d",
       "position": [
         3380,
