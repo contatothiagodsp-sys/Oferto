@@ -647,8 +647,9 @@ test('/start no bot publicador: genérico, por tópico/campanha e gravação em 
   assert.deepEqual([L.lerStartPayload('top', cfg).convite, L.lerStartPayload('bel', cfg).categoria], ['top_bot', 'beleza']);
   assert.equal(L.lerStartPayload('xyz_1', cfg), null);
   assert.equal(L.classificarUpdate(privado('/start xyz', 777), HS, cfg, AGORA, { bot: 'grupo' }).convite, 'bot_start');
-  // admin no publicador também recebe o /start de membro (comandos de admin só no bot de aprovação)
-  assert.equal(L.classificarUpdate(privado('/oferta casa', 111), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'start');
+  // admin no publicador: /start é o de membro; comandos de admin (/oferta…) valem como no bot de aprovação
+  assert.equal(L.classificarUpdate(privado('/start', 111), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'start');
+  assert.equal(L.classificarUpdate(privado('/oferta casa', 111), HS, cfg, AGORA, { bot: 'grupo' }).chamadas[0].bot, 'admin');
   // mensagem que não é /start: responde, mas não grava
   assert.equal(L.classificarUpdate(privado('oi', 777), HS, cfg, AGORA, { bot: 'grupo' }).linha, null);
 
@@ -1106,4 +1107,11 @@ test('card: link grátis do histórico (Keepa) na Amazon e comparadores sem refe
   assert.doesNotMatch(daKeepa, /gráfico da Keepa/);
   const shopee = L.cardAprovacao(Object.assign({}, base, { loja: 'shopee', produto_id: 'shp_1_2', selo: 'sem_ref', min90: null }), cfg, []).text;
   assert.doesNotMatch(shopee, /keepa/);
+});
+
+test('admin manda /oferta ao bot publicador no privado: vira oferta no bot de aprovação', () => {
+  const cfg = cfgTeste();
+  const r = L.classificarUpdate(privado('/oferta casa https://www.amazon.com.br/dp/B0ABCDEF12\nT\npreço 10', 111), HS, cfg, AGORA, { bot: 'grupo' });
+  assert.deepEqual([r.rota, r.chat_id, r.oferta.categoria], ['oferta', 111, 'casa']);
+  assert.equal(L.classificarUpdate(privado('/oferta casa https://www.amazon.com.br/dp/B0ABCDEF12', 999), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'start');
 });
