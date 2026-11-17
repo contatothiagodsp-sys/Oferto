@@ -4,18 +4,21 @@
 
 ## Checklist rápido (antes de cada publicação)
 
-- [ ] Tem "Contém link de afiliado" ou `#publi`? O bot já inclui; confira quando colar.
-- [ ] Tem a data e a hora do preço? O bot já inclui.
-- [ ] O selo ✓ tem fonte: nosso histórico ou um comparador citado?
-- [ ] O texto não promete o que a loja não promete ("o menor preço do Brasil", "último dia")?
+- [ ] A 1ª linha tem `#publi`, e o fim tem "Contém link de afiliado"? O bot já inclui; confira quando colar.
+- [ ] Tem "Preço e disponibilidade de DD/MM às HH:MM, sujeitos a alteração. Frete: confira na loja."? O bot já inclui.
+- [ ] O selo tem fonte: nosso histórico ou um comparador? Com 0%, o texto diz "igual ao menor preço", sem a palavra "desconto".
+- [ ] Histórico com menos de 90 dias? O post diz "menor preço desde DD/MM" (o bot faz, se `min90_dias` vier preenchido).
+- [ ] Com cupom: "preço com cupom da loja, sujeito a limite e validade".
+- [ ] Post da Amazon: tem "Como Associado da Amazon, ganhamos com compras qualificadas."?
+- [ ] O texto não promete o que a loja não promete ("o menor preço do Brasil", "último dia", "pode acabar a qualquer momento")?
 - [ ] Nenhum dado de membro aparece (print com nome, número etc.)?
 
 ## CONAR: identificação de publicidade
 
-- O **Guia de Publicidade por Influenciadores Digitais** do CONAR (2021) pede que a relação comercial seja **identificada de forma clara**. Link de afiliado é relação comercial.
+- O CONAR (Guia de Publicidade por Influenciadores Digitais e as regras de 2026) pede que a relação comercial seja **identificada de forma clara e logo no início**. Link de afiliado é relação comercial.
 - **Como cumprimos:**
-  - "Contém link de afiliado" em todo post: Telegram, WhatsApp e na resposta do X;
-  - `#publi` nos posts do X;
+  - `#publi` na **1ª linha** de todo post: Telegram (`🏠 Casa & Eletro · #publi`), WhatsApp canal e grupo (`⚡ ALERTA DE PREÇO · … · #publi`) e X (`#publi · título`);
+  - "Contém link de afiliado" no fim de todo post e na resposta do X (que também leva `#publi`);
   - aviso na descrição de cada espaço e o aviso completo fixado (texto em [02](02-textos-fixados.md#aviso-completo-de-afiliado)).
 - O aviso vai **no próprio post**, não só na bio. Quem recebe um encaminhamento não vê a bio.
 
@@ -24,9 +27,13 @@
 - Pelo CDC (arts. 30, 31 e 37), a oferta publicada **vincula quem anuncia** e a publicidade não pode ser enganosa. Nós **não somos o fornecedor**, mas divulgamos a oferta. Por isso:
   - nunca arredonde preço nem invente "de/por";
   - o "de" que mostramos é o **menor preço em 90 dias**, nunca o preço riscado da loja;
-  - sempre informe a **data e a hora** e que o preço pode mudar;
-  - se o preço mudou, corrija no próprio post (resposta R2 em [03-moderacao.md](03-moderacao.md)).
-- **Frete e cupom:** se o preço depende de cupom, de frete grátis ou de pagamento à vista no Pix, escreva isso no título. Exemplo: `Air Fryer Mondial 4L (com cupom BF10, no Pix)`.
+  - **selo honesto:** com desconto de 1% ou mais, "X% abaixo do menor preço dos últimos 90 dias (R$ Y)"; com 0%, "igual ao menor preço dos últimos 90 dias", **sem** a palavra "desconto";
+  - **cobertura:** se a referência cobre menos de 90 dias, o post diz "menor preço desde DD/MM";
+  - **fonte:** o post público não cita a ferramenta de histórico (ex.: Keepa), porque os termos de uso dela não estão confirmados. O card de aprovação mostra a origem (Keepa, histórico próprio ou manual) só para o admin;
+  - sempre informe a **data e a hora**, que o preço e a disponibilidade podem mudar e que o frete se confere na loja;
+  - se o preço mudou, encerre o post ("⛔ Oferta encerrada às HH:MM · o preço mudou", título riscado e sem link) ou corrija com a resposta R2 em [03-moderacao.md](03-moderacao.md).
+- **Cupom:** o post diz "preço com cupom da loja, sujeito a limite e validade". Se o preço depende também de frete grátis ou de pagamento no Pix, escreva isso no título. Exemplo: `Air Fryer Mondial 4L (no Pix)`.
+- **Urgência:** nada de "corre", "últimas unidades" ou "pode acabar a qualquer momento". Não sabemos o estoque. O alerta do grupo do WhatsApp é `⚡ ALERTA DE PREÇO`, sem prometer escassez.
 
 ## Conteúdo "Desconto FALSO do dia" (X)
 
@@ -42,7 +49,9 @@
 ## LGPD
 
 - **Grupos:**
-  - não guardamos nome, número ou ID de quem entra; o bot grava só um código irreversível (`user_hash`);
+  - o que guardamos de quem entra ou sai do Telegram: um **código pseudonimizado** (`user_hash`, feito a partir do ID com um segredo), o **nome do link de convite** e a **data**. Serve para medir campanhas. Não guardamos nome, @ nem telefone;
+  - código pseudonimizado ainda é dado pessoal na LGPD: por isso **não** escrevemos "não coletamos dados". A mensagem 🔒 Segurança e privacidade diz o que guardamos e como pedir a exclusão;
+  - **pedido de exclusão:** o membro fala com um admin. O admin pede o `/id` da pessoa, calcula o código e apaga as linhas dela na tabela `bfx_entradas` (ou, se não der para calcular, apaga pelo dia e pelo link de convite que ela informar). Responda em até 15 dias;
   - não exporte listas de membros;
   - não adicione ninguém sem pedido.
 - **Comunidade do WhatsApp:** use o formato com números ocultos para os membros (**VERIFICAR**), para reduzir a exposição a golpistas.
@@ -55,12 +64,11 @@
 
 ### Amazon (Associados)
 
-- [ ] **Divulgação obrigatória:**
-  - a Amazon exige uma frase de identificação específica, algo como "Como Associado da Amazon, recebo por compras qualificadas";
-  - conferir o texto exato e incluir na descrição dos canais e na mensagem fixada do Telegram.
+- [x] **Divulgação obrigatória:** "Como Associado da Amazon, ganhamos com compras qualificadas." Está em todo post da Amazon (Telegram, WhatsApp e resposta do X), na mensagem 🔒 Segurança e privacidade e no aviso completo de afiliado.
 - [ ] **Exibição de preço:**
   - os termos têm regras sobre mostrar preço que não veio da API oficial (atualização e horário);
-  - conferir se o preço manual com data e hora atende. **Ponto mais importante desta lista.**
+  - o post já traz "Preço e disponibilidade de DD/MM às HH:MM, sujeitos a alteração";
+  - se a Amazon exigir preço vindo da API oficial, mude `amazon.mostrar_preco` para `nao`: os posts da Amazon passam a dizer só "no menor preço dos últimos 90 dias" e "👉 Veja o preço atual na Amazon", sem valor nem %. **Ponto mais importante desta lista.**
 - [ ] **Cadastro sem site:** conferir se a Amazon aceita perfis (X, Instagram) e canais de mensagem (WhatsApp, Telegram) como "Sites e apps móveis". **Sem site, é o 2º ponto mais importante:** se não aceitar, declare o X e o Instagram e confirme com o suporte do Associates se os grupos podem receber os links.
 - [ ] **Canais permitidos:** declarar todos os espaços onde os links aparecem.
 - [ ] **Anúncios:**
