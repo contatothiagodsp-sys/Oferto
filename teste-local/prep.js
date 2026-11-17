@@ -21,6 +21,7 @@ const cfg = {
   n8n_webhook_url: 'http://localhost:5678/webhook/telegram-ofertas', telegram_api: 'http://127.0.0.1:8787',
   'shopee.app_id': '123456', 'shopee.secret': 'segredo-shopee', 'shopee.endpoint': 'http://127.0.0.1:8787/graphql',
   'shopee.busca.casa': 'air fryer', 'shopee.busca.beleza': 'perfume', 'shopee.busca.bebe': '', 'shopee.busca.tech': '',
+  'keepa.chave': 'teste', 'keepa.api': 'http://127.0.0.1:8787',
   'amazon.tag.casa_tg': 'marca-casatg-20', 'amazon.tag.casa_wac': 'marca-casawac-20', 'amazon.tag.casa_wag': 'marca-casawag-20', 'amazon.tag.casa_x': 'marca-casax-20',
 };
 const linhas = Object.entries(cfg).map(([chave, valor]) => ({ chave, valor }));

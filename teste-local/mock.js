@@ -1,10 +1,12 @@
-// Servidor falso da Bot API do Telegram e da Shopee Affiliate API (para teste local).
+// Servidor falso da Bot API do Telegram, da Shopee Affiliate API e da Keepa (para teste local).
 const http = require('http');
 const fs = require('fs');
 const crypto = require('crypto');
 const LOG = process.argv[2] || require('path').join(__dirname, 'tmp', 'mock-log.jsonl');
 const SHOPEE_APP = '123456', SHOPEE_SECRET = 'segredo-shopee';
 let msgId = 100, thread = 500, fixada = null, barrar = 0;
+// Resposta da Keepa (GET /product) confirmada no SDK oficial keepacom/api_backend.
+const KEEPA = {"tokensLeft":1180,"refillIn":2400,"tokensConsumed":1,"products":[{"asin":"B0TESTE123","domainId":12,"title":"Air Fryer 4L","images":[{"l":"71abcXYZ.jpg","m":"41abcXYZ.jpg"}],"lastUpdate":8351280,"stats":{"current":[29990,28990,-1,-1,49990,-1,-1,-1,-1,-1,-1,7,0,0,0,-1,46,1200,28990],"minInInterval":[[8285220,27990],[8285220,27490],null,null,[8285220,49990],null,null,null,null,null,null,null,null,null,null,null,null,null,[8285220,27990]]}}]};
 
 function resultado(metodo, p) {
   switch (metodo) {
@@ -25,6 +27,22 @@ http.createServer((req, res) => {
     let saida;
     const m = req.url.match(/^\/bot([^/]+)\/(\w+)/);
     if (req.url === '/mock/barrar') { barrar = 1; res.end('ok'); return; }
+    if (req.url.startsWith('/product?')) {
+      // Keepa: GET /product?key=K&domain=12&asin=X&stats=90&history=0. ASIN B0SEMTOKEN = sem tokens (429).
+      const q = new URL(req.url, 'http://mock').searchParams;
+      const asin = q.get('asin');
+      fs.appendFileSync(LOG, JSON.stringify({ api: 'keepa', key: q.get('key'), asin, domain: q.get('domain'), stats: q.get('stats'), buybox: q.get('buybox') }) + '\n');
+      let status = 200;
+      if (q.get('key') !== 'teste') { status = 400; saida = { error: { type: 'invalidKey', message: 'Invalid key' } }; }
+      else if (asin === 'B0SEMTOKEN') { status = 429; saida = { tokensLeft: -3, refillIn: 120000, refillRate: 20, tokensConsumed: 0 }; }
+      else {
+        saida = JSON.parse(JSON.stringify(KEEPA));
+        saida.products[0].asin = asin;
+      }
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(saida));
+      return;
+    }
     if (m) {
       const p = body ? JSON.parse(body) : {};
       fs.appendFileSync(LOG, JSON.stringify({ api: 'telegram', token: m[1], metodo: m[2], payload: p }) + '\n');
