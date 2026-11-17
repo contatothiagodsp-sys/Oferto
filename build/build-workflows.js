@@ -161,7 +161,7 @@ function dtCreate(name, t) {
   };
 }
 
-function httpTelegram(name) {
+function httpTelegram(name, intervalo) {
   return {
     name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
     notes: 'Chama a Bot API do Telegram. Cada item: { bot, metodo, payload }.',
@@ -173,7 +173,7 @@ function httpTelegram(name) {
       specifyBody: 'json',
       jsonBody: '={{ JSON.stringify($json.payload) }}',
       options: {
-        batching: { batch: { batchSize: 1, batchInterval: 60 } },
+        batching: { batch: { batchSize: 1, batchInterval: intervalo || 60 } },
         response: { response: { neverError: true } },
         timeout: 20000,
       },
@@ -274,12 +274,13 @@ return [{ json: LIB.resumoSetup(chamadas, resp, $('Config').first().json.avisos,
   wf.add(code('Chamadas do grupo', `
 const criados = $('Resumo').first().json.topicos;
 return LIB.arrumarGrupoChamadas(cfg, criados).map((c) => ({ json: c }));`, { lib: true, nota: 'Descrição, General → 💬 Conversa, textos fixados e tópicos de oferta fechados.' }), x0 + 1100, 760);
-  wf.add(httpTelegram('Telegram (grupo)'), x0 + 1320, 760);
+  // O Telegram limita ~20 mensagens por minuto num grupo: 3,5 s entre chamadas evita o erro 429.
+  wf.add(httpTelegram('Telegram (grupo)', 3500), x0 + 1320, 760);
   wf.add(code('Fixar mensagens', `
 const chamadas = $('Chamadas do grupo').all().map((i) => i.json);
 const resp = $input.all().map((i) => i.json);
 return LIB.fixarChamadas(chamadas, resp, cfg).map((c) => ({ json: c }));`, { lib: true }), x0 + 1540, 760);
-  wf.add(httpTelegram('Telegram (fixar)'), x0 + 1760, 760);
+  wf.add(httpTelegram('Telegram (fixar)', 3500), x0 + 1760, 760);
   wf.add(code('Resumo do grupo', `
 const chamadas = $('Chamadas do grupo').all().map((i) => i.json).concat($('Fixar mensagens').all().map((i) => i.json));
 const resp = $('Telegram (grupo)').all().map((i) => i.json).concat($input.all().map((i) => i.json));
