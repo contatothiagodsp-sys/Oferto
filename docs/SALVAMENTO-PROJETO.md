@@ -64,5 +64,12 @@ flowchart LR
 - [x] **Documentação & Build**: `README.md` atualizado, `docs/CONFIG.md` regenerado e os 8 workflows recompilados (`npm run build`).
 - [x] **Validação**: `npm test` — `79/79` testes passando (incluindo testes VM dos novos Code nodes e conexões do workflow `04` e `05`).
 
-### ⏳ Próximo e Último Passo
-- **Salvamento 4/4**: Redeploy Docker (`servidor-local`), importação dos 8 workflows, sincronização SQLite em `bfx_config`, health checks ao vivo, teste das fontes curadas em produção e push Git para `origin/main`.
+### ✅ Salvamento 4/4 — Deploy em Produção, Sincronização SQLite, Validação ao Vivo & Push Git (Concluído — 100%)
+- [x] **Deploy Docker (`servidor-local`)**: Todos os 8 workflows reimportados e publicados via `docker compose run --rm preparar` com `oferto-n8n-1` e `oferto-vigia-1` em execução saudável (`running`).
+- [x] **Sincronização SQLite (`bfx_config` / `data_table_user_42N5LGlb4Wm5TyCN`)**:
+  - Ativados: `agentes.cacador=sim`, `agentes.auditor=sim`, `agentes.marketing=sim`, `agentes.concierge=sim`, `agentes.guardiao=sim`, `radar.canais_curados=sim`, `cupons.esquenta_19h=sim`, `admin.notificacao_piloto=compacta` (`topico_chat_aberto=174` mantido; nenhum segredo exibido).
+- [x] **Verificação em Produção**:
+  - `GET http://127.0.0.1:5678/healthz` → `{"status":"ok"}`
+  - `POST http://127.0.0.1:5678/webhook/oferto-saude` → `{"ok":true,"problemas":[],"avisos":0}`
+  - Teste ao vivo das fontes curadas via `lerCanalTelegramPublico`: `canaltechofertas` (**18** ofertas com imagem e `s.shopee.com.br`) e `xetdaspromocoes` (**19** ofertas com imagem, `R$` decodificado e `link.amazon` pronto para desempacotamento).
+  - Suíte completa `npm test`: **79/79** testes passando em produção local (`0` falhas).
