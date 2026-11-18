@@ -12,7 +12,7 @@ const SAIDA_LOCAL = path.join(RAIZ, 'servidor-local', 'workflows');
 // IDs fixos no servidor local: a CLI importa e publica por ID, e o workflow do túnel chama o setup por ID.
 const IDS_LOCAL = {
   '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001',
-  '03-relatorio-diario.json': 'wfRelat000000001', '04-radar-ofertas.json': 'wfRadar000000001',
+  '03-relatorio-diario.json': 'wfRelat000000001', '04-radar-ofertas.json': 'wfRadar000000001', '05-guardiao-ofertas.json': 'wfGuard000000001',
   '90-tunel.json': 'wfTunel000000001', '91-saude.json': 'wfSaude000000001',
 };
 
@@ -536,6 +536,24 @@ return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { l
   wf.chain('Resultado', 'Linhas de post', 'Gravar posts');
   wf.chain('Resultado', 'Alertas', 'Telegram (alertas)');
 
+  // Disparar alertas pessoais (bfx_alertas) para membros interessados no produto publicado
+  wf.add(code('Disparar alertas oferta?', `
+const p = $('Plano de links').first().json;
+if (!$json.ok || (p && p.ctx && p.ctx.so_textos) || !p || !p.oferta) return [];
+return [{ json: { oferta: p.oferta, linksRows: $json.linksRows || [], ts: (p.ctx && p.ctx.ts) || Date.now() } }];`, { cfg: false }), 2640, 880);
+  wf.add(dtGet('Alertas ativos pub', 'bfx_alertas', [['ativo', 'eq', true]]), 2860, 880);
+  wf.add(code('Calcular DMs alerta', `
+const base = $('Disparar alertas oferta?').first().json;
+const rows = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
+return [{ json: LIB.dispararAlertasOferta([base.oferta], base.linksRows, rows, cfg, base.ts) }];`, { lib: true }), 3080, 880);
+  wf.add(itens('DMs alertas pub', '$json.chamadas'), 3300, 840);
+  wf.add(httpTelegram('Telegram (DMs alertas)'), 3520, 840);
+  wf.add(itens('Marcar alertas pub', "$('Calcular DMs alerta').first().json.updatesAlertas"), 3300, 960);
+  wf.add(dtUpdate('Atualizar avisos alertas', 'bfx_alertas', 'alerta_id'), 3520, 960);
+  wf.chain('Publicar', 'Disparar alertas oferta?', 'Alertas ativos pub', 'Calcular DMs alerta');
+  wf.chain('Calcular DMs alerta', 'DMs alertas pub', 'Telegram (DMs alertas)');
+  wf.chain('Calcular DMs alerta', 'Marcar alertas pub', 'Atualizar avisos alertas');
+
   // 2 · entrada/saída no grupo
   wf.add(itens('Linha de entrada', '$json.linha'), 1100, 960);
   wf.add(dtInsert('Gravar entrada', 'bfx_entradas'), 1320, 960);
@@ -639,6 +657,53 @@ return LIB.filtrarSugestao(cls, estado, cls.ts).map((c) => ({ json: c }));`, { l
     entradaSaida: 9,
     opcoesCode: "Object.assign({ modo: 'comando', chat_id: $('Classificar').first().json.chat_id, user_id: $('Classificar').first().json.user_id, ts: $('Classificar').first().json.ts }, $('Classificar').first().json.opcoes || {})",
   });
+
+  // 10 · rotas de comunidade (auto-onboarding de canal, /alerta de membro, /buscar /cupons /tophoje /resumao /demanda)
+  wf.add(switchExpr('Rota comunidade', "({ canal_novo: 0, alerta: 1, vitrine: 2 })[$json.rota] ?? 3", 4), 1100, 2900);
+  wf.link('Rota', 'Rota comunidade', 10);
+
+  // 10.0 · canal_novo: configura bio, link privado, grava bfx_config e fixa boas-vindas no canal recém-criado
+  wf.add(itens('Chamadas canal novo', `${CLS}.chamadas`), 1340, 2760);
+  wf.add(httpTelegram('Telegram (canal novo)'), 1560, 2760);
+  wf.add(code('Finalizar canal novo', `
+return [{ json: LIB.finalizarAutoOnboardingCanal(${CLS}, $input.all().map((i) => i.json), cfg) }];`, { lib: true }), 1780, 2760);
+  wf.add(itens('Upserts canal novo', '$json.upserts'), 2000, 2700);
+  wf.add(dtUpdate('Salvar canal novo', 'bfx_config', 'chave', 'upsert'), 2220, 2700);
+  wf.add(itens('Pos-setup canal novo', "$('Finalizar canal novo').first().json.chamadas"), 2000, 2820);
+  wf.add(httpTelegram('Telegram (pos-canal)'), 2220, 2820);
+  wf.link('Rota comunidade', 'Chamadas canal novo', 0);
+  wf.chain('Chamadas canal novo', 'Telegram (canal novo)', 'Finalizar canal novo');
+  wf.chain('Finalizar canal novo', 'Upserts canal novo', 'Salvar canal novo');
+  wf.chain('Finalizar canal novo', 'Pos-setup canal novo', 'Telegram (pos-canal)');
+
+  // 10.1 · alerta: /alerta, /meusalertas, /remover no privado do bot publicador
+  wf.add(dtGet('Alertas do membro', 'bfx_alertas', [['chat_id', 'eq', `={{ ${CLS}.chat_id }}`]]), 1340, 2960);
+  wf.add(code('Processar alerta', `
+const rows = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
+return [{ json: LIB.processarAlertaMembro(${CLS}, rows, cfg) }];`, { lib: true }), 1560, 2960);
+  wf.add(itens('Inserir alertas', '$json.inserir'), 1780, 2900);
+  wf.add(dtInsert('Gravar alerta', 'bfx_alertas'), 2000, 2900);
+  wf.add(itens('Atualizar alertas', "$('Processar alerta').first().json.atualizar"), 1780, 3000);
+  wf.add(dtUpdate('Salvar alerta', 'bfx_alertas', 'alerta_id'), 2000, 3000);
+  wf.add(itens('Resposta alerta', "$('Processar alerta').first().json.chamadas"), 1780, 3100);
+  wf.add(httpTelegram('Telegram (alerta membro)'), 2000, 3100);
+  wf.link('Rota comunidade', 'Alertas do membro', 1);
+  wf.chain('Alertas do membro', 'Processar alerta');
+  wf.chain('Processar alerta', 'Inserir alertas', 'Gravar alerta');
+  wf.chain('Processar alerta', 'Atualizar alertas', 'Salvar alerta');
+  wf.chain('Processar alerta', 'Resposta alerta', 'Telegram (alerta membro)');
+
+  // 10.2 · vitrine: /buscar, /cupons, /tophoje (membros) + /resumao, /demanda (admin)
+  wf.add(dtGet('Vitrine ofertas 7d', 'bfx_ofertas', [['ts', 'gte', '={{ Date.now() - 7 * 86400000 }}']]), 1340, 3240);
+  wf.add(dtGet('Vitrine links 7d', 'bfx_links', [['ts', 'gte', '={{ Date.now() - 7 * 86400000 }}']]), 1560, 3240);
+  wf.add(dtGet('Vitrine alertas', 'bfx_alertas', [['ativo', 'eq', true]]), 1780, 3240);
+  wf.add(code('Montar vitrine', `
+const pega = (n, col) => $(n).all().map((i) => i.json).filter((r) => r[col]);
+return [{ json: LIB.responderVitrineMembro(${CLS}, pega('Vitrine ofertas 7d', 'oferta_id'), pega('Vitrine links 7d', 'oferta_id'), pega('Vitrine alertas', 'alerta_id'), cfg) }];`, { lib: true }), 2000, 3240);
+  wf.add(itens('Mensagens vitrine', '$json.chamadas'), 2220, 3240);
+  wf.add(httpTelegram('Telegram (vitrine)'), 2440, 3240);
+  wf.link('Rota comunidade', 'Vitrine ofertas 7d', 2);
+  wf.chain('Vitrine ofertas 7d', 'Vitrine links 7d', 'Vitrine alertas', 'Montar vitrine', 'Mensagens vitrine', 'Telegram (vitrine)');
   return wf;
 }
 
@@ -688,13 +753,15 @@ return [{ json: p }];`, { lib: true }), x, y);
 
   wf.add(dtGet(N('Ofertas recentes'), 'bfx_ofertas', [['ts', 'gte', '={{ Date.now() - 4 * 86400000 }}']]), x + 1540, y);
   wf.add(dtGet(N('Histórico radar'), 'bfx_precos', [['ts', 'gte', '={{ Date.now() - 91 * 86400000 }}']]), x + 1760, y);
+  wf.add(dtGet(N('Alertas radar'), 'bfx_alertas', [['ativo', 'eq', true]]), x + 1870, y);
   wf.add(code(N('Selecionar radar'), `
 const base = $('${N('Planejar')}').first().json;
 const respWeb = base.fontesWeb.length && $('${N('Buscar fontes web')}').isExecuted ? $('${N('Buscar fontes web')}').all().map((i) => i.json) : [];
 const respSh = base.fontesShopee.length && $('${N('Shopee: radar')}').isExecuted ? $('${N('Shopee: radar')}').all().map((i) => i.json) : [];
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
-const precos = $input.all().map((i) => i.json).filter((r) => r.produto_id);
-return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg) }];`, { lib: true }), x + 1980, y);
+const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
+const alertas = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
+return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas) }];`, { lib: true }), x + 1980, y);
 
   wf.add(switchExpr(N('Tem redir 1?'), '$json.reqs1.length > 0 ? 0 : 1', 2), x + 2200, y);
   wf.add(itens(N('Itens redir 1'), `$('${N('Selecionar radar')}').first().json.reqs1`), x + 2420, y - 120);
@@ -763,6 +830,20 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
   wf.add(itens(N('Alertas lote'), `$('${N('Resultado lote radar')}').first().json.alertas`), x + 7920, y + 400);
   wf.add(httpTelegram(N('Telegram (alertas radar)')), x + 8140, y + 400);
 
+  // Notificar membros interessados (bfx_alertas) nas ofertas auto-publicadas pelo radar
+  wf.add(code(N('Disparar alertas radar?'), `
+if (!$json.ofertasPublicadas || !$json.ofertasPublicadas.length) return [];
+return [{ json: { ofertas: $json.ofertasPublicadas, linksRows: $json.linksRows || [], ts: ($('${N('Finalizar radar')}').first().json.opcoes || {}).ts || Date.now() } }];`, { cfg: false }), x + 7260, y + 500);
+  wf.add(dtGet(N('Alertas ativos radar'), 'bfx_alertas', [['ativo', 'eq', true]]), x + 7480, y + 500);
+  wf.add(code(N('Calcular DMs radar'), `
+const base = $('${N('Disparar alertas radar?')}').first().json;
+const rows = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
+return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cfg, base.ts) }];`, { lib: true }), x + 7700, y + 500);
+  wf.add(itens(N('DMs alertas radar'), '$json.chamadas'), x + 7920, y + 460);
+  wf.add(httpTelegram(N('Telegram (DMs radar)')), x + 8140, y + 460);
+  wf.add(itens(N('Marcar alertas radar'), `$('${N('Calcular DMs radar')}').first().json.updatesAlertas`), x + 7920, y + 560);
+  wf.add(dtUpdate(N('Atualizar avisos radar'), 'bfx_alertas', 'alerta_id'), x + 8140, y + 560);
+
   wf.link(cfgFluxo.entradaNode, N('Planejar'), cfgFluxo.entradaSaida || 0);
   wf.chain(N('Planejar'), N('Tem web?'));
   wf.link(N('Tem web?'), N('Fontes web'), 0);
@@ -773,7 +854,7 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
   wf.chain(N('Fontes Shopee'), N('Shopee: radar'), N('Ofertas recentes'));
   wf.link(N('Tem Shopee?'), N('Ofertas recentes'), 1);
 
-  wf.chain(N('Ofertas recentes'), N('Histórico radar'), N('Selecionar radar'), N('Tem redir 1?'));
+  wf.chain(N('Ofertas recentes'), N('Histórico radar'), N('Alertas radar'), N('Selecionar radar'), N('Tem redir 1?'));
   wf.link(N('Tem redir 1?'), N('Itens redir 1'), 0);
   wf.chain(N('Itens redir 1'), N('Abrir redir 1'), N('Aplicar redir 1'));
   wf.link(N('Tem redir 1?'), N('Aplicar redir 1'), 1);
@@ -806,6 +887,9 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
   wf.chain(N('Publicar lote radar'), N('Mensagens lote'), N('Telegram (pub radar)'), N('Resultado lote radar'));
   wf.chain(N('Resultado lote radar'), N('Posts lote'), N('Gravar posts radar'));
   wf.chain(N('Resultado lote radar'), N('Alertas lote'), N('Telegram (alertas radar)'));
+  wf.chain(N('Publicar lote radar'), N('Disparar alertas radar?'), N('Alertas ativos radar'), N('Calcular DMs radar'));
+  wf.chain(N('Calcular DMs radar'), N('DMs alertas radar'), N('Telegram (DMs radar)'));
+  wf.chain(N('Calcular DMs radar'), N('Marcar alertas radar'), N('Atualizar avisos radar'));
 }
 
 /* ---------- 04 · radar multi-fonte ---------- */
@@ -883,12 +967,57 @@ function wfRelatorio() {
   wf.add(dtGet('Links', 'bfx_links', [['ts', 'gte', ontem]]), 880, 300);
   wf.add(dtGet('Ofertas', 'bfx_ofertas', [['ts', 'gte', ontem], ['status', 'eq', 'pendente']], { match: 'anyCondition' }), 1100, 300);
   wf.add(dtGet('Entradas', 'bfx_entradas', []), 1320, 300);
+  wf.add(dtGet('Alertas ativos', 'bfx_alertas', [['ativo', 'eq', true]]), 1430, 300);
   wf.add(code('Montar relatório', `
 const pega = (n) => $(n).all().map((i) => i.json);
-return LIB.relatorioDiario({ posts: pega('Posts'), links: pega('Links'), ofertas: pega('Ofertas'), entradas: pega('Entradas') }, cfg, Date.now())
+return LIB.relatorioDiario({ posts: pega('Posts'), links: pega('Links'), ofertas: pega('Ofertas'), entradas: pega('Entradas'), alertas: pega('Alertas ativos') }, cfg, Date.now())
   .chamadas.map((c) => ({ json: c }));`, { lib: true }), 1540, 300);
   wf.add(httpTelegram('Telegram (relatório)'), 1760, 300);
-  wf.chain('Config', 'Posts', 'Links', 'Ofertas', 'Entradas', 'Montar relatório', 'Telegram (relatório)');
+  wf.chain('Config', 'Posts', 'Links', 'Ofertas', 'Entradas', 'Alertas ativos', 'Montar relatório', 'Telegram (relatório)');
+  return wf;
+}
+
+/* ---------- 05 · guardião de ofertas e vitrine 21h ---------- */
+
+function wfGuardiao() {
+  const wf = new WF('05 · Guardião de ofertas e Top 5 (a cada 2h)');
+  wf.add({
+    name: 'A cada 2 horas (guardião)',
+    type: 'n8n-nodes-base.scheduleTrigger',
+    typeVersion: 1.2,
+    parameters: { rule: { interval: [{ field: 'cronExpression', expression: '15 9-23/2 * * *' }] } },
+  }, 0, 300);
+  configNodes(wf, 220, 300);
+  wf.link('A cada 2 horas (guardião)', 'Ler config');
+  const janela = '={{ Date.now() - 36 * 3600000 }}';
+  wf.add(dtGet('Ofertas 36h', 'bfx_ofertas', [['ts', 'gte', janela]]), 660, 300);
+  wf.add(dtGet('Posts 36h', 'bfx_posts', [['ts', 'gte', janela]]), 880, 300);
+  wf.add(dtGet('Links 36h', 'bfx_links', [['ts', 'gte', janela]]), 1100, 300);
+  wf.add(code('Planejar guardião', `
+const ofs = $('Ofertas 36h').all().map((i) => i.json).filter((r) => r.oferta_id);
+return [{ json: LIB.planejarGuardiao(ofs, cfg, Date.now()) }];`, { lib: true }), 1320, 300);
+  wf.add(switchExpr('Tem checagens?', '$json.reqs.length > 0 ? 0 : 1', 2), 1540, 300);
+  wf.add(itens('Itens guardião', '$json.reqs'), 1760, 180);
+  wf.add(httpRadarGet('Checar páginas ativas', true), 1980, 180);
+  wf.add(code('Executar guardião', `
+const plano = $('Planejar guardião').first().json;
+const resp = plano.reqs.length && $('Checar páginas ativas').isExecuted ? $('Checar páginas ativas').all().map((i) => i.json) : [];
+const pega = (n) => $(n).all().map((i) => i.json).filter((r) => r.oferta_id);
+return [{ json: LIB.executarGuardiao(plano, resp, pega('Ofertas 36h'), pega('Posts 36h'), pega('Links 36h'), cfg, Date.now()) }];`, { lib: true }), 2200, 300);
+  wf.add(itens('Ofertas encerradas', '$json.updatesOfertas'), 2420, 180);
+  wf.add(dtUpdate('Marcar encerradas', 'bfx_ofertas', 'oferta_id'), 2640, 180);
+  wf.add(itens('Config vitrine', "$('Executar guardião').first().json.upsertsConfig"), 2420, 300);
+  wf.add(dtUpdate('Salvar dia vitrine', 'bfx_config', 'chave', 'upsert'), 2640, 300);
+  wf.add(itens('Chamadas guardião', "$('Executar guardião').first().json.chamadas"), 2420, 420);
+  wf.add(httpTelegram('Telegram (guardião)'), 2640, 420);
+
+  wf.chain('Config', 'Ofertas 36h', 'Posts 36h', 'Links 36h', 'Planejar guardião', 'Tem checagens?');
+  wf.link('Tem checagens?', 'Itens guardião', 0);
+  wf.chain('Itens guardião', 'Checar páginas ativas', 'Executar guardião');
+  wf.link('Tem checagens?', 'Executar guardião', 1);
+  wf.chain('Executar guardião', 'Ofertas encerradas', 'Marcar encerradas');
+  wf.chain('Executar guardião', 'Config vitrine', 'Salvar dia vitrine');
+  wf.chain('Executar guardião', 'Chamadas guardião', 'Telegram (guardião)');
   return wf;
 }
 
@@ -973,6 +1102,7 @@ function main() {
     '02-coleta-shopee.json': wfShopee(),
     '03-relatorio-diario.json': wfRelatorio(),
     '04-radar-ofertas.json': wfRadar(),
+    '05-guardiao-ofertas.json': wfGuardiao(),
   };
   fs.mkdirSync(SAIDA_LOCAL, { recursive: true });
   for (const [arq, wf] of Object.entries(Object.assign({}, wfs, { '90-tunel.json': wfTunel(), '91-saude.json': wfSaude() }))) {

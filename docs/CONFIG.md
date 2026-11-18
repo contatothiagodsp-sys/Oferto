@@ -28,6 +28,13 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `copy.chamativa` | `sim` | sim/nao: gera ganchos persuasivos, comparação De/Por e economia em R$ nos textos de Telegram e WhatsApp para atrair cliques |
 | `publicar.plataformas` | `wag,wac,x` | Quais textos prontos enviar ao aprovar: wag (Grupo WhatsApp), wac (Canal WhatsApp), x (X/Twitter). Use só wag para focar em Telegram + Grupo WhatsApp |
 | `divulgar.auto_diario` | `sim` | sim/nao: divulga automaticamente 1x ao dia (22h05) o hub dos seus canais para estimular entradas cruzadas |
+| `canais.auto_vincular` | `sim` | sim/nao: ao adicionar o bot publicador como admin num canal novo, identifica a categoria pelo nome, liga o canal, cria convite, coloca bio e fixa boas-vindas sozinho |
+| `alertas.ativo` | `sim` | sim/nao: permite aos membros cadastrar alertas pessoais (/alerta ps5) no bot publicador e receber DM automática com seu link de afiliado |
+| `alertas.max_por_membro` | `10` | Quantidade máxima de alertas ativos por membro |
+| `post.botoes_extras` | `nao` | sim/nao: adiciona botões [🔔 Criar alerta] e [📲 Mandar no Zap] embaixo dos posts do Telegram |
+| `guardiao.ativo` | `sim` | sim/nao: verifica a cada 2h se ofertas publicadas esgotaram ou subiram forte de preço e encerra o post automaticamente |
+| `vitrine.auto_noite` | `sim` | sim/nao: às 21h15 publica o resumão Top 5 Ofertas Ainda Ativas do Dia (também disponível com /resumao) |
+| `vitrine.ultimo_dia` |  | Gerado automaticamente pelo guardião para não repetir a vitrine noturna no mesmo dia |
 | `selo.tolerancia_pct` | `0` | Tolerância do selo em % acima do menor preço de 90 dias (recomendado: 0) |
 | `selo.exigir_ref90` | `sim` | sim/nao: exigir referência de 90 dias no /oferta e na coleta Shopee (links colados direto já liberam aprovação sem ref90 quando não estão acima do histórico) |
 | `shopee.app_id` |  | App ID da Shopee Affiliate Open API |
@@ -71,7 +78,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `afiliado.drogaraia` |  | Opcional: parâmetro/template de afiliado para Droga Raia (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.drogasil` |  | Opcional: parâmetro/template de afiliado para Drogasil (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.pichau` |  | Opcional: parâmetro/template de afiliado para Pichau (ex.: utm_source=meu_id ou URL com {url}) |
-| `categoria_nome.top` |  | Nome exibido para Top do Dia (ex.: Top do Dia) |
+| `categoria_nome.top` |  | Nome exibido para Top do Dia (ex.: Top Ofertas & Bugs) |
 | `topico.top` |  | message_thread_id do tópico Top do Dia (preenchido pelo setup) |
 | `canal.top` |  | Canal só de Top do Dia (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.top` |  | Link de entrada do canal Top do Dia (automático se público @usuario; informe se for privado) |
@@ -102,7 +109,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `canal_logo.tech` |  | Logo do canal Tech & Games (URL https:// ou file_id via comando /logo) |
 | `canal_desc.tech` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Tech & Games |
 | `shopee.busca.casa` | `air fryer; ventilador; aspirador robô; cafeteira; liquidificador` | Palavras-chave da coleta Shopee para Casa & Eletro (separe com ;) |
-| `shopee.busca.beleza` | `kit perfume; perfume importado; protetor solar; hidratante corporal; vitaminas; secador de cabelo` | Palavras-chave da coleta Shopee para Beleza & Presentes (separe com ;) |
+| `shopee.busca.beleza` | `perfume arabe; lattafa asad; fakhar black; khamrah; yara; club de nuit; sabah al ward; sauvage; 212 vip; le male; good girl; malbec; protetor solar; vitaminas` | Palavras-chave da coleta Shopee para Beleza & Presentes (separe com ;) |
 | `shopee.busca.bebe` | `fralda; lenço umedecido; brinquedo educativo; mamadeira` | Palavras-chave da coleta Shopee para Bebê & Família (separe com ;) |
 | `shopee.busca.tech` | `ps5; xbox series; placa de video; ssd nvme; headset gamer; fone bluetooth; smartwatch; monitor gamer` | Palavras-chave da coleta Shopee para Tech & Games (separe com ;) |
 | `amazon.tag.casa_tg` |  | Tag da Amazon para Casa & Eletro no tg |

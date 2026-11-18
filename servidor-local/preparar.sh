@@ -12,7 +12,7 @@ for f in /oferto/workflows/*.json; do
   echo "Importando $(basename "$f")"
   n8n import:workflow --input="$f"
 done
-for id in wfSetup000000001 wfRouter00000001 wfShopee00000001 wfRelat000000001 wfRadar000000001 wfTunel000000001 wfSaude000000001; do
+for id in wfSetup000000001 wfRouter00000001 wfShopee00000001 wfRelat000000001 wfRadar000000001 wfGuard000000001 wfTunel000000001 wfSaude000000001; do
   n8n publish:workflow --id="$id"
 done
 echo "$HASH" > "$MARCA"

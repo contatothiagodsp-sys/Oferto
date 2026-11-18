@@ -19,7 +19,8 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 10 min em 1
 | `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/radar`, `/buscas`, `/canais`, `/divulgar`, `/logo`, `/afiliados`, cliques nos botões (incluindo mover tópico `↪️`), `/convite` e entradas/saídas do grupo. |
 | `n8n/workflows/02-coleta-shopee.json` | A cada 2 h (8h–22h) busca ofertas na Shopee Affiliate API e manda as candidatas para aprovação. |
 | `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite, sinalização de afiliados e divulgação cruzada automática dos canais). |
-| `n8n/workflows/04-radar-ofertas.json` | A cada 10 min caça promoções multi-fonte (Amazon, Mercado Livre, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias e perfumarias), lê cupons ativos na página, troca o afiliado para o seu e publica automaticamente nos canais/grupo. |
+| `n8n/workflows/04-radar-ofertas.json` | A cada 10 min caça promoções multi-fonte (18 lojas: Amazon, ML, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias e perfumarias), prioriza produtos **em alta**, **Perfumes Árabes no ML**, **Perfumes de Nicho** e pedidos da comunidade (`/alerta`), troca o afiliado para o seu e publica automaticamente nos canais/grupo. |
+| `n8n/workflows/05-guardiao-ofertas.json` | A cada 2h verifica se ofertas publicadas esgotaram ou subiram forte de preço (riscando e encerrando o post sozinho) e às 21h15 publica a vitrine **Top 5 Ofertas Ainda Ativas do Dia**. |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
 | `servidor-local/` | n8n Community grátis no seu computador (Docker + túnel). Guia em [servidor-local/README.md](servidor-local/README.md). |
@@ -196,9 +197,11 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 | Comando | Faz |
 |---|---|
 | **Só colar o link** (ou encaminhar do app) | Extrai título, preço, cupom ativo (`Produto + Cupom = valor` e `De → no anúncio + Cupom =`), parcelamento sem juros, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto). Aceita atalho sem barra (`tech https://...`) e cupom+preço junto (`<link> 143,90 cupom FULL1811`, `<link> 400 cupom MELI15 15% 10x sem juros` ou `<link> de 229,90 anuncio 169,90 por 143,90 cupom FULL1811`). |
-| `/radar` · `/radar <loja\|nicho>` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (18 lojas: Amazon, ML, Shopee, Shein, TikTok, KaBuM!, Terabyte, Pichau, farmácias e perfumarias). Ex.: `/radar kabum`, `/radar farmacia`, `/radar ps5`, `/radar perfume`. |
-| `/buscas <termos>` | Define os nichos/termos monitorados pelo Radar (ex.: `/buscas ps5; gta 6; perfume; placa de video`). |
-| `/canais` · `/canais <cat> <@canal>` | Gerencia os **canais separados** (`Ofertô Tech & Games`, `Perfumes, Beleza & Saúde`, `Casa & Eletro`, `Bebê & Família`, `VIP Top`), renomeia categorias (`/canais nomes`) e desliga o grupo antigo (`/canais so_canais`). |
+| `/radar` · `/radar alta` · `/radar arabes` · `/radar nicho` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (18 lojas), com atalhos para produtos bombando (`/radar alta`), Perfumes Árabes no ML (`/radar arabes`), Perfumes de Nicho (`/radar nicho`), `/radar farmacia`, `/radar ps5`. |
+| `/buscas <termos>` | Define os nichos/termos monitorados pelo Radar (ex.: `/buscas ps5; gta 6; lattafa; perfume de nicho`). |
+| `/canais` · `/canais <cat> <@canal>` | Gerencia os **canais separados** (`Ofertô Tech & Games`, `Perfumes, Beleza & Saúde`, `Casa & Eletro`, `Bebê & Família`, `VIP Top`). Ao adicionar o bot publicador como admin num canal novo, ele se conecta, coloca bio e fixa boas-vindas SOZINHO! |
+| `/resumao` | Publica na hora o **Top 5 Ofertas Ainda Ativas do Dia** no Telegram + texto pronto do WhatsApp. |
+| `/demanda` | Mostra o ranking do que os membros mais cadastraram no `/alerta` (com comando `/radar` pronto). |
 | `/logo <cat> <url>` (ou foto com legenda) | Define o **logo próprio** de cada canal para aparecer com imagem nas divulgações cruzadas. |
 | `/divulgar` · `/divulgar <cat>` | Publica nos outros canais/grupo (e gera botão WhatsApp) a chamada com botões para conhecer os canais do Ofertô (usando o logo quando configurado). |
 | `/afiliados` | Mostra quais lojas já estão monetizando com seus códigos e quais aceitam cadastro de afiliado com o comando `/config` pronto. |
@@ -215,6 +218,8 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 ### Bot publicador no privado (membros)
 
 - `/start` responde **pelo próprio bot publicador** (o webhook dele é registrado com `?bot=grupo`): boas-vindas, link do grupo/canais (`?start=canais` abre o menu com botões de todos os canais).
+- `/alerta <produto> [até preço]` (ex.: `/alerta ps5`, `/alerta lattafa asad`, `/alerta fralda pampers 80`): cria alerta pessoal com notificação automática no privado e link direto da loja assim que entrar em promoção. `/meusalertas` lista e `/remover` apaga.
+- `/buscar <termo>`, `/cupons`, `/tophoje`: permitem pesquisar ofertas ativas dos últimos 7 dias, listar cupons ativos e ver o Top 5 do dia a qualquer hora.
 - `/start beleza_meta1` (link do `/links`): boas-vindas do tópico/categoria, botão **Entrar no grupo** e canal correspondente. Cada `/start` é gravado em `bfx_entradas` (`tipo = start`, payload em `convite_nome`) e aparece no relatório.
 - `/id` só responde no privado.
 
