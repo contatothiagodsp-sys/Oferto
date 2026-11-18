@@ -377,10 +377,31 @@ test('fluxo completo: /oferta → card → aprovar relâmpago + top → publica�
   assert.equal(pub.ok, true);
   const grupo = pub.chamadas.filter((c) => c.bot === 'grupo');
   assert.equal(grupo.length, 1); // sem top
-  assert.equal(grupo[0].metodo, 'sendMessage');
+  // Com imagem o post sai como FOTO (sendPhoto); se o Telegram recusar a foto, o fallback é o mesmo texto com prévia.
+  assert.equal(grupo[0].metodo, 'sendPhoto');
+  assert.equal(grupo[0].payload.photo, 'https://img/a.jpg');
   assert.equal(grupo[0].payload.message_thread_id, 10);
-  assert.match(grupo[0].payload.text, /tag=marca-casatg-20/);
-  assert.equal(grupo[0].payload.link_preview_options.url, 'https://img/a.jpg');
+  assert.match(grupo[0].payload.caption, /tag=marca-casatg-20/);
+  assert.equal(grupo[0].payload.parse_mode, 'HTML');
+  assert.equal(grupo[0].payload.text, undefined);
+  assert.equal(grupo[0].fallback.metodo, 'sendMessage');
+  assert.equal(grupo[0].fallback.payload.text, grupo[0].payload.caption);
+  assert.equal(grupo[0].fallback.payload.link_preview_options.url, 'https://img/a.jpg');
+  assert.deepEqual(grupo[0].fallback.ref, grupo[0].ref);
+  // Foto recusada → reenvio do fallback na mesma posição; 429 → reenvio da própria chamada.
+  const lim = L.limiteTelegram(pub.chamadas, pub.chamadas.map((c) => (c === grupo[0]
+    ? { ok: false, error_code: 400, description: 'Bad Request: wrong file identifier/HTTP URL specified' }
+    : { ok: true, result: { message_id: 1 } })));
+  assert.equal(lim.indices.length, 1);
+  assert.equal(lim.reenviar[0].metodo, 'sendMessage');
+  assert.ok(lim.espera >= 1);
+  const resp2 = L.juntarReenvio(pub.chamadas.map(() => ({ ok: false, description: 'x' })), lim, [{ ok: true, result: { message_id: 77 } }]);
+  const res2 = L.resultadoChamadas(pub.chamadas, resp2, cfg, cb.ts);
+  assert.equal(res2.posts.length, 1);
+  assert.equal(res2.posts[0].message_id, 77);
+  // Sem imagem (ou posts_com_foto desligado) continua como mensagem com prévia.
+  const semImg = L.prepararPublicacao(Object.assign({}, dec.oferta, { imagem: '' }), dec.linkItens, cfg, { ts: cb.ts, chat_id: 111, message_id: 9 });
+  assert.equal(semImg.chamadas.find((c) => c.bot === 'grupo').metodo, 'sendMessage');
   const textosAdmin = pub.chamadas.filter((c) => c.metodo === 'sendMessage').map((c) => c.payload.text).join('\n---\n');
   assert.match(textosAdmin, /tag=marca-casawac-20/);
   assert.match(textosAdmin, /tag=marca-casawag-20/);

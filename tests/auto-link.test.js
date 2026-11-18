@@ -229,6 +229,7 @@ test('fluxo sem custo completo: colar apenas link curto de afiliado → extrai p
   const pub = L.prepararPublicacao(dec.oferta, dec.linkItens, cfg, { ts: AGORA, chat_id: 111, message_id: 20 });
   assert.equal(pub.ok, true);
   const postTg = pub.chamadas.find((c) => c.bot === 'grupo');
+  postTg.payload.text = postTg.payload.text || postTg.payload.caption;
   assert.match(postTg.payload.text, /mercadolivre\.com\/sec\/1AbCdEf/);
   assert.match(postTg.payload.text, /R\$ 199,90.*<s>R\$ 299,90<\/s>/);
   assert.match(postTg.payload.text, /economi(?:a|za).*R\$ 100,00/);

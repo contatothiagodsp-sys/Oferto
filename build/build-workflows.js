@@ -131,27 +131,35 @@ function dtGet(name, t, condicoes, opts) {
   if (condicoes && condicoes.length) p.filters = { conditions: condicoes.map(([keyName, condition, keyValue]) => ({ keyName, condition, keyValue })) };
   if (o.returnAll) p.returnAll = true;
   else p.limit = o.limit || 1;
-  return { name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1, parameters: p, alwaysOutputData: true, executeOnce: true };
+  return tolerante(t, { name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1, parameters: p, alwaysOutputData: true, executeOnce: true });
+}
+
+// Tabelas opcionais (recursos extras): se ainda não existirem (Setup não rodado depois de atualizar),
+// o nó segue em frente em vez de parar o workflow inteiro. Foi o que parou o radar em 18/11.
+const TABELAS_OPCIONAIS = new Set(['bfx_alertas']);
+function tolerante(t, node) {
+  if (TABELAS_OPCIONAIS.has(t)) node.onError = 'continueRegularOutput';
+  return node;
 }
 
 const AUTOMAP = { mappingMode: 'autoMapInputData', value: {}, matchingColumns: [], schema: [], attemptToConvertTypes: false, convertFieldsToString: false };
 
 function dtInsert(name, t) {
-  return { name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1, parameters: { resource: 'row', operation: 'insert', dataTableId: tabela(t), columns: AUTOMAP, options: {} } };
+  return tolerante(t, { name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1, parameters: { resource: 'row', operation: 'insert', dataTableId: tabela(t), columns: AUTOMAP, options: {} } });
 }
 
 function dtUpdate(name, t, chave, op, extras) {
   // extras: condições a mais ([coluna, condição, valor]); a linha só muda se todas baterem.
   const conditions = [{ keyName: chave, condition: 'eq', keyValue: `={{ $json.${chave} }}` }]
     .concat((extras || []).map(([keyName, condition, keyValue]) => ({ keyName, condition, keyValue })));
-  return {
+  return tolerante(t, {
     name, type: 'n8n-nodes-base.dataTable', typeVersion: 1.1,
     parameters: {
       resource: 'row', operation: op || 'update', dataTableId: tabela(t), matchType: 'allConditions',
       filters: { conditions },
       columns: AUTOMAP, options: {},
     },
-  };
+  });
 }
 
 function dtCreate(name, t) {
@@ -642,9 +650,30 @@ return [{ json: LIB.decidirPosPublicacao(${CLS}, pega('Oferta publicada'), pega(
   wf.add(dtUpdate('Atualizar oferta publicada', 'bfx_ofertas', 'oferta_id'), 2200, 1380);
   wf.add(itens('Chamadas (publicada)', "$('Decidir (publicada)').first().json.chamadas"), 1980, 1540);
   wf.add(httpTelegram('Telegram (publicada)'), 2200, 1540);
+  // Foto recusada (ou 429) na cópia do Top / ao mover: reenvia como texto com prévia.
+  wf.add(code('Checar envio (publicada)', `
+const chamadas = $('Chamadas (publicada)').all().map((i) => i.json);
+return [{ json: LIB.limiteTelegram(chamadas, $input.all().map((i) => i.json)) }];`, { lib: true, cfg: false }), 2260, 1540);
+  wf.add({
+    name: 'Reenviar (publicada)?', type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'limp', leftValue: '={{ $json.indices.length }}', rightValue: 0, operator: { type: 'number', operation: 'gt' } }],
+        combinator: 'and',
+      },
+      options: {},
+    },
+  }, 2300, 1540);
+  wf.add({ name: 'Esperar Telegram (publicada)', type: 'n8n-nodes-base.wait', typeVersion: 1.1, webhookId: uuid('wait-publicada'), parameters: { resume: 'timeInterval', amount: '={{ $json.espera }}', unit: 'seconds' } }, 2320, 1660);
+  wf.add(itens('Reenviar chamadas (publicada)', '$json.reenviar'), 2340, 1660);
+  wf.add(httpTelegram('Telegram (reenvio publicada)'), 2380, 1660);
   wf.add(code('Resultado (publicada)', `
 const chamadas = $('Chamadas (publicada)').all().map((i) => i.json);
-return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json), cfg, Date.now()) }];`, { lib: true }), 2420, 1540);
+let resp = $('Telegram (publicada)').all().map((i) => i.json);
+const lim = $('Checar envio (publicada)').first().json;
+if (lim.indices.length && $('Telegram (reenvio publicada)').isExecuted) resp = LIB.juntarReenvio(resp, lim, $('Telegram (reenvio publicada)').all().map((i) => i.json));
+return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), 2420, 1540);
   wf.add(itens('Post do Top', '$json.posts'), 2640, 1480);
   wf.add(dtInsert('Gravar post do Top', 'bfx_posts'), 2860, 1480);
   wf.add(itens('Alertas (publicada)', "$('Resultado (publicada)').first().json.alertas"), 2640, 1620);
@@ -652,7 +681,10 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
   wf.link('Rota', 'Oferta publicada', 5);
   wf.chain('Oferta publicada', 'Posts da oferta e de hoje', 'Links da oferta', 'Decidir (publicada)');
   wf.chain('Decidir (publicada)', 'Atualização (publicada)', 'Atualizar oferta publicada');
-  wf.chain('Decidir (publicada)', 'Chamadas (publicada)', 'Telegram (publicada)', 'Resultado (publicada)');
+  wf.chain('Decidir (publicada)', 'Chamadas (publicada)', 'Telegram (publicada)', 'Checar envio (publicada)', 'Reenviar (publicada)?');
+  wf.link('Reenviar (publicada)?', 'Esperar Telegram (publicada)', 0);
+  wf.chain('Esperar Telegram (publicada)', 'Reenviar chamadas (publicada)', 'Telegram (reenvio publicada)', 'Resultado (publicada)');
+  wf.link('Reenviar (publicada)?', 'Resultado (publicada)', 1);
   wf.chain('Resultado (publicada)', 'Post do Top', 'Gravar post do Top');
   wf.chain('Resultado (publicada)', 'Alertas (publicada)', 'Telegram (alertas da publicada)');
 
@@ -810,7 +842,8 @@ const respSh = base.fontesShopee.length && $('${N('Shopee: radar')}').isExecuted
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
 const alertas = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
-return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas) }];`, { lib: true }), x + 1980, y);
+const sd = typeof $getWorkflowStaticData === 'function' ? $getWorkflowStaticData('global') : {};
+return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas, sd.radar_descartes || {}) }];`, { lib: true }), x + 1980, y);
 
   wf.add(switchExpr(N('Tem redir 1?'), '$json.reqs1.length > 0 ? 0 : 1', 2), x + 2200, y);
   wf.add(itens(N('Itens redir 1'), `$('${N('Selecionar radar')}').first().json.reqs1`), x + 2420, y - 120);
@@ -847,7 +880,12 @@ const respPag = est.reqsPag.length && $('${N('Ler páginas radar')}').isExecuted
 const respMerc = (est.reqsMercado || []).length && $('${N('Checar mercado radar')}').isExecuted ? $('${N('Checar mercado radar')}').all().map((i) => i.json) : [];
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
-return [{ json: LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag, respMerc) }];`, { lib: true }), x + 5500, y);
+const fin = LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag, respMerc);
+if (typeof $getWorkflowStaticData === 'function') {
+  const sd = $getWorkflowStaticData('global');
+  sd.radar_descartes = LIB.atualizarDescartesRadar(sd.radar_descartes, fin.resumo.descartadas, (est.opcoes || {}).ts);
+}
+return [{ json: fin }];`, { lib: true }), x + 5500, y);
 
   wf.add(itens(N('Preços radar'), '$json.precosNovos'), x + 5720, y - 180);
   wf.add(dtInsert(N('Gravar preços radar'), 'bfx_precos'), x + 5940, y - 180);
@@ -876,10 +914,34 @@ return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt) }];
   wf.add(itens(N('Links lote'), `$('${N('Publicar lote radar')}').first().json.linksRows`), x + 7260, y + 180);
   wf.add(dtInsert(N('Gravar links radar'), 'bfx_links'), x + 7480, y + 180);
   wf.add(itens(N('Mensagens lote'), `$('${N('Publicar lote radar')}').first().json.chamadasPub`), x + 7260, y + 320);
-  wf.add(httpTelegram(N('Telegram (pub radar)')), x + 7480, y + 320);
+  // 700 ms entre mensagens: fica abaixo do limite do Telegram por chat (evita 429 em lote grande).
+  wf.add(httpTelegram(N('Telegram (pub radar)'), 700), x + 7480, y + 320);
+  // 429 (limite) ou foto recusada: espera e reenvia só o que falhou (foto recusada vai como texto com prévia).
+  wf.add(code(N('Checar envio radar'), `
+const chamadas = $('${N('Mensagens lote')}').all().map((i) => i.json);
+return [{ json: LIB.limiteTelegram(chamadas, $input.all().map((i) => i.json)) }];`, { lib: true, cfg: false }), x + 7590, y + 320);
+  wf.add({
+    name: N('Reenviar radar?'), type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'limr', leftValue: '={{ $json.indices.length }}', rightValue: 0, operator: { type: 'number', operation: 'gt' } }],
+        combinator: 'and',
+      },
+      options: {},
+    },
+  }, x + 7640, y + 320);
+  wf.add({ name: N('Esperar Telegram radar'), type: 'n8n-nodes-base.wait', typeVersion: 1.1, webhookId: uuid('wait-radar-' + P), parameters: { resume: 'timeInterval', amount: '={{ $json.espera }}', unit: 'seconds' } }, x + 7660, y + 260);
+  wf.add(itens(N('Reenviar lote radar'), '$json.reenviar'), x + 7670, y + 260);
+  wf.add(httpTelegram(N('Telegram (reenvio radar)'), 700), x + 7680, y + 260);
   wf.add(code(N('Resultado lote radar'), `
 const chamadas = $('${N('Mensagens lote')}').all().map((i) => i.json);
-return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json), cfg, Date.now()) }];`, { lib: true }), x + 7700, y + 320);
+let resp = $('${N('Telegram (pub radar)')}').all().map((i) => i.json);
+const lim = $('${N('Checar envio radar')}').first().json;
+if (lim.indices.length && $('${N('Telegram (reenvio radar)')}').isExecuted) resp = LIB.juntarReenvio(resp, lim, $('${N('Telegram (reenvio radar)')}').all().map((i) => i.json));
+return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), x + 7700, y + 320);
+  wf.add(itens(N('Status falha radar'), '$json.update'), x + 7920, y + 160);
+  wf.add(dtUpdate(N('Gravar falha radar'), 'bfx_ofertas', 'oferta_id'), x + 8140, y + 160);
   wf.add(itens(N('Posts lote'), '$json.posts'), x + 7920, y + 240);
   wf.add(dtInsert(N('Gravar posts radar'), 'bfx_posts'), x + 8140, y + 240);
   wf.add(itens(N('Alertas lote'), `$('${N('Resultado lote radar')}').first().json.alertas`), x + 7920, y + 400);
@@ -946,7 +1008,11 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
 
   wf.chain(N('Publicar lote radar'), N('Updates lote'), N('Atualizar lote radar'));
   wf.chain(N('Publicar lote radar'), N('Links lote'), N('Gravar links radar'));
-  wf.chain(N('Publicar lote radar'), N('Mensagens lote'), N('Telegram (pub radar)'), N('Resultado lote radar'));
+  wf.chain(N('Publicar lote radar'), N('Mensagens lote'), N('Telegram (pub radar)'), N('Checar envio radar'), N('Reenviar radar?'));
+  wf.link(N('Reenviar radar?'), N('Esperar Telegram radar'), 0);
+  wf.chain(N('Esperar Telegram radar'), N('Reenviar lote radar'), N('Telegram (reenvio radar)'), N('Resultado lote radar'));
+  wf.link(N('Reenviar radar?'), N('Resultado lote radar'), 1);
+  wf.chain(N('Resultado lote radar'), N('Status falha radar'), N('Gravar falha radar'));
   wf.chain(N('Resultado lote radar'), N('Posts lote'), N('Gravar posts radar'));
   wf.chain(N('Resultado lote radar'), N('Alertas lote'), N('Telegram (alertas radar)'));
   wf.chain(N('Publicar lote radar'), N('Disparar alertas radar?'), N('Alertas ativos radar'), N('Calcular DMs radar'));
@@ -965,8 +1031,13 @@ function wfRadar() {
     typeVersion: 1.2,
     parameters: { rule: { interval: [{ field: 'cronExpression', expression: '*/2 * * * *' }] } },
   }, 0, 300);
+  // Cria a bfx_alertas se faltar (atualização sem rodar o Setup de novo). Não faz nada se já existe.
+  const garantir = dtCreate('Garantir tabela de alertas', 'bfx_alertas');
+  garantir.onError = 'continueRegularOutput';
+  wf.add(garantir, 110, 480);
   configNodes(wf, 220, 300);
-  wf.link('A cada 2 minutos (radar)', 'Ler config');
+  wf.link('A cada 2 minutos (radar)', 'Garantir tabela de alertas');
+  wf.link('Garantir tabela de alertas', 'Ler config');
   adicionarSubfluxoRadar(wf, {
     prefixo: '',
     x0: 660,

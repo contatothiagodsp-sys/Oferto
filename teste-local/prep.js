@@ -24,6 +24,8 @@ const cfg = {
   'keepa.chave': 'teste', 'keepa.api': 'http://127.0.0.1:8787',
   'amazon.tag.casa_tg': 'marca-casatg-20', 'amazon.tag.casa_wac': 'marca-casawac-20', 'amazon.tag.casa_wag': 'marca-casawag-20', 'amazon.tag.casa_x': 'marca-casax-20',
 };
+// Chaves extras de teste (ex.: radar/piloto): TESTE_CFG_EXTRA='{"radar.ativo":"sim"}'
+Object.assign(cfg, JSON.parse(process.env.TESTE_CFG_EXTRA || '{}'));
 const linhas = Object.entries(cfg).map(([chave, valor]) => ({ chave, valor }));
 const wf = {
   id: 'wfConfTeste00001', name: '99 · config de teste', active: false, settings: { executionOrder: 'v1' }, connections: {

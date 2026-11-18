@@ -656,7 +656,7 @@ test('Moda separada + 10 lojas de moda, cupons de loja (19h/tech/resgate prévio
   const postsCanaisLote = pubLote.chamadas.filter((c) => c.bot === 'grupo' && c.ref && c.ref.plataforma === 'tgc');
   assert.equal(postsGrupoLote.length, 1, 'No supergrupo publica apenas 1 vez (Top) para não spamar 7 tópicos');
   assert.equal(postsGrupoLote[0].payload.message_thread_id, 3);
-  assert.match(postsGrupoLote[0].payload.text, /Resgate agora na aba de cupons/);
+  assert.match(postsGrupoLote[0].payload.text || postsGrupoLote[0].payload.caption, /Resgate agora na aba de cupons/);
   assert.equal(postsGrupoLote[0].payload.reply_markup.inline_keyboard[0][0].text, '🎟️ Resgatar Cupons no Mercado Livre');
   assert.ok(postsCanaisLote.length >= 4, 'Nos canais separados posta nos canais compatíveis + Top');
 
@@ -667,7 +667,7 @@ test('Moda separada + 10 lojas de moda, cupons de loja (19h/tech/resgate prévio
   assert.deepEqual(cmdTech.oferta.links_manuais.categorias_cupom, ['tech']);
   const avTech = L.avaliarNovaOferta({ oferta: cmdTech.oferta, auto_link: true, ts: AGORA, chat_id: 111, user_id: 111 }, [], cfg, []);
   const pubTech = L.prepararPublicacao(avTech.oferta, L.planejarLinks(avTech.oferta, cfg, AGORA), cfg, { ts: AGORA, chat_id: 111 });
-  const destinosTech = pubTech.chamadas.filter((c) => c.bot === 'grupo' && c.metodo === 'sendMessage').map((c) => c.ref.categoria);
+  const destinosTech = pubTech.chamadas.filter((c) => c.bot === 'grupo' && /^send(?:Message|Photo)$/.test(c.metodo)).map((c) => c.ref.categoria);
   assert.deepEqual(destinosTech, ['tech', 'tech']);
 
   // 5) Cupom que só funciona para quem resgatou antes (ex.: FULL1811) + extração promobit_cupons
@@ -854,10 +854,14 @@ test('Comparador de mercado (Zoom + Amazon), PS5 B0FPGF9J2J Pix/Parcelado/300TAO
   assert.match(txtPs5, /R\$ 4\.069,91[\s\S]*💠 PIX[\s\S]*12x de R\$ 358,25 sem juros/);
   assert.match(txtPs5, /Pegue o cupom no anúncio:.*<code>300TAO<\/code>/);
 
-  // 5) Normalização de imagem CDN Promobit -> wsrv.nl /500/ JPEG e /topicos fechar
+  // 5) Imagem Promobit -> CDN direto /500/ (wsrv antigo é desembrulhado) e /topicos fechar
   assert.equal(
     L.normalizarImagemOferta('https://i.promobit.com.br/749753967117696962743509403185.png'),
-    'https://wsrv.nl/?url=i.promobit.com.br%2F500%2F749753967117696962743509403185.png&w=600&output=jpg',
+    'https://i.promobit.com.br/500/749753967117696962743509403185.png',
+  );
+  assert.equal(
+    L.normalizarImagemOferta('https://wsrv.nl/?url=i.promobit.com.br%2F500%2Fstatic%2Fp%2F93.webp&w=600&output=jpg'),
+    'https://i.promobit.com.br/500/static/p/93.webp',
   );
   const cmdTopicos = L.classificarUpdate({
     message: { message_id: 90, text: '/topicos fechar', chat: { id: 111, type: 'private' }, from: { id: 111 } },

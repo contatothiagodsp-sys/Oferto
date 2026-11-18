@@ -278,6 +278,20 @@ No `/oferta` manual e na coleta automática da Shopee (com `selo.exigir_ref90 = 
 
 > **✅ Como conferimos o preço:** só publicamos se o preço estiver **igual ou abaixo do menor preço dos últimos 90 dias**. A referência vem do nosso histórico ou de um comparador de preços. Se houver as duas, vale a mais baixa. Com desconto de 1% ou mais, o post diz "X% abaixo do menor preço dos últimos 90 dias (R$ Y)"; com 0%, "igual ao menor preço dos últimos 90 dias". Se o histórico for mais curto, "menor preço desde DD/MM". Todo post traz a data e a hora do preço, e o preço pode mudar.
 
+### Radar automático: o que ele publica sozinho (trava "oferta de verdade")
+
+O radar só publica sem você aprovar quando há **prova numérica** de economia. Vale qualquer uma:
+
+- preço igual ou abaixo do menor preço de 90 dias (histórico próprio, Keepa ou ref90);
+- desconto real de pelo menos `radar.min_desconto_pct` (padrão 15%) sobre o "De", depois de o comparador de mercado (Zoom + Amazon) recalibrar um "De" inflado; produto em alta ou pedido por membro aceita a partir de 8%;
+- cupom que realmente baixa o preço (pelo menos 5% abaixo do preço sem cupom);
+- o mesmo produto está pelo menos 10% mais caro em outra loja;
+- o preço caiu desde o nosso último post do mesmo produto.
+
+Fica de fora: preço acima do menor de 90 dias, concorrente mais barato, desconto acima de 80% sem confirmação (típico "metade do dobro"), e posts de canais sem desconto (curtidas ou "destaque" sozinhos não bastam). O preço das recusadas entra no histórico mesmo assim, e elas não voltam a ocupar vaga por 6 h, a não ser que o preço caia.
+
+**Foto:** posts com imagem saem como foto de verdade no Telegram. Se o Telegram recusar a imagem, o mesmo post é reenviado na hora como texto com prévia (o post nunca deixa de sair por causa da foto). Desligue com `/config posts.foto nao`.
+
 ### Sub-IDs gerados (seção 5 do plano)
 
 | Plataforma | Shopee (sub1–sub5) | Amazon | Exemplo de sub-ID |
@@ -309,6 +323,7 @@ Estimativa para o mês de pico (novembro), com 1.500–2.500 entradas, ~30% de s
 - **Histórico de 90 dias:** começa do zero hoje. No modo automático por link (ou com `selo.exigir_ref90 = nao`), ofertas sem histórico de 90 dias saem com copy honesta sem citar 90 dias; quando há histórico ou `ref90`, o selo de 90 dias entra automaticamente.
 - **Leitura gratuita de páginas:** quando você cola só o link, o bot lê os metadados públicos (JSON-LD, OpenGraph, `__NEXT_DATA__` e slug da URL). Lojas com bloqueio anti-bot em IPs de nuvem (como o Mercado Livre em algumas consultas) podem ocultar o preço no HTML; nesse caso o bot identifica título e link de afiliado sozinho e pede apenas que você responda à mensagem com o valor (ou mande `<link> 249,90`).
 - **Keepa (opcional):** formato da API conferido no SDK oficial (`keepacom/api_backend`) e testado contra um servidor falso. **VERIFICAR** com a chave real: preço do plano e custo em tokens de `buybox=1`.
+- **Atualizou os workflows?** Rode o **00 · Setup** de novo quando houver tabela nova. A `bfx_alertas` (alertas pessoais) é criada sozinha pelo radar se faltar, e nenhum nó dela para o workflow (em 18/11 a falta dela parou o radar inteiro).
 - **Post com falha:** se o post no grupo falhar (ex.: bot sem permissão), a oferta fica como `falha` e você recebe um alerta "❗ A oferta NÃO saiu no grupo".
 - **X:** o bot entrega o texto pronto (desative com `/config publicar.plataformas wag` se usar só WhatsApp e Telegram).
 - **WhatsApp:** usa por padrão o botão oficial `📲 Enviar no WhatsApp (1 toque)` (`api.whatsapp.com/send`), gratuito e sem risco de bloqueio; opcionalmente aceita envio HTTP Zero-Toque via `whatsapp.webhook_url` (Evolution API `/message/sendText/`, WAHA `/api/sendText` ou Webhook).

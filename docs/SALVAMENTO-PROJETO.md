@@ -73,3 +73,13 @@ flowchart LR
   - `POST http://127.0.0.1:5678/webhook/oferto-saude` → `{"ok":true,"problemas":[],"avisos":0}`
   - Teste ao vivo das fontes curadas via `lerCanalTelegramPublico`: `canaltechofertas` (**18** ofertas com imagem e `s.shopee.com.br`) e `xetdaspromocoes` (**19** ofertas com imagem, `R$` decodificado e `link.amazon` pronto para desempacotamento).
   - Suíte completa `npm test`: **79/79** testes passando em produção local (`0` falhas).
+
+### 🔧 Auditoria 18/11 — radar parado, posts sem foto e promoções sem desconto real
+- **Causa do radar parado:** o deploy de 18/11 (05:22) trouxe a tabela nova `bfx_alertas`, mas o **00 · Setup** não foi rodado de novo. O nó "Alertas radar" falhava com `Data table with name "bfx_alertas" not found` e o workflow 04 parava inteiro a cada 2 min, sem publicar nada. Reproduzido num n8n 2.47.7 de teste.
+  - Correção: o radar cria a `bfx_alertas` sozinho (`createIfNotExists`) e todo nó dessa tabela segue em frente se ela faltar.
+- **Posts sem imagem:** desde 7c5b805 as imagens do Promobit iam por `wsrv.nl` (algumas davam 404, ex.: `/static/p/*.webp`) e só apareciam como prévia de link, que o Telegram nem sempre mostra.
+  - Correção: CDN direto `i.promobit.com.br/500/…` (testado: devolve JPEG/PNG) e posts saem como **foto** (`sendPhoto`), com reenvio automático como texto com prévia se a foto for recusada. Edições (Encerrar, "baixou ainda mais", esgotado) mandam texto e legenda.
+- **Promoção falsa:** posts de canais do Telegram entravam com `likes: 5` fixo e passavam no filtro mesmo sem desconto. Agora há a trava `avaliarOfertaReal` (prova numérica de economia) e o pré-filtro exige desconto, cupom ou queda de preço. Recusadas ficam 6 h fora (memória do workflow).
+- **Reenvio no radar:** a publicação do radar não tinha o reenvio do limite do Telegram (429) que o `/oferta` manual tem. Agora tem, com 700 ms entre mensagens.
+- **Desconto velho:** quando a página da loja mostrava preço maior que o anunciado, o % antigo continuava. Agora é recalculado.
+- **Validação:** `npm test` 88/88 e teste de ponta a ponta no n8n 2.47.7 com as fontes reais (Promobit, t.me, Zoom): tabela recriada, 3 ofertas reais publicadas como foto no tópico + Top, e fallback para texto quando a foto é recusada.

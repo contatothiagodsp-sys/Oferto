@@ -10,6 +10,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `bot_token` |  | Token do BOT DE APROVAÇÃO (@BotFather). Conversa privada com os admins |
 | `bot_token_grupo` |  | Token do BOT PUBLICADOR (admin do supergrupo/canais). Vazio = usa o bot de aprovação |
 | `grupo_id` |  | ID do supergrupo (-100…). Vazio ou "nenhum" = publica só nos canais por categoria |
+| `posts.foto` | `sim` | sim/nao: posts com imagem saem como FOTO no Telegram (se a foto falhar, sai como texto com prévia) |
 | `grupo_link` |  | Link público do grupo (opcional, usado em respostas) |
 | `n8n_webhook_url` |  | Production URL do nó Webhook do workflow 01 (copie do n8n) |
 | `webhook_secret` |  | Gerado pelo setup. Não precisa mexer |
