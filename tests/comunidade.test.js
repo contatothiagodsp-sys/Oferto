@@ -866,3 +866,105 @@ test('Comparador de mercado (Zoom + Amazon), PS5 B0FPGF9J2J Pix/Parcelado/300TAO
   assert.ok(cmdTopicos.upserts.some((u) => u.chave === 'grupo.fechar_topicos_oferta' && u.valor === 'sim'));
   assert.equal(cmdTopicos.chamadas.filter((c) => c.bot === 'grupo' && c.metodo === 'closeForumTopic').length, 2);
 });
+
+test('Agente 4 (Concierge 24/7 no Chat/DM), Sinônimos em Alertas & Buscas e Comando /agentes', () => {
+  const cfg = L.montarConfig([
+    { chave: 'admins', valor: '111' },
+    { chave: 'bot_token', valor: 'TOK_ADM' },
+    { chave: 'bot_token_grupo', valor: 'TOK_PUB' },
+    { chave: 'bot_grupo_username', valor: 'oferto_pub_bot' },
+    { chave: 'webhook_secret', valor: 'segredo' },
+    { chave: 'grupo_id', valor: '-1003927635700' },
+    { chave: 'topico.tech', valor: '7' },
+    { chave: 'topico.casa', valor: '5' },
+    { chave: 'topico_chat_aberto', valor: '174' },
+    { chave: 'amazon.tag_padrao', valor: 'oferto-20' },
+  ]);
+
+  // 1) Conversa comum continua ignorada; pedido natural de produto/teto ou cupom aciona Concierge no chat aberto
+  assert.equal(L.detectarPedidoOfertaChat('oi pessoal'), null);
+  assert.equal(L.detectarPedidoOfertaChat('esse'), null);
+  assert.equal(L.detectarPedidoOfertaChat('bom dia grupo!'), null);
+  const pedAir = L.detectarPedidoOfertaChat('alguém viu airfryer até 300?');
+  assert.ok(pedAir);
+  assert.equal(pedAir.eh_cupom, false);
+  assert.equal(pedAir.preco_max, 300);
+  assert.match(pedAir.termo, /airfryer/i);
+  const pedCup = L.detectarPedidoOfertaChat('tem cupom do mercado livre hoje?');
+  assert.deepEqual(pedCup, { modo: 'concierge', eh_cupom: true, termo: 'ml', preco_max: 0 });
+
+  // No tópico fechado de ofertas (#7 Tech) membro comum não dispara concierge; no chat aberto (#174) dispara!
+  const grpMsg = (threadId, text) => ({
+    message: {
+      message_id: 500,
+      text,
+      is_topic_message: true,
+      message_thread_id: threadId,
+      chat: { id: -1003927635700, type: 'supergroup' },
+      from: { id: 888 },
+    },
+  });
+  assert.equal(L.classificarUpdate(grpMsg(7, 'procuro notebook ate 2500'), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'ignorar');
+  const clsConc = L.classificarUpdate(grpMsg(174, 'procuro airfryer ate 300'), HS, cfg, AGORA, { bot: 'grupo' });
+  assert.equal(clsConc.rota, 'vitrine');
+  assert.equal(clsConc.modo, 'concierge');
+  assert.equal(clsConc.thread_id, 174);
+  assert.equal(clsConc.reply_to_message_id, 500);
+
+  // Privado do bot publicador aceita pergunta natural
+  const clsDm = L.classificarUpdate({
+    message: { message_id: 501, text: 'tem cupom amazon?', chat: { id: 888, type: 'private' }, from: { id: 888 } },
+  }, HS, cfg, AGORA, { bot: 'grupo' });
+  assert.equal(clsDm.rota, 'vitrine');
+  assert.equal(clsDm.modo, 'concierge');
+  assert.equal(clsDm.eh_cupom, true);
+
+  // 2) Sinônimos ("airfryer" casa "Fritadeira Sem Óleo", "ps5" casa "PlayStation 5") no Concierge e nos Alertas Pessoais
+  assert.ok(L.expandirSinonimosBusca('airfryer').includes('fritadeira sem oleo'));
+  const ofertas = [
+    {
+      oferta_id: 'o_air_1', produto_id: 'amz_AIR1', loja: 'amazon', categoria: 'casa', status: 'aprovada',
+      titulo: 'Fritadeira Sem Óleo Air Fryer Mondial 4L', preco: 269.9, url: 'https://www.amazon.com.br/dp/B0AIRFRY01', ts: AGORA - 3600000,
+    },
+    {
+      oferta_id: 'o_ps5_1', produto_id: 'amz_PS51', loja: 'amazon', categoria: 'tech', status: 'aprovada',
+      titulo: 'Console Sony PlayStation 5 Slim Digital', preco: 3499, url: 'https://www.amazon.com.br/dp/B0PS5SLIM1', ts: AGORA - 3600000,
+    },
+  ];
+  const links = [
+    { oferta_id: 'o_air_1', plataforma: 'tg', url: 'https://www.amazon.com.br/dp/B0AIRFRY01?tag=oferto-20' },
+    { oferta_id: 'o_ps5_1', plataforma: 'tg', url: 'https://www.amazon.com.br/dp/B0PS5SLIM1?tag=oferto-20' },
+  ];
+  const estadoFlood = {};
+  const respConc = L.responderVitrineMembro(clsConc, ofertas, links, [], cfg, estadoFlood);
+  assert.equal(respConc.chamadas.length, 1);
+  assert.equal(respConc.chamadas[0].payload.message_thread_id, 174);
+  assert.equal(respConc.chamadas[0].payload.disable_notification, true);
+  assert.match(respConc.chamadas[0].payload.text, /Fritadeira Sem Óleo Air Fryer Mondial/);
+  // Anti-flood 5 min bloqueia 2ª resposta imediata para o mesmo usuário
+  assert.equal(L.responderVitrineMembro(clsConc, ofertas, links, [], cfg, estadoFlood).chamadas.length, 0);
+
+  const dms = L.dispararAlertasOferta(
+    [ofertas[1]],
+    links,
+    [{ alerta_id: 'al_1', chat_id: 999, termo: 'ps5', preco_max: 3600, ativo: true }],
+    cfg,
+    AGORA,
+  );
+  assert.equal(dms.chamadas.length, 1);
+  assert.match(dms.chamadas[0].payload.text, /PlayStation 5 Slim/);
+
+  // 3) Comando /agentes status + /agentes pausar 4 (HTML)
+  const clsAg = L.classificarUpdate({
+    message: { message_id: 91, text: '/agentes', chat: { id: 111, type: 'private' }, from: { id: 111 } },
+  }, HS, cfg, AGORA);
+  assert.equal(clsAg.rota, 'responder');
+  assert.equal(clsAg.chamadas[0].payload.parse_mode, 'HTML');
+  assert.match(clsAg.chamadas[0].payload.text, /Caçador Multi-Fonte[\s\S]*Concierge 24\/7/);
+
+  const clsPausa = L.classificarUpdate({
+    message: { message_id: 92, text: '/agentes pausar 4', chat: { id: 111, type: 'private' }, from: { id: 111 } },
+  }, HS, cfg, AGORA);
+  assert.equal(clsPausa.rota, 'config');
+  assert.deepEqual(clsPausa.upserts, [{ chave: 'agentes.concierge', valor: 'nao' }]);
+});

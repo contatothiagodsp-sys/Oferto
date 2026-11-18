@@ -48,7 +48,12 @@ flowchart LR
 - [x] **Agente 3 (`marketing`)**: Adicionado bônus `+14` para lojas com afiliado ativo (`avaliarBoostMarketing`) e penalidade anti-fadiga considerando os últimos 90 min (`calcularPenalidadeFadigaRecente`), além de busca/filtragem com sinônimos em `bateTermo`.
 - [x] **Validação**: `npm test` — `77/77` testes passando sem regressões.
 
+### ✅ Salvamento 2/4 — Configuração, `/agentes`, Concierge 24/7 & Sinônimos (Concluído)
+- [x] **[`lib/config.js`](../lib/config.js)**: Adicionadas chaves `agentes.cacador|auditor|marketing|concierge|guardiao`, `radar.canais_curados`, `cupons.esquenta_19h`, `cupons.ultimo_esquenta`, `admin.notificacao_piloto`, `topico_chat_aberto` e `whatsapp.webhook_url|api_key|grupo_destino|canal_destino` (`whatsapp.api_key` protegida fora do chat); `/modo piloto` grava `admin.notificacao_piloto = compacta`.
+- [x] **[`lib/telegram.js`](../lib/telegram.js)**: Adicionado comando `/agentes` (painel HTML e toggles `/agentes ligar|pausar <1..5|nome|todos>`), roteamento de intenção natural no chat aberto (`topico_chat_aberto`), grupos de discussão e DM do bot publicador sem interferir nos tópicos fechados de ofertas nem em conversas comuns (`"oi pessoal"` continua `ignorar`).
+- [x] **[`lib/comunidade.js`](../lib/comunidade.js)**: Implementado `modo === 'concierge'` em `responderVitrineMembro` com anti-flood de 5 min por membro, resposta na thread com teto de preço e botão 1-toque de alerta; expansão automática de sinônimos aplicada tanto no Concierge quanto no `/buscar` e em `dispararAlertasOferta`.
+- [x] **Validação**: Adicionado teste completo do Agente 4 / Sinônimos / `/agentes` em [`tests/comunidade.test.js`](../tests/comunidade.test.js) — `78/78` testes aprovados (`0` falhas).
+
 ### ⏳ Próximos Passos
-- **Salvamento 2/4**: Configuração (`lib/config.js`), comando `/agentes`, Concierge 24/7 no chat aberto/DM e sinônimos em `/alerta` e `/buscar` (`lib/telegram.js` + `lib/comunidade.js`).
-- **Salvamento 3/4**: Guardião 30min + queda extra `>= 6%` + Esquenta 18h45 + limpeza de `pendente` > 18h + Piloto compacto + WhatsApp HTTP Zero-Toque + build dos 8 workflows + suíte completa de testes.
+- **Salvamento 3/4**: Agente 5 (Guardião 30min + queda extra `>= 6%` + limpeza de `pendente` > 18h + Esquenta 18h45 + Piloto compacto + WhatsApp HTTP Zero-Toque) + build dos 8 workflows + auditoria com subagente + documentação.
 - **Salvamento 4/4**: Deploy no Docker (`servidor-local`), sincronização SQLite, health checks ao vivo e push em `origin/main`.
