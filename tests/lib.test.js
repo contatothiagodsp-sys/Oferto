@@ -87,7 +87,7 @@ test('parseOferta: formato completo', () => {
 
 test('parseOferta: erros claros', () => {
   const cfg = cfgTeste();
-  const r = L.parseOferta('/oferta moda\nhttps://amzn.to/x', cfg);
+  const r = L.parseOferta('/oferta xyz_invalida\nhttps://amzn.to/x', cfg);
   assert.equal(r.ok, false);
   assert.ok(r.erros.some((e) => e.includes('Faltou a categoria')));
   assert.ok(r.erros.some((e) => e.includes('título')));
@@ -457,11 +457,11 @@ test('relatório diário e setup', () => {
   const wh = s.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'setWebhook');
   assert.deepEqual(wh.payload.allowed_updates, ['my_chat_member', 'chat_member', 'message']);
   const topicos = s.chamadas.filter((c) => c.metodo === 'createForumTopic').map((c) => c.ref.topico);
-  assert.deepEqual(topicos, ['beleza', 'bebe', 'tech']); // casa e top já existem
+  assert.deepEqual(topicos, ['moda', 'beleza', 'perfumes', 'saude', 'bebe', 'tech']); // casa e top já existem
   const resp = s.chamadas.map((c) => (c.metodo === 'createForumTopic' ? { ok: true, result: { message_thread_id: 50 } } : { ok: true, result: { username: 'bot', title: 'G', is_forum: true } }));
   const res = L.resumoSetup(s.chamadas, resp, s.avisos, cfg);
-  assert.equal(res.topicos.length, 3);
-  assert.equal(res.topicos[0].chave, 'topico.beleza');
+  assert.equal(res.topicos.length, 6);
+  assert.equal(res.topicos[0].chave, 'topico.moda');
   assert.equal(res.chamadas.length, 2); // tópico novo: avisa os 2 admins
   const semTopico = s.chamadas.filter((c) => c.metodo !== 'createForumTopic');
   const quieto = L.resumoSetup(semTopico, semTopico.map(() => ({ ok: true, result: { username: 'bot', title: 'G', is_forum: true } })), [], cfg);
@@ -533,13 +533,15 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   const a = L.arrumarGrupoChamadas(cfg, criados);
   const metodos = a.map((c) => c.metodo);
   assert.equal(metodos.filter((m) => m === 'sendMessage').length, 2 + Object.keys(cfg.categorias).length);
-  assert.equal(metodos.filter((m) => m === 'closeForumTopic').length, Object.keys(cfg.categorias).length);
+  assert.ok(metodos.includes('closeGeneralForumTopic'));
+  assert.ok(metodos.includes('hideGeneralForumTopic'));
+  assert.equal(metodos.filter((m) => m === 'closeForumTopic').length, 0); // tópicos de oferta abertos para comentários
   assert.ok(a.every((c) => c.bot === 'grupo' && c.payload.chat_id === cfg.telegram.grupo_id));
   const desc = a.find((c) => c.metodo === 'setChatDescription').payload.description;
   assert.ok(desc.length <= 255 && desc.includes('afiliado'), desc);
   assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => /afiliado/i.test(c.payload.text)));
   assert.ok(a.filter((c) => c.metodo === 'sendMessage').every((c) => c.payload.text.length <= 4096));
-  // Conversa: "Comece aqui" é a última enviada (e fixada) para ficar no topo; tem link de cada tópico.
+  // Regras fixadas: "Comece aqui" é a última enviada (e fixada) para ficar no topo; tem link de cada tópico + /admin.
   const conversa = a.filter((c) => c.metodo === 'sendMessage' && !c.payload.message_thread_id);
   assert.deepEqual(conversa.map((c) => c.ref.chave), ['seguranca', 'comece']);
   const comece = conversa[1].payload.text;
@@ -547,6 +549,7 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   for (const [i, k] of Object.keys(cfg.categorias).entries()) assert.ok(comece.includes(`href="https://t.me/c/1234567890/${200 + i}"`), k);
   assert.match(comece, /🔕/);
   assert.match(comece, /sugestão/);
+  assert.match(comece, /\/admin/);
   const seg = conversa[0].payload.text;
   assert.doesNotMatch(seg, /Não coletamos/);
   assert.match(seg, /código[\s\S]*link de convite[\s\S]*data[\s\S]*admin/);
@@ -664,7 +667,7 @@ test('/start no bot publicador: genérico, por tópico/campanha e gravação em 
   assert.equal(fim.linha.nome, 'beleza_meta1');
   const m = fim.chamadas[0];
   assert.equal(m.bot, 'grupo');
-  assert.match(m.payload.text, /🎁 Bem-vindo às ofertas de Beleza & Presentes!/);
+  assert.match(m.payload.text, /💄 Bem-vindo às ofertas de Beleza & Skincare!/);
   assert.deepEqual(m.payload.reply_markup.inline_keyboard[0][0], { text: 'Entrar no grupo', url: 'https://t.me/+abc' });
   // convite já existe: reaproveita, sem chamar o Telegram de novo
   const reuso = L.boasVindasStart(camp, [{ nome: 'beleza_meta1', url: 'https://t.me/+abc' }], cfg);

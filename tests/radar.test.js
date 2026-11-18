@@ -108,7 +108,7 @@ test('Logitech pedais vai para tech, aceita atalho sem barra e mover topico m|te
   const kb = L.tecladoPublicada(ofertaPub, 0, cfg);
   assert.equal(kb.inline_keyboard[1][0].callback_data, 'p|o_pedal_1');
   assert.equal(kb.inline_keyboard[1][1].callback_data, 'z|o_pedal_1');
-  assert.ok(kb.inline_keyboard[2].some((b) => b.callback_data === 'm|tech|o_pedal_1'));
+  assert.ok(kb.inline_keyboard.slice(2).flat().some((b) => b.callback_data === 'm|tech|o_pedal_1'));
 
   // 5) Callback m|tech|o_pedal_1 apaga post em Casa (thread 10), republica em Tech (thread 11) e registra novo post
   const clsCb = L.classificarUpdate({
@@ -174,7 +174,7 @@ test('Cupons ativos + Produto + Cupom = quanto fica + parcelamento sem juros em 
 
   const linkAmz = 'https://www.amazon.com.br/dp/B09PRIME15?tag=minhatag-20';
   const tgAmz = L.textoTelegram(amz.oferta, linkAmz, cfg);
-  assert.match(tgAmz, /🏷️ Produto: .* \+ 🎟️ Cupom .* =/);
+  assert.match(tgAmz, /<s>R\$ 2\.899,44<\/s>.*<b>R\$ 2\.464,52<\/b>.*-15% com cupom/);
   assert.match(tgAmz, /<code>BLACKPRIME15<\/code>/);
   assert.match(tgAmz, /💳 .*sem juros/i);
   assert.match(L.textoWhatsAppGrupo(amz.oferta, linkAmz, cfg), /Produto: .*Cupom.*=/);
@@ -197,7 +197,8 @@ test('Cupons ativos + Produto + Cupom = quanto fica + parcelamento sem juros em 
   assert.match(pMl.oferta.links_manuais.parcelamento, /10x.*sem juros/i);
 
   const tgMl = L.textoTelegram(pMl.oferta, 'https://www.mercadolivre.com.br/p/MLB123456', cfg);
-  assert.match(tgMl, /🏷️ Produto: <s>R\$ 400,00<\/s> \+ 🎟️ Cupom <code>MELI15<\/code> =/);
+  assert.match(tgMl, /<s>R\$ 400,00<\/s>.*<b>R\$ 340,00<\/b>.*-15% com cupom/);
+  assert.match(tgMl, /<code>MELI15<\/code>/);
   assert.match(tgMl, /R\$ 340,00/);
   assert.match(tgMl, /10x de R\$ 34,00 sem juros/);
 
@@ -282,9 +283,9 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.equal(clsPiloto.rota, 'config');
   assert.ok(clsPiloto.upserts.some((u) => u.chave === 'radar.publicar_direto' && u.valor === 'sim'));
 
-  // 2) Rodízio automático em 2 turnos (a cada 10 min) e coleta completa sob demanda
+  // 2) Rodízio automático em 2 turnos (a cada 5 min) e coleta completa sob demanda
   const turno0 = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA });
-  const turno1 = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA + 600000 });
+  const turno1 = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA + 300000 });
   assert.ok(turno0.fontesWeb.some((f) => f.loja_hint === 'kabum') && turno1.fontesWeb.some((f) => f.loja_hint === 'kabum'));
   assert.ok(turno0.fontesWeb.some((f) => f.loja_hint === 'shein'));
   assert.ok(turno1.fontesWeb.some((f) => f.loja_hint === 'tiktok'));
@@ -294,7 +295,7 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'shein'));
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'tiktok'));
   assert.ok(base.fontesWeb.some((f) => f.tipo === 'telegram_canal' && f.canal === 'canal_teste'));
-  assert.equal(base.fontesShopee.length, 4);
+  assert.equal(base.fontesShopee.length, 7);
 
   const mkPromobit = (offers) => ({
     statusCode: 200,
@@ -386,14 +387,14 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.ok(linkAmzFinal.url.includes('tag=minhatag-20'));
 });
 
-test('Workflows gerados: 04-radar-ofertas (cron 10 min + páginas) e Rota 9 do router executam no sandbox vm', () => {
+test('Workflows gerados: 04-radar-ofertas (cron 2 min + páginas) e Rota 9 do router executam no sandbox vm', () => {
   const fRadar = path.join(__dirname, '..', 'n8n', 'workflows', '04-radar-ofertas.json');
   const fRouter = path.join(__dirname, '..', 'n8n', 'workflows', '01-telegram-router.json');
   const wfRadar = JSON.parse(fs.readFileSync(fRadar, 'utf8'));
   const wfRouter = JSON.parse(fs.readFileSync(fRouter, 'utf8'));
 
   const trigRadar = wfRadar.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
-  assert.equal(trigRadar.parameters.rule.interval[0].expression, '*/10 * * * *');
+  assert.equal(trigRadar.parameters.rule.interval[0].expression, '*/2 * * * *');
   assert.equal(L.padrao().radar.publicar_direto, true);
 
   const rota = wfRouter.nodes.find((n) => n.name === 'Rota');
@@ -432,11 +433,13 @@ test('Cupons 3 niveis (De -> anuncio + cupom = final), resposta ao card e enriqu
   assert.equal(joinedMan.oferta.preco, 143.9);
   assert.equal(joinedMan.oferta.links_manuais.preco_sem_cupom, 169.9);
   assert.equal(joinedMan.oferta.links_manuais.preco_de, 229.9);
-  assert.equal(joinedMan.oferta.categoria, 'beleza');
+  assert.equal(joinedMan.oferta.categoria, 'perfumes');
 
   const postTg3 = L.textoTelegram(joinedMan.oferta, 'https://www.mercadolivre.com.br/p/MLB55667788', cfg);
-  assert.match(postTg3, /💸 De <s>R\$ 229,90<\/s> → no anúncio <b>R\$ 169,90<\/b> \+ 🎟️ Cupom <code>FULL1811<\/code> =/);
-  assert.match(postTg3, /💰 <b>R\$ 143,90<\/b>/);
+  assert.match(postTg3, /💸 De <s>R\$ 229,90<\/s> \(no anúncio R\$ 169,90\) → 💰 <b>R\$ 143,90<\/b>/);
+  assert.match(postTg3, /<code>FULL1811<\/code>/);
+  assert.match(postTg3, /Funcionando pra quem resgatou!/);
+  assert.match(postTg3, /aba de cupons/);
   const postZap3 = L.textoWhatsAppGrupo(joinedMan.oferta, 'https://www.mercadolivre.com.br/p/MLB55667788', cfg);
   assert.match(postZap3, /💸 De ~R\$ 229,90~ → no anúncio \*R\$ 169,90\* \+ 🎟️ Cupom \*FULL1811\* =/);
 
@@ -567,19 +570,19 @@ test('Modo Somente Canais: /canais, /logo, /divulgar (com logo), Outros canais e
     { chave: 'grupo_id', valor: 'nenhum' },
     { chave: 'bot_grupo_username', valor: '@oferto_pub_bot' },
     { chave: 'categoria_nome.tech', valor: 'Tech & Games' },
-    { chave: 'categoria_nome.beleza', valor: 'Perfumes, Beleza & Saúde' },
+    { chave: 'categoria_nome.perfumes', valor: 'Perfumes & Fragrâncias' },
     { chave: 'canal.tech', valor: '@oferto_tech_games' },
-    { chave: 'canal.beleza', valor: '@oferto_perfumes_saude' },
+    { chave: 'canal.perfumes', valor: '@oferto_perfumes_saude' },
     { chave: 'canal_logo.tech', valor: 'https://img.example/logo-tech.png' },
   ]);
 
   assert.equal(cfg.telegram.grupo_id, '');
-  assert.equal(cfg.categorias.beleza.nome, 'Perfumes, Beleza & Saúde');
+  assert.equal(cfg.categorias.perfumes.nome, 'Perfumes & Fragrâncias');
 
   // 1) /canais ligar canal e /canais so_canais
   const clsCanal = L.classificarUpdate(msgPriv('/canais perfumes @oferto_perfumes_saude'), HS, cfg, AGORA);
   assert.equal(clsCanal.rota, 'config');
-  assert.ok(clsCanal.upserts.some((u) => u.chave === 'canal.beleza' && u.valor === '@oferto_perfumes_saude'));
+  assert.ok(clsCanal.upserts.some((u) => u.chave === 'canal.perfumes' && u.valor === '@oferto_perfumes_saude'));
 
   const clsLogo = L.classificarUpdate(msgPriv('/logo tech https://img.example/logo-tech.png'), HS, cfg, AGORA);
   assert.equal(clsLogo.rota, 'config');

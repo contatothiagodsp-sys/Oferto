@@ -230,13 +230,13 @@ test('fluxo sem custo completo: colar apenas link curto de afiliado → extrai p
   assert.equal(pub.ok, true);
   const postTg = pub.chamadas.find((c) => c.bot === 'grupo');
   assert.match(postTg.payload.text, /mercadolivre\.com\/sec\/1AbCdEf/);
-  assert.match(postTg.payload.text, /De <s>R\$ 299,90<\/s> por:/);
-  assert.match(postTg.payload.text, /economia de R\$ 100,00 · -33% na loja/);
+  assert.match(postTg.payload.text, /R\$ 199,90.*<s>R\$ 299,90<\/s>/);
+  assert.match(postTg.payload.text, /economi(?:a|za).*R\$ 100,00/);
   assert.doesNotMatch(postTg.payload.text, /90 dias/); // não mente sobre 90 dias quando não há ref90!
 
   const msgZapGrupo = pub.chamadas.find((c) => c.bot === 'admin' && c.payload.text && c.payload.text.startsWith('⚡ *ALERTA DE PREÇO*'));
   assert.ok(msgZapGrupo, 'enviou texto do Grupo WhatsApp no Aprovar normal');
-  assert.match(msgZapGrupo.payload.text, /De ~R\$ 299,90~ por:/);
+  assert.match(msgZapGrupo.payload.text, /R\$ 199,90.*~R\$ 299,90~/);
   assert.match(msgZapGrupo.payload.text, /mercadolivre\.com\/sec\/1AbCdEf/);
   const btnZap = msgZapGrupo.payload.reply_markup.inline_keyboard[0][0];
   assert.match(btnZap.url, /^https:\/\/api\.whatsapp\.com\/send\?text=/);

@@ -3,11 +3,12 @@
 Automação "colou o link, está publicado":
 
 ```
-Só colar/encaminhar o link no Telegram (ou Radar automático a cada 10 min em 18 lojas: Amazon, ML, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias e perfumarias)
+Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem custo extra com cadência de pico em 29 lojas: Amazon, ML, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias, beleza e 10 grandes lojas de moda/tênis)
         → expande links curtos, remove tags de terceiros e injeta seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to, Awin, Rakuten…)
-        → extrai título, preço "De:", preço no anúncio, cupom ativo (`Produto + Cupom = valor` / `Desconto + Cupom`), parcelamento sem juros, imagem e categoria DE GRAÇA
-        → gera copy persuasiva com gancho de atenção, economia em R$ e avisos do CONAR (#publi)
-        → publica sozinho nos seus canais/grupo do Telegram (0 cliques por padrão, com `/modo piloto` e auto Top do Dia)
+        → anti-repetição estrita de 24h (só republica se baixar o preço ou entrar cupom novo, respondendo direto ao post anterior!)
+        → extrai título enxuto, preço "De:", cupom ativo + avisos de resgate prévio na aba de cupons, parcelamento sem juros, imagem e categoria DE GRAÇA
+        → separa 7 nichos + Top (Casa, Moda & Tênis, Beleza & Skincare, Perfumes & Fragrâncias, Saúde/Farmácia, Bebê e Tech & Games), gera copy curta de alta conversão com CONAR (#publi)
+        → publica sozinho nos seus canais/tópicos com comentários direto nas publicações, alertas de lote de cupons por nicho/site (`/cupom`) e denúncia rápida `/admin`
         → entrega o texto pronto do Grupo do WhatsApp com botão [📲 Enviar no WhatsApp (1 toque)]
 ```
 
@@ -15,11 +16,11 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 10 min em 1
 
 | Arquivo | O que é |
 |---|---|
-| `n8n/workflows/00-setup.json` | Rodar manualmente. Cria as Data Tables, as linhas de configuração, registra os webhooks e cria os tópicos do grupo. |
-| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/radar`, `/buscas`, `/canais`, `/divulgar`, `/logo`, `/afiliados`, cliques nos botões (incluindo mover tópico `↪️`), `/convite` e entradas/saídas do grupo. |
+| `n8n/workflows/00-setup.json` | Rodar manualmente. Cria as Data Tables, as linhas de configuração, registra os webhooks e cria/organiza os tópicos do grupo. |
+| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/cupom`, `/radar`, `/buscas`, `/canais` (`/canais migrar`, `/canais apagar_topico`), `/divulgar`, `/logo`, `/afiliados`, `/alerta`, `/buscar`, `/cupons`, `/tophoje`, `/admin` (denúncia no chat), cliques nos botões e entradas/saídas. |
 | `n8n/workflows/02-coleta-shopee.json` | A cada 2 h (8h–22h) busca ofertas na Shopee Affiliate API e manda as candidatas para aprovação. |
 | `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite, sinalização de afiliados e divulgação cruzada automática dos canais). |
-| `n8n/workflows/04-radar-ofertas.json` | A cada 10 min caça promoções multi-fonte (18 lojas: Amazon, ML, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias e perfumarias), prioriza produtos **em alta**, **Perfumes Árabes no ML**, **Perfumes de Nicho** e pedidos da comunidade (`/alerta`), troca o afiliado para o seu e publica automaticamente nos canais/grupo. |
+| `n8n/workflows/04-radar-ofertas.json` | A cada 2 min (sem custo extra) caça promoções multi-fonte e cupons de loja (29 lojas incluindo Shein, Centauro, Netshoes, Nike, Adidas, Renner, C&A, Riachuelo, Dafiti, Zattini e Hering), escala envios nos horários de pico (até 6–8 ofertas/rodada), prioriza produtos **em alta**, **Moda/Tênis**, **Perfumes Árabes no ML**, **Nicho**, **Skincare** e **Suplementos**, evita repetições de 24h (ou responde ao post anterior se o preço cair/entrar cupom) e publica automaticamente. |
 | `n8n/workflows/05-guardiao-ofertas.json` | A cada 2h verifica se ofertas publicadas esgotaram ou subiram forte de preço (riscando e encerrando o post sozinho) e às 21h15 publica a vitrine **Top 5 Ofertas Ainda Ativas do Dia**. |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
@@ -95,9 +96,9 @@ Preencha agora:
 3. O bot avisa você no privado com o **ID do grupo** (`-100…`) e mostra quais permissões estão faltando. Copie o ID para `grupo_id`.
 4. Se quiser, preencha `grupo_link` com o link público do grupo.
 5. Rode o **00 · Setup** pela 3ª vez. Ele:
-   - cria os tópicos 🔥 Top do Dia, 🏠 Casa & Eletro, 🎁 Beleza & Presentes, 👶 Bebê & Família e 💻 Tech e grava os IDs na config;
-   - escreve a descrição do grupo e renomeia o **General** para **💬 Conversa**;
-   - publica e fixa no Conversa a mensagem 🔒 Segurança e privacidade (critério do selo, dados que guardamos e aviso de afiliado) e, por último, o **👋 Comece aqui** (boas-vindas, link direto para cada tópico, as 4 regras e o convite para chamar amigos), que fica no topo;
+   - cria os tópicos 🔥 Top do Dia, 🏠 Casa & Eletro, 👗 Moda, Roupas & Tênis, 💄 Beleza & Skincare, ✨ Perfumes & Fragrâncias, 💊 Saúde, Suplementos & Farmácia, 👶 Bebê & Família e 💻 Tech & Games e grava os IDs na config;
+   - escreve a descrição do grupo, oculta/fecha o tópico Geral (`📌 Regras & Segurança`) mantendo o foco total nas categorias, e deixa os tópicos de ofertas abertos para que os membros comentem diretamente nas publicações (com moderação `/admin` e antispam ativos);
+   - publica e fixa as mensagens 🔒 Segurança e privacidade e **👋 Comece aqui** (boas-vindas, links para cada tópico, regras e `/admin`);
    - fixa em cada tópico um texto com o que o membro encontra ali e quantas ofertas esperar por dia;
    - **fecha** os tópicos de oferta: só admins e o bot postam neles;
    - manda no seu Telegram o resumo "🧩 Grupo arrumado" (e o "⚙️ Setup" só quando há algo a fazer).
