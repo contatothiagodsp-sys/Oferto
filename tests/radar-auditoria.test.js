@@ -164,3 +164,73 @@ test('Code nodes novos do radar rodam no sandbox (sem $getWorkflowStaticData nos
     assert.doesNotThrow(() => new vm.Script(`(function(){ ${n.parameters.jsCode} })`), n.name);
   }
 });
+
+test('imagem: telesco.pe é substituída pela foto real da Amazon/ML; postGrupo não usa telesco.pe na prévia fallback', () => {
+  const radar = require('../lib/radar');
+  const fluxos = require('../lib/fluxos');
+  const cfg = cfgBase();
+  const cands = [{
+    radar_key: 'tg_xet_1',
+    loja: 'amazon',
+    produto_id: 'amz_B0G7HBDWRP',
+    url: 'https://www.amazon.com.br/dp/B0G7HBDWRP',
+    titulo: 'Creme Kérastase',
+    preco: 259,
+    preco_de: 429,
+    desconto_pct: 39.63,
+    imagem: 'https://cdn1.telesco.pe/file/abc123',
+    resolved: true,
+    fonte_radar: 'telegram_xetdaspromocoes',
+  }];
+  const htmlAmz = `<html><head><meta property="og:image" content="https://m.media-amazon.com/images/I/51xUlrViq1L.jpg_BO30,255,255,255_SR1910,1000.jpg"/></head><body><div id="corePrice_feature_div"><span class="a-offscreen">R$ 259,00</span></div><script>"hiRes":"https://m.media-amazon.com/images/I/51xUlrViq1L._AC_SL1500_.jpg"</script></body></html>`;
+  const est = { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: cands, reqsPag: [{ idx: 0, url: cands[0].url }], reqsMercado: [] };
+  const fin = radar.finalizarRadar(est, [], [], [], cfg, [{ statusCode: 200, body: htmlAmz }], []);
+  assert.equal(fin.ofertasNovas.length, 1);
+  assert.equal(fin.ofertasNovas[0].imagem, 'https://m.media-amazon.com/images/I/51xUlrViq1L._AC_SL1500_.jpg');
+
+  const cfgPub = cfgBase([{ chave: 'bot_token_grupo', valor: 'tok' }, { chave: 'posts.foto', valor: 'sim' }]);
+  const ofPub = {
+    oferta_id: 'o1', loja: 'amazon', categoria: 'casa', titulo: 'Produto',
+    preco: 100, url: 'https://www.amazon.com.br/dp/B000000001',
+    imagem: 'https://cdn1.telesco.pe/file/expirado', selo: 'ok',
+  };
+  const itensPub = L.planejarLinks(ofPub, cfgPub, AGORA);
+  const pub = L.prepararPublicacao(ofPub, itensPub, cfgPub, { ts: AGORA, chat_id: 111, message_id: 1 });
+  const ch = pub.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'sendPhoto');
+  assert.ok(ch, 'deve tentar sendPhoto');
+  assert.equal(ch.fallback.metodo, 'sendMessage');
+  assert.equal(ch.fallback.payload.link_preview_options.url, 'https://www.amazon.com.br/dp/B000000001');
+});
+
+test('promobit 429 ativa cooldown e não desperdiça vagas; ML /social/ no redir 1 vai para vitrine 3', () => {
+  const radar = require('../lib/radar');
+  const cfg = cfgBase([{ chave: 'radar.canais_curados', valor: 'sim' }, { chave: 'radar.min_desconto_pct', valor: '15' }]);
+  const plan = radar.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA });
+  const pbHtml = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { serverOffers: { offers: [{
+      offerId: 901, offerTitle: 'Oferta Promobit 50% OFF', offerPrice: 100, offerOldPrice: 200,
+      offerLikes: 20, offerClicks: 100, storeDomain: 'amazon.com.br', offerPhoto: '/500/a.png',
+    }] } } },
+  })}</script>`;
+  const tgHtml = `<div class="tgme_widget_message_wrap"><div class="tgme_widget_message" data-post="xetdaspromocoes/99"><div class="tgme_widget_message_text">Air Fryer Philco<br/>De R$ 400,00 por R$ 220,00<br/><a href="https://meli.la/abc123">https://meli.la/abc123</a></div></div></div>`;
+  const respWeb = plan.fontesWeb.map((f) => (f.tipo === 'telegram_canal' ? { statusCode: 200, body: tgHtml } : { statusCode: 200, body: pbHtml }));
+
+  const sel1 = radar.selecionarCandidatosRadar(plan, respWeb, [], [], [], cfg, [], {});
+  assert.ok(sel1.candidatos.some((c) => c.fonte_radar === 'promobit'));
+  const pbIdx = sel1.reqs1.findIndex((r) => sel1.candidatos[r.idx].fonte_radar === 'promobit');
+  const tgIdx = sel1.reqs1.findIndex((r) => sel1.candidatos[r.idx].fonte_radar !== 'promobit');
+  const resp1 = sel1.reqs1.map((_, i) => (i === pbIdx
+    ? { statusCode: 429, headers: {} }
+    : { statusCode: 301, headers: { location: 'https://www.mercadolivre.com.br/social/xetdaspromocoes?matt_word=x' } }));
+  const ap1 = radar.aplicarRedirRadar1(sel1, resp1, cfg);
+  assert.equal(ap1.promobit_429, true);
+  assert.equal(ap1.candidatos[sel1.reqs1[tgIdx].idx].resolved, undefined);
+  const ap2 = radar.aplicarRedirRadar2(ap1, [], cfg);
+  assert.equal(ap2.reqs3.length, 1);
+  assert.match(ap2.reqs3[0].url, /mercadolivre\.com\.br\/social\/xetdaspromocoes/);
+
+  // Com cooldown ativo, Promobit é pulado e só fontes funcionais ocupam as vagas
+  const sel2 = radar.selecionarCandidatosRadar(plan, respWeb, [], [], [], cfg, [], {}, { pb_redir_bloqueado_ate: AGORA + 600000 });
+  assert.ok(sel2.candidatos.every((c) => c.fonte_radar !== 'promobit'));
+  assert.ok(sel2.candidatos.length >= 1);
+});

@@ -792,7 +792,7 @@ return [{ json: LIB.responderVitrineMembro(${CLS}, pega('Vitrine ofertas 7d', 'o
 
 function httpRadarGet(name, follow) {
   const opts = {
-    batching: { batch: { batchSize: 1, batchInterval: 150 } },
+    batching: { batch: { batchSize: 1, batchInterval: 400 } },
     response: { response: { fullResponse: true, neverError: true, responseFormat: 'text', outputPropertyName: 'body' } },
     timeout: 15000,
   };
@@ -843,7 +843,7 @@ const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
 const alertas = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
 const sd = typeof $getWorkflowStaticData === 'function' ? $getWorkflowStaticData('global') : {};
-return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas, sd.radar_descartes || {}) }];`, { lib: true }), x + 1980, y);
+return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas, sd.radar_descartes || {}, { pb_redir_bloqueado_ate: sd.pb_redir_bloqueado_ate || 0 }) }];`, { lib: true }), x + 1980, y);
 
   wf.add(switchExpr(N('Tem redir 1?'), '$json.reqs1.length > 0 ? 0 : 1', 2), x + 2200, y);
   wf.add(itens(N('Itens redir 1'), `$('${N('Selecionar radar')}').first().json.reqs1`), x + 2420, y - 120);
@@ -851,7 +851,13 @@ return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, pr
   wf.add(code(N('Aplicar redir 1'), `
 const est = $('${N('Selecionar radar')}').first().json;
 const resp1 = est.reqs1.length && $('${N('Abrir redir 1')}').isExecuted ? $('${N('Abrir redir 1')}').all().map((i) => i.json) : [];
-return [{ json: LIB.aplicarRedirRadar1(est, resp1, cfg) }];`, { lib: true }), x + 2860, y);
+const res = LIB.aplicarRedirRadar1(est, resp1, cfg);
+if (typeof $getWorkflowStaticData === 'function') {
+  const sd = $getWorkflowStaticData('global');
+  if (res.promobit_429) sd.pb_redir_bloqueado_ate = Date.now() + 20 * 60 * 1000;
+  else if (res.promobit_ok) sd.pb_redir_bloqueado_ate = 0;
+}
+return [{ json: res }];`, { lib: true }), x + 2860, y);
 
   wf.add(switchExpr(N('Tem redir 2?'), '$json.reqs2.length > 0 ? 0 : 1', 2), x + 3080, y);
   wf.add(itens(N('Itens redir 2'), `$('${N('Aplicar redir 1')}').first().json.reqs2`), x + 3300, y - 120);
