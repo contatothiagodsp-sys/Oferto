@@ -4,7 +4,7 @@ const path = require('path');
 const SRC = path.join(__dirname, '..', 'n8n', 'workflows');
 const OUT = path.join(__dirname, 'tmp', 'wf');
 fs.mkdirSync(OUT, { recursive: true });
-const ids = { '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001', '03-relatorio-diario.json': 'wfRelat000000001' };
+const ids = { '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001', '03-relatorio-diario.json': 'wfRelat000000001', '04-radar-ofertas.json': 'wfRadar000000001' };
 for (const [arq, id] of Object.entries(ids)) {
   const wf = JSON.parse(fs.readFileSync(path.join(SRC, arq), 'utf8'));
   wf.id = id;

@@ -3,11 +3,11 @@
 Automação "colou o link, está publicado":
 
 ```
-Só colar/encaminhar o link no Telegram (ou coleta automática Shopee a cada 2 h)
-        → expande links curtos preservando seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to…)
-        → extrai título, preço atual, preço "De:", cupom, imagem e categoria DE GRAÇA (sem API paga)
+Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 h em Amazon, ML, Shopee, Shein e TikTok Shop)
+        → expande links curtos, remove tags de terceiros e injeta seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to…)
+        → extrai título, preço atual, preço "De:", cupom ativo (e Produto + Cupom), parcelamento sem juros, imagem e categoria DE GRAÇA
         → gera copy persuasiva com gancho de atenção, economia em R$ e avisos do CONAR (#publi)
-        → publica no grupo do Telegram (1 clique no card, ou 0 cliques com /modo rapido)
+        → publica no grupo do Telegram (1 clique no card, ou 0 cliques com /modo rapido / /modo piloto)
         → entrega o texto pronto do Grupo do WhatsApp com botão [📲 Enviar no WhatsApp (1 toque)]
 ```
 
@@ -16,9 +16,10 @@ Só colar/encaminhar o link no Telegram (ou coleta automática Shopee a cada 2 h
 | Arquivo | O que é |
 |---|---|
 | `n8n/workflows/00-setup.json` | Rodar manualmente. Cria as Data Tables, as linhas de configuração, registra os webhooks e cria os tópicos do grupo. |
-| `n8n/workflows/01-telegram-router.json` | O bot: recebe `/oferta`, cliques nos botões, `/convite` e entradas/saídas do grupo. |
+| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/radar`, `/buscas`, cliques nos botões (incluindo mover tópico `↪️`), `/convite` e entradas/saídas do grupo. |
 | `n8n/workflows/02-coleta-shopee.json` | A cada 2 h (8h–22h) busca ofertas na Shopee Affiliate API e manda as candidatas para aprovação. |
 | `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite e retenção). |
+| `n8n/workflows/04-radar-ofertas.json` | A cada 2 h (8h30–22h30) caça promoções multi-fonte (Amazon, Mercado Livre, Shopee, Shein e TikTok Shop), troca o afiliado para o seu e manda para aprovação ou publica direto no `/modo piloto`. |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
 | `servidor-local/` | n8n Community grátis no seu computador (Docker + túnel). Guia em [servidor-local/README.md](servidor-local/README.md). |
@@ -29,7 +30,7 @@ Só colar/encaminhar o link no Telegram (ou coleta automática Shopee a cada 2 h
 | Opção | Custo | Como |
 |---|---|---|
 | **Seu computador** (n8n Community + Docker) | Grátis; o computador precisa ficar ligado | [servidor-local/README.md](servidor-local/README.md): sobe tudo com `docker compose up -d`, importa os workflows e liga o webhook sozinho |
-| **n8n Cloud** | Plano pago após o teste grátis ([limite de execuções](#execuções-do-n8n-cloud-confira-o-seu-plano)) | Passo a passo abaixo: importar os 4 arquivos `.json` de `n8n/workflows/` |
+| **n8n Cloud** | Plano pago após o teste grátis ([limite de execuções](#execuções-do-n8n-cloud-confira-o-seu-plano)) | Passo a passo abaixo: importar os 5 arquivos `.json` de `n8n/workflows/` |
 
 Os workflows são os mesmos nas duas opções. No servidor local, os passos 2 e 4 abaixo são automáticos.
 
@@ -194,9 +195,11 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 
 | Comando | Faz |
 |---|---|
-| **Só colar o link** (ou encaminhar do app) | Extrai título, preço, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto no `/modo rapido`). Aceita preço/cupom junto na mesma mensagem (`<link> 199,90 cupom OFF10`). |
-| `/modo rapido` · `/modo aprovar` · `/modo padrao` | Alterna entre **0 cliques** (publica direto no Telegram + entrega só Grupo WhatsApp) e **1 clique** (revisão no card). |
-| `/config` · `/config <chave> <valor>` | Mostra ou altera configurações pelo chat (ex.: `/config amazon.tag_padrao suatag-20`, `/config publicar.plataformas wag`). |
+| **Só colar o link** (ou encaminhar do app) | Extrai título, preço, cupom ativo (`Produto + Cupom = valor`), parcelamento sem juros, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto no `/modo rapido`). Aceita atalho de categoria sem barra (`tech https://...`) e preço/cupom junto na mesma mensagem (`<link> 199,90 cupom OFF10 10% 10x sem juros`). |
+| `/radar` · `/radar <loja\|nicho>` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (Amazon, Mercado Livre, Shopee, Shein e TikTok Shop). Ex.: `/radar perfume`, `/radar ml eletro`, `/radar fontes`. |
+| `/buscas <termos>` | Define os nichos/termos monitorados pelo Radar (ex.: `/buscas perfume, airfryer, monitor, fralda`). |
+| `/modo rapido` · `/modo piloto` · `/modo aprovar` · `/modo padrao` | Alterna entre **0 cliques** para links enviados (`/modo rapido`), **piloto automático** também no Radar (`/modo piloto`) e **1 clique** com revisão no card (`/modo padrao` / `/modo aprovar`). |
+| `/config` · `/config <chave> <valor>` | Mostra ou altera configurações pelo chat (ex.: `/config amazon.tag_padrao suatag-20`, `/config shein.afiliado_id ...`, `/config publicar.plataformas wag`). |
 | `/link [categoria] [top] <url>` | Igual a colar só o link, mas permite fixar a categoria ou `top` (também funciona dentro de um tópico do grupo). |
 | `/oferta <categoria> [top]` + linhas | Formato manual completo (para informar `ref90` de 90 dias, links por plataforma etc.). |
 | `/oferta <categoria> <link da Amazon>` | Formato curto do `/oferta` com Keepa ligada (passo 9, opcional). |
@@ -253,6 +256,7 @@ Só o valor (`399,90`) também serve. O bot recalcula o selo e manda um **card n
 Depois de publicada, o card ganha:
 - **⭐ Mandar ao Top**: copia o post para o Top do Dia (até **5 por dia**, contados desde a meia-noite; acima disso o bot avisa e não publica).
 - **⛔ Encerrar**: edita os posts da oferta no grupo para "Oferta encerrada", tira o botão de compra e marca a oferta como `encerrada`.
+- **↪️ Mover tópico (`Casa`, `Tech`, `Beleza`, `Bebê`)**: quando a categoria foi automática, aparece uma linha extra para mover o post publicado para outro tópico em 1 toque (apaga o post antigo no grupo e republica no tópico escolhido).
 
 Posts entre 22h e 8h e as cópias no Top do Dia saem **sem notificação**. O relâmpago sempre notifica.
 

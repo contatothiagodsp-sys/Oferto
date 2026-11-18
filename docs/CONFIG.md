@@ -41,6 +41,18 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `link_curto_api` |  | Deixe vazio (usado só em testes para abrir links curtos a.co/amzn.to) |
 | `pagina_api` |  | Deixe vazio (usado só em testes para ler o HTML da página do produto) |
 | `amazon.tag_padrao` |  | Tag única da Amazon usada quando não há tag específica por categoria/plataforma (ex.: suatag-20) |
+| `shein.afiliado_id` |  | Código ou parâmetro de afiliado da Shein (ex.: 123456 ou url_from=adhub…). Vazio = link direto ou link curto colado |
+| `ml.etiqueta` |  | Opcional: matt_word:matt_tool de afiliado do Mercado Livre (ou cole links mercadolivre.com/sec/…) |
+| `radar.ativo` | `sim` | sim/nao: ativa a busca automática de promoções a cada 2h (workflow 04 · Radar Multi-Fonte) |
+| `radar.publicar_direto` | `nao` | sim/nao: publica as promoções do radar direto no grupo do Telegram e entrega o botão do WhatsApp (ative com /modo piloto) |
+| `radar.lojas` | `amazon,ml,shopee,shein,tiktok` | Lojas monitoradas pelo radar automático (amazon, ml, shopee, shein, tiktok) |
+| `radar.categorias` | `beleza,casa,tech,bebe` | Categorias monitoradas pelo radar (beleza, casa, tech, bebe) |
+| `radar.palavras` |  | Filtro opcional de palavras no radar separadas por ; (vazio = aceita todas as boas ofertas das lojas/categorias; ajuste com /buscas) |
+| `radar.min_desconto_pct` | `15` | Desconto mínimo (%) para entrar no radar (ofertas com cupom ou destaque da comunidade também entram) |
+| `radar.preco_min` | `15` | Preço mínimo em R$ no radar (ignora banners de R$ 0,01 e itens isca) |
+| `radar.max_por_ciclo` | `3` | Máximo de promoções enviadas por rodada automática do radar (evita spam) |
+| `radar.canais_telegram` |  | Opcional: @canais públicos de ofertas no Telegram (separados por ;) para o radar garimpar via t.me/s/ e trocar pelo seu afiliado |
+| `radar.api_url` |  | Deixe vazio (usado só em testes para simular fontes do radar) |
 | `tunel.dominio` |  | Servidor local: domínio próprio aceito pelo workflow 90 · Túnel além de trycloudflare.com e ngrok (ex.: bot.seudominio.com.br). Vazio = só esses |
 | `saude.ultimo_alerta` |  | Servidor local: gerado pelo workflow 91 · Saúde (anti-spam dos alertas). Não precisa mexer |
 | `amazon.mostrar_preco` | `sim` | sim/nao: os posts da Amazon mostram o preço e o %. Com nao, dizem só "no menor preço dos últimos 90 dias" e "Veja o preço atual na Amazon" (use se os termos exigirem preço vindo da API oficial) |
