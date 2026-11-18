@@ -3,11 +3,11 @@
 Automação "colou o link, está publicado":
 
 ```
-Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 h em Amazon, ML, Shopee, Shein e TikTok Shop)
-        → expande links curtos, remove tags de terceiros e injeta seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to…)
-        → extrai título, preço atual, preço "De:", cupom ativo (e Produto + Cupom), parcelamento sem juros, imagem e categoria DE GRAÇA
+Só colar/encaminhar o link no Telegram (ou Radar automático a cada 10 min em 18 lojas: Amazon, ML, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias e perfumarias)
+        → expande links curtos, remove tags de terceiros e injeta seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to, Awin, Rakuten…)
+        → extrai título, preço "De:", preço no anúncio, cupom ativo (`Produto + Cupom = valor` / `Desconto + Cupom`), parcelamento sem juros, imagem e categoria DE GRAÇA
         → gera copy persuasiva com gancho de atenção, economia em R$ e avisos do CONAR (#publi)
-        → publica no grupo do Telegram (1 clique no card, ou 0 cliques com /modo rapido / /modo piloto)
+        → publica sozinho nos seus canais/grupo do Telegram (0 cliques por padrão, com `/modo piloto` e auto Top do Dia)
         → entrega o texto pronto do Grupo do WhatsApp com botão [📲 Enviar no WhatsApp (1 toque)]
 ```
 
@@ -16,10 +16,10 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 h em Amaz
 | Arquivo | O que é |
 |---|---|
 | `n8n/workflows/00-setup.json` | Rodar manualmente. Cria as Data Tables, as linhas de configuração, registra os webhooks e cria os tópicos do grupo. |
-| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/radar`, `/buscas`, cliques nos botões (incluindo mover tópico `↪️`), `/convite` e entradas/saídas do grupo. |
+| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/radar`, `/buscas`, `/canais`, `/divulgar`, `/logo`, `/afiliados`, cliques nos botões (incluindo mover tópico `↪️`), `/convite` e entradas/saídas do grupo. |
 | `n8n/workflows/02-coleta-shopee.json` | A cada 2 h (8h–22h) busca ofertas na Shopee Affiliate API e manda as candidatas para aprovação. |
-| `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite e retenção). |
-| `n8n/workflows/04-radar-ofertas.json` | A cada 2 h (8h30–22h30) caça promoções multi-fonte (Amazon, Mercado Livre, Shopee, Shein e TikTok Shop), troca o afiliado para o seu e manda para aprovação ou publica direto no `/modo piloto`. |
+| `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite, sinalização de afiliados e divulgação cruzada automática dos canais). |
+| `n8n/workflows/04-radar-ofertas.json` | A cada 10 min caça promoções multi-fonte (Amazon, Mercado Livre, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias e perfumarias), lê cupons ativos na página, troca o afiliado para o seu e publica automaticamente nos canais/grupo. |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
 | `servidor-local/` | n8n Community grátis no seu computador (Docker + túnel). Guia em [servidor-local/README.md](servidor-local/README.md). |
@@ -195,23 +195,27 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 
 | Comando | Faz |
 |---|---|
-| **Só colar o link** (ou encaminhar do app) | Extrai título, preço, cupom ativo (`Produto + Cupom = valor`), parcelamento sem juros, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto no `/modo rapido`). Aceita atalho de categoria sem barra (`tech https://...`) e preço/cupom junto na mesma mensagem (`<link> 199,90 cupom OFF10 10% 10x sem juros`). |
-| `/radar` · `/radar <loja\|nicho>` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (Amazon, Mercado Livre, Shopee, Shein e TikTok Shop). Ex.: `/radar perfume`, `/radar ml eletro`, `/radar fontes`. |
-| `/buscas <termos>` | Define os nichos/termos monitorados pelo Radar (ex.: `/buscas perfume, airfryer, monitor, fralda`). |
-| `/modo rapido` · `/modo piloto` · `/modo aprovar` · `/modo padrao` | Alterna entre **0 cliques** para links enviados (`/modo rapido`), **piloto automático** também no Radar (`/modo piloto`) e **1 clique** com revisão no card (`/modo padrao` / `/modo aprovar`). |
-| `/config` · `/config <chave> <valor>` | Mostra ou altera configurações pelo chat (ex.: `/config amazon.tag_padrao suatag-20`, `/config shein.afiliado_id ...`, `/config publicar.plataformas wag`). |
-| `/link [categoria] [top] <url>` | Igual a colar só o link, mas permite fixar a categoria ou `top` (também funciona dentro de um tópico do grupo). |
-| `/oferta <categoria> [top]` + linhas | Formato manual completo (para informar `ref90` de 90 dias, links por plataforma etc.). |
+| **Só colar o link** (ou encaminhar do app) | Extrai título, preço, cupom ativo (`Produto + Cupom = valor` e `De → no anúncio + Cupom =`), parcelamento sem juros, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto). Aceita atalho sem barra (`tech https://...`) e cupom+preço junto (`<link> 143,90 cupom FULL1811`, `<link> 400 cupom MELI15 15% 10x sem juros` ou `<link> de 229,90 anuncio 169,90 por 143,90 cupom FULL1811`). |
+| `/radar` · `/radar <loja\|nicho>` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (18 lojas: Amazon, ML, Shopee, Shein, TikTok, KaBuM!, Terabyte, Pichau, farmácias e perfumarias). Ex.: `/radar kabum`, `/radar farmacia`, `/radar ps5`, `/radar perfume`. |
+| `/buscas <termos>` | Define os nichos/termos monitorados pelo Radar (ex.: `/buscas ps5; gta 6; perfume; placa de video`). |
+| `/canais` · `/canais <cat> <@canal>` | Gerencia os **canais separados** (`Ofertô Tech & Games`, `Perfumes, Beleza & Saúde`, `Casa & Eletro`, `Bebê & Família`, `VIP Top`), renomeia categorias (`/canais nomes`) e desliga o grupo antigo (`/canais so_canais`). |
+| `/logo <cat> <url>` (ou foto com legenda) | Define o **logo próprio** de cada canal para aparecer com imagem nas divulgações cruzadas. |
+| `/divulgar` · `/divulgar <cat>` | Publica nos outros canais/grupo (e gera botão WhatsApp) a chamada com botões para conhecer os canais do Ofertô (usando o logo quando configurado). |
+| `/afiliados` | Mostra quais lojas já estão monetizando com seus códigos e quais aceitam cadastro de afiliado com o comando `/config` pronto. |
+| `/modo piloto` · `/modo rapido` · `/modo aprovar` · `/modo padrao` | Alterna entre piloto automático total (`/modo piloto`, radar 10 min + links), `/modo rapido` e revisão por card (`/modo aprovar`). |
+| `/config` · `/config <chave> <valor>` | Mostra ou altera configurações pelo chat (ex.: `/config awin.afiliado_id ...`, `/config terabyte.afiliado_id ...`, `/config rakuten.id ...`). |
+| `/link [categoria] [top] <url>` | Igual a colar só o link, mas permite fixar a categoria (incl. apelidos como `games`, `ps5`, `perfumes`, `farmacia`) ou `top`. |
+| `/oferta <categoria> [top]` + linhas | Formato manual completo (aceita `de`, `anuncio`, `preço`, `cupom`, `parcelas`, `ref90`). |
 | `/oferta <categoria> <link da Amazon>` | Formato curto do `/oferta` com Keepa ligada (passo 9, opcional). |
 | `/convite <categoria> <nome>` | Cria um **link de convite nomeado** (ex.: `/convite beleza meta_beleza_v1`). Use um link por anúncio: o relatório mostra entradas, saídas e retenção por link. |
-| `/links` | Lista os **links de divulgação por tópico** (`t.me/<bot publicador>?start=beleza`). Para campanha, acrescente `_nome`: `?start=beleza_meta1`. |
+| `/links` | Lista os **links de divulgação por tópico e canal** (`t.me/<bot publicador>?start=beleza`). Para campanha, acrescente `_nome`: `?start=beleza_meta1`. |
 | `/id` | Mostra seu ID. |
 | `/ajuda` | Lista os comandos. |
 
 ### Bot publicador no privado (membros)
 
-- `/start` responde **pelo próprio bot publicador** (o webhook dele é registrado com `?bot=grupo`): boas-vindas, link do grupo e links dos tópicos. Sem `grupo_link`, o bot cria (uma vez) e reaproveita o convite nomeado `bot_start`.
-- `/start beleza_meta1` (link do `/links`): boas-vindas do tópico, botão **Entrar no grupo** (convite nomeado `beleza_meta1`, criado uma vez e reaproveitado) e botão **Abrir 🎁 Beleza & Presentes**. Cada `/start` é gravado em `bfx_entradas` (`tipo = start`, payload em `convite_nome`) e aparece no relatório.
+- `/start` responde **pelo próprio bot publicador** (o webhook dele é registrado com `?bot=grupo`): boas-vindas, link do grupo/canais (`?start=canais` abre o menu com botões de todos os canais).
+- `/start beleza_meta1` (link do `/links`): boas-vindas do tópico/categoria, botão **Entrar no grupo** e canal correspondente. Cada `/start` é gravado em `bfx_entradas` (`tipo = start`, payload em `convite_nome`) e aparece no relatório.
 - `/id` só responde no privado.
 
 ### `/oferta` curto (Amazon com Keepa)
@@ -232,15 +236,13 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 - A Keepa só é consultada quando falta alguma informação: com título, preço, `ref90` e `img` digitados, nenhum token é gasto.
 - Links curtos do app (`a.co`, `amzn.to`) funcionam: o bot abre o link e usa o endereço completo.
 
-### Corrigir o ref90 respondendo ao card
+### Corrigir ref90 ou inserir cupom/preço respondendo ao card
 
-Para um card sem referência de 90 dias (ex.: coleta da Shopee), **responda à mensagem do card** (deslize para o lado ou toque em *Responder*) com o valor e a fonte:
+Para atualizar um card pendente, **responda à mensagem do card** (deslize para o lado ou toque em *Responder*):
+- **Ref90:** `399,90 https://link-do-comparador` (ou só `399,90`).
+- **Cupom e preço final:** `cupom MELI15 por 143,90`, `cupom MELI15 15%` ou `de 229,90 anuncio 169,90 por 143,90 cupom MELI15`.
 
-```
-399,90 https://link-do-comparador
-```
-
-Só o valor (`399,90`) também serve. O bot recalcula o selo e manda um **card novo**; o card antigo perde os botões ("↩️ Substituída pelo card novo") e a oferta antiga fica como `editada`. Não vale para oferta já aprovada.
+O bot recalcula o selo/economia e manda um **card novo**; o card antigo perde os botões ("↩️ Substituída pelo card novo") e a oferta antiga fica como `editada`. Não vale para oferta já aprovada.
 
 ### Botões do card
 

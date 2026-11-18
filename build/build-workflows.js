@@ -646,7 +646,7 @@ return LIB.filtrarSugestao(cls, estado, cls.ts).map((c) => ({ json: c }));`, { l
 
 function httpRadarGet(name, follow) {
   const opts = {
-    batching: { batch: { batchSize: 1, batchInterval: 200 } },
+    batching: { batch: { batchSize: 1, batchInterval: 150 } },
     response: { response: { fullResponse: true, neverError: true, responseFormat: 'text', outputPropertyName: 'body' } },
     timeout: 15000,
   };
@@ -715,46 +715,53 @@ return [{ json: LIB.aplicarRedirRadar2(est, resp2, cfg) }];`, { lib: true }), x 
   wf.add(switchExpr(N('Tem vitrine 3?'), '$json.reqs3.length > 0 ? 0 : 1', 2), x + 3960, y);
   wf.add(itens(N('Itens vitrine 3'), `$('${N('Aplicar redir 2')}').first().json.reqs3`), x + 4180, y - 120);
   wf.add(httpRadarGet(N('Abrir vitrine 3'), true), x + 4400, y - 120);
-  wf.add(code(N('Finalizar radar'), `
+  wf.add(code(N('Preparar páginas radar'), `
 const est = $('${N('Aplicar redir 2')}').first().json;
 const resp3 = est.reqs3.length && $('${N('Abrir vitrine 3')}').isExecuted ? $('${N('Abrir vitrine 3')}').all().map((i) => i.json) : [];
+return [{ json: LIB.prepararPaginasRadar(est, resp3, cfg) }];`, { lib: true }), x + 4620, y);
+  wf.add(switchExpr(N('Tem páginas radar?'), '$json.reqsPag.length > 0 ? 0 : 1', 2), x + 4840, y);
+  wf.add(itens(N('Itens páginas radar'), `$('${N('Preparar páginas radar')}').first().json.reqsPag`), x + 5060, y - 120);
+  wf.add(httpRadarGet(N('Ler páginas radar'), true), x + 5280, y - 120);
+  wf.add(code(N('Finalizar radar'), `
+const est = $('${N('Preparar páginas radar')}').first().json;
+const respPag = est.reqsPag.length && $('${N('Ler páginas radar')}').isExecuted ? $('${N('Ler páginas radar')}').all().map((i) => i.json) : [];
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
-return [{ json: LIB.finalizarRadar(est, resp3, ofertas, precos, cfg) }];`, { lib: true }), x + 4620, y);
+return [{ json: LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag) }];`, { lib: true }), x + 5500, y);
 
-  wf.add(itens(N('Preços radar'), '$json.precosNovos'), x + 4840, y - 180);
-  wf.add(dtInsert(N('Gravar preços radar'), 'bfx_precos'), x + 5060, y - 180);
-  wf.add(itens(N('Ofertas radar'), `$('${N('Finalizar radar')}').first().json.ofertasNovas`), x + 4840, y);
-  wf.add(dtInsert(N('Gravar ofertas radar'), 'bfx_ofertas'), x + 5060, y);
-  wf.add(itens(N('Cards radar'), `$('${N('Finalizar radar')}').first().json.chamadas`), x + 4840, y + 180);
-  wf.add(httpTelegram(N('Telegram (cards radar)')), x + 5060, y + 180);
+  wf.add(itens(N('Preços radar'), '$json.precosNovos'), x + 5720, y - 180);
+  wf.add(dtInsert(N('Gravar preços radar'), 'bfx_precos'), x + 5940, y - 180);
+  wf.add(itens(N('Ofertas radar'), `$('${N('Finalizar radar')}').first().json.ofertasNovas`), x + 5720, y);
+  wf.add(dtInsert(N('Gravar ofertas radar'), 'bfx_ofertas'), x + 5940, y);
+  wf.add(itens(N('Cards radar'), `$('${N('Finalizar radar')}').first().json.chamadas`), x + 5720, y + 180);
+  wf.add(httpTelegram(N('Telegram (cards radar)')), x + 5940, y + 180);
 
   // Publicação automática em lote quando /modo piloto (radar.publicar_direto) está ativo
   wf.add(code(N('Auto radar?'), `
 const f = $('${N('Finalizar radar')}').first().json;
-return f.autoPlanos && f.autoPlanos.length ? [{ json: f }] : [];`, { cfg: false }), x + 5280, y + 180);
-  wf.add(switchExpr(N('Tem Shopee auto?'), '$json.reqsShopeeLinks.length > 0 ? 0 : 1', 2), x + 5500, y + 180);
-  wf.add(itens(N('Itens Shopee auto'), `$('${N('Finalizar radar')}').first().json.reqsShopeeLinks`), x + 5720, y + 60);
-  wf.add(httpShopee(N('Shopee: links radar')), x + 5940, y + 60);
+return f.autoPlanos && f.autoPlanos.length ? [{ json: f }] : [];`, { cfg: false }), x + 6160, y + 180);
+  wf.add(switchExpr(N('Tem Shopee auto?'), '$json.reqsShopeeLinks.length > 0 ? 0 : 1', 2), x + 6380, y + 180);
+  wf.add(itens(N('Itens Shopee auto'), `$('${N('Finalizar radar')}').first().json.reqsShopeeLinks`), x + 6600, y + 60);
+  wf.add(httpShopee(N('Shopee: links radar')), x + 6820, y + 60);
   wf.add(code(N('Publicar lote radar'), `
 const fin = $('${N('Finalizar radar')}').first().json;
 const respSh = fin.reqsShopeeLinks.length && $('${N('Shopee: links radar')}').isExecuted ? $('${N('Shopee: links radar')}').all().map((i) => i.json) : [];
 const respCards = $('${N('Telegram (cards radar)')}').all().map((i) => i.json);
-return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg) }];`, { lib: true }), x + 6160, y + 180);
+return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg) }];`, { lib: true }), x + 7040, y + 180);
 
-  wf.add(itens(N('Updates lote'), '$json.updates'), x + 6380, y + 40);
-  wf.add(dtUpdate(N('Atualizar lote radar'), 'bfx_ofertas', 'oferta_id'), x + 6600, y + 40);
-  wf.add(itens(N('Links lote'), `$('${N('Publicar lote radar')}').first().json.linksRows`), x + 6380, y + 180);
-  wf.add(dtInsert(N('Gravar links radar'), 'bfx_links'), x + 6600, y + 180);
-  wf.add(itens(N('Mensagens lote'), `$('${N('Publicar lote radar')}').first().json.chamadasPub`), x + 6380, y + 320);
-  wf.add(httpTelegram(N('Telegram (pub radar)')), x + 6600, y + 320);
+  wf.add(itens(N('Updates lote'), '$json.updates'), x + 7260, y + 40);
+  wf.add(dtUpdate(N('Atualizar lote radar'), 'bfx_ofertas', 'oferta_id'), x + 7480, y + 40);
+  wf.add(itens(N('Links lote'), `$('${N('Publicar lote radar')}').first().json.linksRows`), x + 7260, y + 180);
+  wf.add(dtInsert(N('Gravar links radar'), 'bfx_links'), x + 7480, y + 180);
+  wf.add(itens(N('Mensagens lote'), `$('${N('Publicar lote radar')}').first().json.chamadasPub`), x + 7260, y + 320);
+  wf.add(httpTelegram(N('Telegram (pub radar)')), x + 7480, y + 320);
   wf.add(code(N('Resultado lote radar'), `
 const chamadas = $('${N('Mensagens lote')}').all().map((i) => i.json);
-return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json), cfg, Date.now()) }];`, { lib: true }), x + 6820, y + 320);
-  wf.add(itens(N('Posts lote'), '$json.posts'), x + 7040, y + 240);
-  wf.add(dtInsert(N('Gravar posts radar'), 'bfx_posts'), x + 7260, y + 240);
-  wf.add(itens(N('Alertas lote'), `$('${N('Resultado lote radar')}').first().json.alertas`), x + 7040, y + 400);
-  wf.add(httpTelegram(N('Telegram (alertas radar)')), x + 7260, y + 400);
+return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json), cfg, Date.now()) }];`, { lib: true }), x + 7700, y + 320);
+  wf.add(itens(N('Posts lote'), '$json.posts'), x + 7920, y + 240);
+  wf.add(dtInsert(N('Gravar posts radar'), 'bfx_posts'), x + 8140, y + 240);
+  wf.add(itens(N('Alertas lote'), `$('${N('Resultado lote radar')}').first().json.alertas`), x + 7920, y + 400);
+  wf.add(httpTelegram(N('Telegram (alertas radar)')), x + 8140, y + 400);
 
   wf.link(cfgFluxo.entradaNode, N('Planejar'), cfgFluxo.entradaSaida || 0);
   wf.chain(N('Planejar'), N('Tem web?'));
@@ -778,8 +785,13 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
 
   wf.chain(N('Aplicar redir 2'), N('Tem vitrine 3?'));
   wf.link(N('Tem vitrine 3?'), N('Itens vitrine 3'), 0);
-  wf.chain(N('Itens vitrine 3'), N('Abrir vitrine 3'), N('Finalizar radar'));
-  wf.link(N('Tem vitrine 3?'), N('Finalizar radar'), 1);
+  wf.chain(N('Itens vitrine 3'), N('Abrir vitrine 3'), N('Preparar páginas radar'));
+  wf.link(N('Tem vitrine 3?'), N('Preparar páginas radar'), 1);
+
+  wf.chain(N('Preparar páginas radar'), N('Tem páginas radar?'));
+  wf.link(N('Tem páginas radar?'), N('Itens páginas radar'), 0);
+  wf.chain(N('Itens páginas radar'), N('Ler páginas radar'), N('Finalizar radar'));
+  wf.link(N('Tem páginas radar?'), N('Finalizar radar'), 1);
 
   wf.chain(N('Finalizar radar'), N('Preços radar'), N('Gravar preços radar'));
   wf.chain(N('Finalizar radar'), N('Ofertas radar'), N('Gravar ofertas radar'));
@@ -799,15 +811,15 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
 /* ---------- 04 · radar multi-fonte ---------- */
 
 function wfRadar() {
-  const wf = new WF('04 · Radar Multi-Fonte (a cada 2 h)');
+  const wf = new WF('04 · Radar Multi-Fonte (a cada 10 min)');
   wf.add({
-    name: 'A cada 2 horas (radar)',
+    name: 'A cada 10 minutos (radar)',
     type: 'n8n-nodes-base.scheduleTrigger',
     typeVersion: 1.2,
-    parameters: { rule: { interval: [{ field: 'cronExpression', expression: '30 8-22/2 * * *' }] } },
+    parameters: { rule: { interval: [{ field: 'cronExpression', expression: '*/10 * * * *' }] } },
   }, 0, 300);
   configNodes(wf, 220, 300);
-  wf.link('A cada 2 horas (radar)', 'Ler config');
+  wf.link('A cada 10 minutos (radar)', 'Ler config');
   adicionarSubfluxoRadar(wf, {
     prefixo: '',
     x0: 660,

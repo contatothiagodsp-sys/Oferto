@@ -282,8 +282,14 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.equal(clsPiloto.rota, 'config');
   assert.ok(clsPiloto.upserts.some((u) => u.chave === 'radar.publicar_direto' && u.valor === 'sim'));
 
-  // 2) Planejamento multi-fonte (Promobit 5 lojas + categorias + Telegram público + Shopee API)
-  const base = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA });
+  // 2) Rodízio automático em 2 turnos (a cada 10 min) e coleta completa sob demanda
+  const turno0 = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA });
+  const turno1 = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA + 600000 });
+  assert.ok(turno0.fontesWeb.some((f) => f.loja_hint === 'kabum') && turno1.fontesWeb.some((f) => f.loja_hint === 'kabum'));
+  assert.ok(turno0.fontesWeb.some((f) => f.loja_hint === 'shein'));
+  assert.ok(turno1.fontesWeb.some((f) => f.loja_hint === 'tiktok'));
+
+  const base = L.planejarFontesRadar(cfg, { modo: 'comando', ts: AGORA });
   assert.equal(base.ativo, true);
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'shein'));
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'tiktok'));
@@ -380,17 +386,22 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.ok(linkAmzFinal.url.includes('tag=minhatag-20'));
 });
 
-test('Workflows gerados: 04-radar-ofertas e Rota 9 do router executam no sandbox vm', () => {
+test('Workflows gerados: 04-radar-ofertas (cron 10 min + páginas) e Rota 9 do router executam no sandbox vm', () => {
   const fRadar = path.join(__dirname, '..', 'n8n', 'workflows', '04-radar-ofertas.json');
   const fRouter = path.join(__dirname, '..', 'n8n', 'workflows', '01-telegram-router.json');
   const wfRadar = JSON.parse(fs.readFileSync(fRadar, 'utf8'));
   const wfRouter = JSON.parse(fs.readFileSync(fRouter, 'utf8'));
+
+  const trigRadar = wfRadar.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
+  assert.equal(trigRadar.parameters.rule.interval[0].expression, '*/10 * * * *');
+  assert.equal(L.padrao().radar.publicar_direto, true);
 
   const rota = wfRouter.nodes.find((n) => n.name === 'Rota');
   assert.equal(rota.parameters.numberOutputs, 11);
 
   const prepRouter = wfRouter.nodes.find((n) => n.name === 'Radar: Planejar');
   assert.ok(prepRouter, 'subfluxo radar conectado no router');
+  assert.ok(wfRadar.nodes.some((n) => n.name === 'Preparar páginas radar'));
 
   const nodePlanejar = wfRadar.nodes.find((n) => n.name === 'Planejar');
   assert.ok(nodePlanejar, 'node Planejar presente no 04-radar-ofertas');
@@ -403,4 +414,203 @@ test('Workflows gerados: 04-radar-ofertas e Rota 9 do router executam no sandbox
   assert.ok(Array.isArray(out) && out.length >= 1);
   assert.equal(out[0].json.ativo, true);
   assert.ok(out[0].json.fontesWeb.some((f) => f.loja_hint === 'shein'));
+});
+
+test('Cupons 3 niveis (De -> anuncio + cupom = final), resposta ao card e enriquecimento no Radar', () => {
+  const cfg = cfgRadar();
+
+  // 1) Admin cola link + preço final + cupom; página retorna preço do anúncio maior -> monta 3 níveis!
+  const prepMan = L.prepararOferta(
+    L.classificarUpdate(msgPriv('https://www.mercadolivre.com.br/perfume-fakhar/p/MLB55667788 143,90 cupom FULL1811'), HS, cfg, AGORA),
+    [],
+    cfg,
+  );
+  const joinedMan = L.juntarPagina(prepMan, {
+    statusCode: 200,
+    data: '<html><body><h1 class="ui-pdp-title">Perfume Árabe Fakhar Black 100ml</h1><meta property="price" content="169.90"/><script>{"original_price":229.90}</script></body></html>',
+  }, cfg);
+  assert.equal(joinedMan.oferta.preco, 143.9);
+  assert.equal(joinedMan.oferta.links_manuais.preco_sem_cupom, 169.9);
+  assert.equal(joinedMan.oferta.links_manuais.preco_de, 229.9);
+  assert.equal(joinedMan.oferta.categoria, 'beleza');
+
+  const postTg3 = L.textoTelegram(joinedMan.oferta, 'https://www.mercadolivre.com.br/p/MLB55667788', cfg);
+  assert.match(postTg3, /💸 De <s>R\$ 229,90<\/s> → no anúncio <b>R\$ 169,90<\/b> \+ 🎟️ Cupom <code>FULL1811<\/code> =/);
+  assert.match(postTg3, /💰 <b>R\$ 143,90<\/b>/);
+  const postZap3 = L.textoWhatsAppGrupo(joinedMan.oferta, 'https://www.mercadolivre.com.br/p/MLB55667788', cfg);
+  assert.match(postZap3, /💸 De ~R\$ 229,90~ → no anúncio \*R\$ 169,90\* \+ 🎟️ Cupom \*FULL1811\* =/);
+
+  // 2) Preço inteiro solto antes de cupom ("400 cupom MELI15 15%") funciona sem precisar digitar R$ ou ,00
+  const bareInt = L.parseMensagemLink(msgPriv('https://www.mercadolivre.com.br/monitor/p/MLB99887766 400 cupom MELI15 15%').message, cfg);
+  assert.equal(bareInt.ok, true);
+  assert.equal(bareInt.oferta.preco, 340);
+  assert.equal(bareInt.oferta.links_manuais.preco_sem_cupom, 400);
+
+  // 3) Responder a um card pendente inserindo cupom e preço final recalcula tudo e gera card novo
+  const rowPendente = {
+    oferta_id: 'o_card_1',
+    produto_id: 'ml_MLB55667788',
+    loja: 'ml',
+    categoria: 'beleza',
+    titulo: 'Perfume Fakhar Black 100ml',
+    url: 'https://www.mercadolivre.com.br/p/MLB55667788',
+    preco: 169.9,
+    status: 'pendente',
+    links_manuais: JSON.stringify({ modo_link: true, preco_de: 229.9 }),
+  };
+  const clsResp = L.classificarUpdate({
+    message: {
+      message_id: 99,
+      chat: { id: 111, type: 'private' },
+      from: { id: 111 },
+      text: 'cupom FULL1811 por 143,90',
+      reply_to_message: { message_id: 77, text: '🆕 Oferta o_card_1 · 🎁 Beleza' },
+    },
+  }, HS, cfg, AGORA);
+  assert.equal(clsResp.rota, 'oferta');
+  const prepResp = L.prepararOferta(clsResp, [rowPendente], cfg);
+  assert.equal(prepResp.oferta.preco, 143.9);
+  assert.equal(prepResp.oferta.links_manuais.cupom, 'FULL1811');
+  assert.equal(prepResp.oferta.links_manuais.preco_sem_cupom, 169.9);
+  assert.equal(prepResp.oferta.links_manuais.preco_de, 229.9);
+
+  // 4) Radar filtra cupom de terceiro (30PROMOBIT) e enriquece cupom ativo da página do produto via prepararPaginasRadar
+  const pbFake = L.lerPromobitHtml(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { serverOffers: { offers: [
+      { offerId: 1, offerTitle: 'Livro com cupom exclusivo', offerPrice: 20, offerCoupon: '30PROMOBIT', storeDomain: 'amazon.com.br' },
+      { offerId: 2, offerTitle: 'Fone Sony com cupom no anúncio', offerPrice: 300, offerOldPrice: 500, storeDomain: 'amazon.com.br' },
+    ] } } },
+  })}</script>`, { loja_hint: 'amazon' });
+  assert.equal(pbFake[0].cupom, '');
+
+  const prepPag = L.prepararPaginasRadar({
+    opcoes: { modo: 'agendado', ts: AGORA },
+    candidatos: [Object.assign({}, pbFake[1], { categoria: 'tech', produto_id: 'amz_B09SONY123', url: 'https://www.amazon.com.br/dp/B09SONY123', resolved: true })],
+    reqs3: [],
+  }, [], cfg);
+  assert.equal(prepPag.reqsPag.length, 1);
+
+  const finPag = L.finalizarRadar(
+    prepPag,
+    [],
+    [],
+    [],
+    cfg,
+    [{ statusCode: 200, data: '<html><body><span id="productTitle">Fone Sony</span><span class="priceToPay"><span class="a-offscreen">R$ 300,00</span></span><div id="couponsInBuybox_feature_div">Salve o cupom 15% no checkout</div><span>10x de R$ 25,50 sem juros</span></body></html>' }],
+  );
+  assert.equal(finPag.ofertasNovas[0].preco, 255);
+  assert.equal(finPag.ofertasNovas[0].top, true);
+  const manFin = JSON.parse(finPag.ofertasNovas[0].links_manuais);
+  assert.equal(manFin.cupom_auto, '15% OFF no anúncio');
+  assert.equal(manFin.preco_sem_cupom, 300);
+});
+
+test('KaBuM!/Terabyte/Pichau + PS5/GTA 6 + Farmacias/Perfumarias + /afiliados + bloqueio sidebar', () => {
+  // 1) Identificação de lojas e classificação Tech & Games + Perfumes/Farmácia/Bebê
+  assert.equal(L.identificar('https://www.kabum.com.br/produto/1020026/headset-gamer?awinaffid=outro').produto_id, 'kbm_1020026');
+  assert.equal(L.identificar('https://www.terabyteshop.com.br/produto/40449/gabinete-gamer?p=236394').produto_id, 'trb_40449');
+  assert.equal(L.identificar('https://www.pichau.com.br/fonte-pichau-cluster-850w?utm_source=promobit').loja, 'pichau');
+  assert.equal(L.identificar('https://www.drogaraia.com.br/fralda-huggies-123.html').loja, 'drogaraia');
+  assert.equal(L.identificar('https://www.drogasil.com.br/protetor-solar-needs.html').loja, 'drogasil');
+  assert.equal(L.identificar('https://www.drogariaspacheco.com.br/ninho/p').loja, 'pacheco');
+  assert.equal(L.identificar('https://www.belezanaweb.com.br/produto/perfume-ckin2u').loja, 'belezanaweb');
+  assert.equal(L.naLoja('kabum'), 'no KaBuM!');
+  assert.equal(L.naLoja('boticario'), 'no O Boticário');
+  assert.equal(L.naLoja('drogasil'), 'na Drogasil');
+
+  const cfg = cfgRadar([
+    { chave: 'awin.afiliado_id', valor: '991122' },
+    { chave: 'terabyte.afiliado_id', valor: '774455' },
+    { chave: 'rakuten.id', valor: 'rk_meu_id' },
+  ]);
+
+  assert.equal(L.classificarCategoria('GTA 6 Grand Theft Auto VI Mídia Física PS5', cfg).categoria, 'tech');
+  assert.equal(L.classificarCategoria('Console PlayStation 5 Slim + Xbox Series X Controle', cfg).categoria, 'tech');
+  assert.equal(L.classificarCategoria('Protetor Solar Needs FPS 50 Antiox', cfg).categoria, 'beleza');
+  assert.equal(L.classificarCategoria('Fralda Calça Huggies Proteção Acolchoada M 100un', cfg).categoria, 'bebe');
+
+  // 2) Links de afiliado Awin (KaBuM!), Terabyte (?p), Rakuten (Pacheco/BelezaNaWeb), Pichau/Drogasil limpos sem erro
+  const lkKbm = L.planejarLinks({ oferta_id: 'o1', loja: 'kabum', categoria: 'tech', url: 'https://www.kabum.com.br/produto/1020026/headset' }, cfg, AGORA);
+  assert.ok(lkKbm[0].url.includes('awin1.com/cread.php?awinmid=17729&awinaffid=991122'));
+
+  const lkTrb = L.planejarLinks({ oferta_id: 'o2', loja: 'terabyte', categoria: 'tech', url: 'https://www.terabyteshop.com.br/produto/40449/gabinete' }, cfg, AGORA);
+  assert.ok(lkTrb[0].url.includes('?p=774455'));
+
+  const lkPch = L.planejarLinks({ oferta_id: 'o3', loja: 'pichau', categoria: 'tech', url: 'https://www.pichau.com.br/fonte-850w' }, cfg, AGORA);
+  assert.equal(lkPch[0].url, 'https://www.pichau.com.br/fonte-850w');
+
+  const lkPac = L.planejarLinks({ oferta_id: 'o4', loja: 'pacheco', categoria: 'beleza', url: 'https://www.drogariaspacheco.com.br/ninho/p' }, cfg, AGORA);
+  assert.ok(lkPac[0].url.includes('click.linksynergy.com/deeplink?id=rk_meu_id&mid=53522'));
+
+  // 3) Sinalização de lojas com programa de afiliado disponível ainda não configurado (/afiliados e dicaAfiliado)
+  assert.equal(L.dicaAfiliado('drogasil', cfg, {}).chave, 'afiliado.drogasil');
+  assert.equal(L.dicaAfiliado('kabum', cfg, {}), null); // awin.afiliado_id já configurado
+  const clsAf = L.classificarUpdate(msgPriv('/afiliados'), HS, cfg, AGORA);
+  assert.equal(clsAf.rota, 'responder');
+  assert.match(clsAf.chamadas[0].payload.text, /Awin \(KaBuM! mid 17729\)/);
+  assert.match(clsAf.chamadas[0].payload.text, /afiliado\.boticario/);
+
+  // 4) Bloqueio de vazamento do sidebarFeaturedOffers (samsung.com fora da lista de lojas permitidas não vira amazon)
+  const pbVaz = L.lerPromobitHtml(`<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: {
+      pageProps: {
+        serverOffers: { offers: [] },
+        sidebarFeaturedOffers: [{ offerId: 777, offerTitle: 'Galaxy A57 5G', offerPrice: 1599, offerOldPrice: 3799, storeDomain: 'samsung.com', storeName: 'Samsung' }],
+      },
+    },
+  })}</script>`, { loja_hint: 'amazon' });
+  assert.equal(pbVaz.length, 0);
+});
+
+test('Modo Somente Canais: /canais, /logo, /divulgar (com logo), Outros canais e ?start=canais', () => {
+  const cfg = cfgRadar([
+    { chave: 'grupo_id', valor: 'nenhum' },
+    { chave: 'bot_grupo_username', valor: '@oferto_pub_bot' },
+    { chave: 'categoria_nome.tech', valor: 'Tech & Games' },
+    { chave: 'categoria_nome.beleza', valor: 'Perfumes, Beleza & Saúde' },
+    { chave: 'canal.tech', valor: '@oferto_tech_games' },
+    { chave: 'canal.beleza', valor: '@oferto_perfumes_saude' },
+    { chave: 'canal_logo.tech', valor: 'https://img.example/logo-tech.png' },
+  ]);
+
+  assert.equal(cfg.telegram.grupo_id, '');
+  assert.equal(cfg.categorias.beleza.nome, 'Perfumes, Beleza & Saúde');
+
+  // 1) /canais ligar canal e /canais so_canais
+  const clsCanal = L.classificarUpdate(msgPriv('/canais perfumes @oferto_perfumes_saude'), HS, cfg, AGORA);
+  assert.equal(clsCanal.rota, 'config');
+  assert.ok(clsCanal.upserts.some((u) => u.chave === 'canal.beleza' && u.valor === '@oferto_perfumes_saude'));
+
+  const clsLogo = L.classificarUpdate(msgPriv('/logo tech https://img.example/logo-tech.png'), HS, cfg, AGORA);
+  assert.equal(clsLogo.rota, 'config');
+  assert.deepEqual(clsLogo.upserts, [{ chave: 'canal_logo.tech', valor: 'https://img.example/logo-tech.png' }]);
+
+  // 2) Publicação funciona sem grupo_id direto nos canais e inclui botão "🌐 Outros canais Ofertô"
+  const oTech = {
+    oferta_id: 'o_ch_1', produto_id: 'kbm_1020026', loja: 'kabum', categoria: 'tech',
+    titulo: 'Headset Gamer Attack Shark', url: 'https://www.kabum.com.br/produto/1020026/headset',
+    preco: 174, selo: 'sem_ref', status: 'aprovada', links_manuais: JSON.stringify({ modo_link: true }), ts: AGORA,
+  };
+  const pubCh = L.prepararPublicacao(oTech, L.planejarLinks(oTech, cfg, AGORA), cfg, { ts: AGORA, chat_id: 111 });
+  assert.equal(pubCh.ok, true);
+  const postCanal = pubCh.chamadas.find((c) => c.bot === 'grupo' && c.payload.chat_id === '@oferto_tech_games');
+  assert.ok(postCanal);
+  assert.ok(postCanal.payload.reply_markup.inline_keyboard[1][0].url.includes('t.me/oferto_pub_bot?start=canais'));
+
+  // 3) /divulgar tech posta com sendPhoto usando o logo configurado para os outros canais + botão WhatsApp para o admin
+  const clsDiv = L.classificarUpdate(msgPriv('/divulgar tech'), HS, cfg, AGORA);
+  assert.equal(clsDiv.rota, 'responder');
+  const fotoDiv = clsDiv.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'sendPhoto');
+  assert.equal(fotoDiv.payload.chat_id, '@oferto_perfumes_saude');
+  assert.equal(fotoDiv.payload.photo, 'https://img.example/logo-tech.png');
+  assert.match(fotoDiv.payload.caption, /Ofertô Tech &amp; Games/);
+  const admDiv = clsDiv.chamadas.find((c) => c.bot === 'admin');
+  assert.match(admDiv.payload.reply_markup.inline_keyboard[0][0].url, /^https:\/\/api\.whatsapp\.com\/send/);
+
+  // 4) ?start=canais no bot publicador entrega os botões de todos os canais
+  const clsStart = L.classificarUpdate({
+    message: { message_id: 7, text: '/start canais', chat: { id: 888, type: 'private' }, from: { id: 888 } },
+  }, HS, cfg, AGORA, { bot: 'grupo' });
+  const bv = L.boasVindasStart(clsStart, [], cfg);
+  assert.equal(bv[0].payload.reply_markup.inline_keyboard.length, 2);
 });
