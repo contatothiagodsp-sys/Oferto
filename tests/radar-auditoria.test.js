@@ -594,3 +594,63 @@ test('cupom Amazon R$ 100 não infla preço com cupom parcial de R$ 25 + descont
   assert.match(tgSns, /🔄 <b>Com recorrência: R\$ 85,00<\/b> \(-15%\) <i>\(cancele grátis a qualquer momento\)<\/i>/);
   assert.doesNotMatch(tgSns, /Como Associado da Amazon/);
 });
+
+test('campanha sazonal: reconhece Black Friday, 11.11, 12.12, 01.01, Fim de Ano sem falsos positivos e exibe no post', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const textos = require('../lib/textos');
+  const cfg = cfgBase();
+
+  assert.equal(extrator.detectarTagCampanha('Oferta Black Friday no Echo Dot'), 'BLACK FRIDAY');
+  assert.equal(extrator.detectarTagCampanha('Smart TV #BlackFriday por R$ 1.899'), 'BLACK FRIDAY');
+  assert.equal(extrator.detectarTagCampanha('Mega Promoção 11.11 Shopee'), '11.11');
+  assert.equal(extrator.detectarTagCampanha('Liquidação 12.12 no Mercado Livre'), '12.12');
+  assert.equal(extrator.detectarTagCampanha('Saldão 01.01 Ano Novo'), '01.01');
+  assert.equal(extrator.detectarTagCampanha('Promoção de Fim de Ano na Amazon'), 'FIM DE ANO');
+  assert.equal(extrator.detectarTagCampanha('Saldão de Natal Samsung'), 'NATAL');
+  // Sem falsos positivos em preços nem nome de produto
+  assert.equal(extrator.detectarTagCampanha('Produto por R$ 11.11'), '');
+  assert.equal(extrator.detectarTagCampanha('Árvore De Natal 1,80 Metros 540 Galhos'), '');
+
+  // Amazon com selo dealBadge "Oferta Black Friday"
+  const htmlAmzBf = '<html><body><nav>Black Friday no menu global</nav><span id="productTitle">Echo Dot 5</span><span id="dealBadgeText">Oferta Black Friday</span><span class="priceToPay"><span class="a-offscreen">R$ 249,00</span></span></body></html>';
+  const lidoBf = extrator.lerPaginaProduto({ statusCode: 200, body: htmlAmzBf }, 'https://www.amazon.com.br/dp/B09B8VGCR8');
+  assert.equal(lidoBf.campanha, 'BLACK FRIDAY');
+
+  // ML com pílula 11.11
+  const htmlMl11 = '<html><body><h1 class="ui-pdp-title">Fone Bluetooth TWS</h1><span class="ui-pdp-promotions-pill-label">OFERTA 11.11</span></body></html>';
+  const lido11 = extrator.lerPaginaProduto({ statusCode: 200, body: htmlMl11 }, 'https://www.mercadolivre.com.br/fone-tws/p/MLB555');
+  assert.equal(lido11.campanha, '11.11');
+
+  // Preservação via radar e exibição no Telegram
+  const tgBf = textos.textoTelegram({
+    oferta_id: 'o_bf_1', loja: 'amazon', categoria: 'tech',
+    titulo: 'Echo Dot 5', preco: 249,
+    links_manuais: { preco_de: 429, campanha: lidoBf.campanha },
+  }, 'https://amzn.to/echo', cfg);
+  assert.match(tgBf.split('\n')[0], /🖤 <b>BLACK FRIDAY<\/b>.*#BlackFriday #publi$/);
+
+  const tg11 = textos.textoTelegram({
+    oferta_id: 'o_11_1', loja: 'ml', categoria: 'tech',
+    titulo: 'Fone TWS', preco: 99,
+    links_manuais: { preco_de: 199, campanha: '11.11' },
+  }, 'https://mercadolivre.com/sec/tws', cfg);
+  assert.match(tg11.split('\n')[0], /🔥 <b>11\.11<\/b>.*#Oferta1111 #publi$/);
+
+  // Texto de canal do Telegram com #BlackFriday chega até finalizarRadar com campanha gravada
+  const extTg = extrator.extrairDoTexto('🔥 Black Friday\nFone JBL\nDe R$ 300 por R$ 150 #BlackFriday');
+  assert.equal(extTg.campanha, 'BLACK FRIDAY');
+  const finBf = radar.finalizarRadar(
+    {
+      opcoes: { modo: 'agendado', ts: AGORA },
+      candidatos: [{
+        radar_key: 'tg_bf_1', loja: 'ml', produto_id: 'ml_MLB777',
+        url: 'https://www.mercadolivre.com.br/jbl/p/MLB777', titulo: 'Fone JBL Tune',
+        preco: 150, preco_de: 300, desconto_pct: 50, campanha: 'BLACK FRIDAY', resolved: true,
+      }],
+      reqsPag: [], reqsMercado: [],
+    },
+    [], [], [], cfg, [], [],
+  );
+  assert.equal(JSON.parse(finBf.ofertasNovas[0].links_manuais).campanha, 'BLACK FRIDAY');
+});

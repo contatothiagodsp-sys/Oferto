@@ -125,3 +125,11 @@ flowchart LR
 - **Remoção da frase da Amazon nos posts do Telegram ([lib/textos.js](file:///C:/Users/tHg/Documents/Oferto/lib/textos.js)):**
   - Removido `"Como Associado da Amazon, ganhamos com compras qualificadas."` do corpo de `textoTelegram` (mantido `#publi` na 1ª linha).
 - **Validação:** `npm run build` OK (8 workflows), `npm test` (**96/96** passando, `0` falhas), redeploy concluído em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`).
+
+### 🔧 Melhoria 18/11 (Noite) — Reconhecimento automático de tags sazonais (`Black Friday`, `11.11`, `12.12`, `01.01`, `Fim de Ano`, `Natal`, etc.)
+- **Detecção automática ([lib/extrator.js](file:///C:/Users/tHg/Documents/Oferto/lib/extrator.js), [lib/radar.js](file:///C:/Users/tHg/Documents/Oferto/lib/radar.js)):**
+  - Adicionado `detectarTagCampanha` com suporte a `Black Friday` / `Esquenta Black Friday`, `Cyber Monday`, `Prime Day`, datas duplas (`01.01`..`12.12`, ignorando preços como `R$ 11.11`), `Semana do Consumidor`, `Fim de Ano` e promoções sazonais (`Natal`, `Páscoa`, `Dia das Mães/Pais/Namorados/Crianças`) sem falsos positivos em títulos como *"Árvore de Natal"*.
+  - Lê selos específicos das páginas da Amazon (`dealBadge`), Mercado Livre (`ui-pdp-promotions-pill`, `andes-badge`), Promobit (`offerTags`) e posts de canais/mensagens manuais.
+- **Exibição nos anúncios ([lib/textos.js](file:///C:/Users/tHg/Documents/Oferto/lib/textos.js)):**
+  - `primeiraLinha` destaca o selo visual e a hashtag da campanha na 1ª linha do post (ex.: `🖤 BLACK FRIDAY · ... · #BlackFriday #publi`, `🔥 11.11 · ... · #Oferta1111 #publi`, `🎆 FIM DE ANO · ... · #FimDeAno #publi`) e `cardAprovacao` exibe a campanha identificada.
+- **Validação:** `npm run build` OK (8 workflows), `npm test` (**97/97** passando, `0` falhas, com suíte em [tests/radar-auditoria.test.js](file:///C:/Users/tHg/Documents/Oferto/tests/radar-auditoria.test.js)), redeploy concluído em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`).
