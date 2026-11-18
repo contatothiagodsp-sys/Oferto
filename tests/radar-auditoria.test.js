@@ -234,3 +234,37 @@ test('promobit 429 ativa cooldown e não desperdiça vagas; ML /social/ no redir
   assert.ok(sel2.candidatos.every((c) => c.fonte_radar !== 'promobit'));
   assert.ok(sel2.candidatos.length >= 1);
 });
+
+test('imagem: Amazon logo /images/G/ é substituído por landingImage, og:image // funciona e mercado substitui wsrv.nl', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+
+  const htmlAmzLogo = `<html><head><meta property="og:image" content="https://m.media-amazon.com/images/G/32/social_share/amazon_logo._CB123_.png"/></head><body><span id="productTitle">Echo Dot 5</span><img src="https://m.media-amazon.com/images/I/71xoR4A6q-L._AC_SL1000_.jpg" id="landingImage"/></body></html>`;
+  const lidoAmz = extrator.lerPaginaProduto({ statusCode: 200, body: htmlAmzLogo }, 'https://www.amazon.com.br/dp/B09B8VGCR8');
+  assert.equal(lidoAmz.imagem, 'https://m.media-amazon.com/images/I/71xoR4A6q-L._AC_SL1000_.jpg');
+
+  const htmlProtoRel = `<html><head><meta property="og:image" content="//cdn.loja.com.br/produto.jpg"/></head><body><h1>Produto Teste</h1></body></html>`;
+  const lidoRel = extrator.lerPaginaProduto({ statusCode: 200, body: htmlProtoRel }, 'https://www.loja.com.br/p/1');
+  assert.equal(lidoRel.imagem, 'https://cdn.loja.com.br/produto.jpg');
+
+  const cands = [{
+    radar_key: 'pb_1', loja: 'kabum', produto_id: 'kbm_1', url: 'https://www.kabum.com.br/produto/1',
+    titulo: 'SSD NVMe 1TB Kingston', preco: 350, preco_de: 500, desconto_pct: 30,
+    imagem: 'https://wsrv.nl/?url=i.promobit.com.br%2F500%2Fx.png', resolved: true,
+  }];
+  const reqsMercado = [{ idx: 0, fonte: 'zoom', url: 'https://www.zoom.com.br/search?q=ssd' }];
+  const respMercado = [{
+    statusCode: 200,
+    body: `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+      props: {
+        pageProps: {
+          hits: [{ name: 'SSD NVMe 1TB Kingston', price: 420, merchantName: 'Amazon', image: 'https://i.zst.com.br/thumbs/12/ssd.jpg' }],
+        },
+      },
+    })}</script>`,
+  }];
+  const est = { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: cands, reqsPag: [], reqsMercado };
+  const fin = radar.finalizarRadar(est, [], [], [], cfgBase(), [], respMercado);
+  assert.equal(fin.ofertasNovas.length, 1);
+  assert.equal(fin.ofertasNovas[0].imagem, 'https://i.zst.com.br/thumbs/12/ssd.jpg');
+});
