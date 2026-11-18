@@ -968,3 +968,186 @@ test('Agente 4 (Concierge 24/7 no Chat/DM), Sinônimos em Alertas & Buscas e Com
   assert.equal(clsPausa.rota, 'config');
   assert.deepEqual(clsPausa.upserts, [{ chave: 'agentes.concierge', valor: 'nao' }]);
 });
+
+test('Agentes 1, 2, 3 e 5: link.amazon->amzlinks, R&#036;, Gatry, Prova Social, Anti-Fadiga, Guardião 30min + Queda Extra + Esquenta 18h45 + Piloto Compacto + WhatsApp API', () => {
+  const cfg = L.montarConfig([
+    { chave: 'admins', valor: '111' },
+    { chave: 'bot_token', valor: 'TOK_ADM' },
+    { chave: 'bot_token_grupo', valor: 'TOK_PUB' },
+    { chave: 'webhook_secret', valor: 'segredo' },
+    { chave: 'grupo_id', valor: '-1003927635700' },
+    { chave: 'topico.top', valor: '3' },
+    { chave: 'topico.tech', valor: '7' },
+    { chave: 'topico.casa', valor: '5' },
+    { chave: 'canal.top', valor: '@oferto_top' },
+    { chave: 'amazon.tag_padrao', valor: 'meuaff-20' },
+    { chave: 'publicar.plataformas', valor: 'wag' },
+    { chave: 'radar.publicar_direto', valor: 'sim' },
+    { chave: 'admin.notificacao_piloto', valor: 'compacta' },
+  ]);
+
+  // 1) Agente 1 · Caçador: link.amazon / amzlinks.in, decodificação R&#036; no t.me/s/ e Gatry HTML
+  assert.equal(L.ehCurto('https://link.amazon/B0eiQubl3'), true);
+  assert.equal(L.ehCurto('https://amzlinks.in/B0eiQubl3'), true);
+  const htmlCanalXet = [
+    '<div class="tgme_widget_message_wrap" data-post="xetdaspromocoes/991">',
+    '<div class="tgme_widget_message_photo_wrap" style="background-image:url(\'https://cdn4.telesco.pe/file/downy.jpg\')"></div>',
+    '<div class="tgme_widget_message_text">Vai deixar a roupa sem cheiro?<br/>Downy Amaciante Concentrado Místico 3L<br/>De R&#036; 73,00 por R&#036; 39,00<br/><a href="https://link.amazon/B0eiQubl3">link</a></div>',
+    '</div>',
+  ].join('');
+  const extCanal = L.lerCanalTelegramPublico(htmlCanalXet, 'xetdaspromocoes');
+  assert.equal(extCanal.length, 1);
+  assert.equal(extCanal[0].preco, 39);
+  assert.equal(extCanal[0].preco_de, 73);
+  assert.equal(extCanal[0].redir_url, 'https://link.amazon/B0eiQubl3');
+  assert.equal(extCanal[0].imagem, 'https://cdn4.telesco.pe/file/downy.jpg');
+  assert.doesNotMatch(extCanal[0].titulo, /Vai deixar/i);
+
+  const htmlGatry = '<article><a href="/promocoes/abc">Cafeteira Nespresso Vertuo Pop</a> — R$ 449,00 <a href="https://www.amazon.com.br/dp/B0NESPRESS?tag=terceiro-20">Ir</a></article>';
+  const extGatry = L.lerGatryHtml(htmlGatry);
+  assert.equal(extGatry.length, 1);
+  assert.equal(extGatry[0].produto_id, 'amz_B0NESPRESS');
+  assert.equal(extGatry[0].preco, 449);
+
+  // Planejar radar agendado inclui canais curados + Gatry sem afetar radar com api_url
+  const planAg = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA });
+  assert.ok(planAg.fontesWeb.some((f) => f.canal === 'canaltechofertas'));
+  assert.ok(planAg.fontesWeb.some((f) => f.canal === 'xetdaspromocoes'));
+  assert.ok(planAg.fontesWeb.some((f) => f.tipo === 'gatry_home'));
+
+  // Desempacotar 2 saltos (link.amazon -> amzlinks.in -> amazon.com.br removendo tag concorrente)
+  const r1 = L.aplicarRedirRadar1({ opcoes: {}, candidatos: [Object.assign({}, extCanal[0], { resolved: false })], reqs1: [{ idx: 0 }] }, [{ statusCode: 302, headers: { location: 'https://amzlinks.in/B0eiQubl3' } }], cfg);
+  assert.equal(r1.reqs2.length, 1);
+  const r2 = L.aplicarRedirRadar2(r1, [{ statusCode: 302, headers: { location: 'https://www.amazon.com.br/dp/B0DOWNY3L0?tag=xet01-20' } }], cfg);
+  assert.equal(r2.candidatos[0].url, 'https://www.amazon.com.br/dp/B0DOWNY3L0');
+  assert.equal(r2.candidatos[0].produto_id, 'amz_B0DOWNY3L0');
+
+  // 2) Agente 2 · Auditor: prova social concorrente exibida inline no post HTML
+  const ofProva = {
+    oferta_id: 'o_ps_1', produto_id: 'ml_MLB11', loja: 'ml', categoria: 'casa', titulo: 'Aspirador Robô Kabum Smart',
+    preco: 799, min90: 950, desconto_pct: 15.9, data: new Date(AGORA).toISOString(),
+    links_manuais: JSON.stringify({ preco_de: 1099, ref_mercado: 1099.9, ref_mercado_loja: 'Amazon' }),
+  };
+  const tgProva = L.textoTelegram(ofProva, 'https://mercadolivre.com/p/MLB11', cfg);
+  assert.match(tgProva, /📊 <i>\(R\$ 1\.099,90 · Amazon\)<\/i>/);
+  assert.ok(tgProva.split('\n').length <= 6);
+
+  // 3) Agente 3 · Marketing: Boost afiliado (+14) + penalidade anti-fadiga 90 min
+  assert.equal(L.avaliarBoostMarketing({ loja: 'amazon' }, cfg).bonus, 14);
+  assert.equal(L.avaliarBoostMarketing({ loja: 'pichau' }, cfg).bonus, 0);
+  const pen = L.calcularPenalidadeFadigaRecente(
+    { loja: 'amazon', categoria: 'tech' },
+    [
+      { loja: 'amazon', categoria: 'tech', status: 'aprovada', ts: AGORA - 10 * 60000 },
+      { loja: 'amazon', categoria: 'tech', status: 'aprovada', ts: AGORA - 20 * 60000 },
+    ],
+    AGORA,
+  );
+  assert.equal(pen, 24);
+
+  // 4) Piloto Compacto (pula card preliminar e entrega 1 msg única com Zap + Top + Encerrar)
+  const finComp = L.finalizarRadar(
+    { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: [Object.assign({}, r2.candidatos[0], { categoria: 'casa', selo: 'ok', resolved: true })], reqs3: [], reqsPag: [], reqsMercado: [] },
+    [], [], [], cfg, [], [],
+  );
+  assert.equal(finComp.ofertasNovas.length, 1);
+  assert.equal(finComp.chamadas.length, 0, 'Piloto compacto omite card preliminar ruidoso');
+  assert.equal(finComp.autoPlanos[0].cardIdx, -1);
+
+  const loteComp = L.publicarLoteRadar(finComp, [], [], cfg, []);
+  const msgsAdminComp = loteComp.chamadasPub.filter((c) => c.bot === 'admin');
+  assert.equal(msgsAdminComp.length, 1, 'Piloto compacto manda 1 única msg por oferta ao admin');
+  const botoesFlat = msgsAdminComp[0].payload.reply_markup.inline_keyboard.flat();
+  const cbDatas = botoesFlat.map((b) => b.callback_data || b.url);
+  assert.ok(cbDatas.some((x) => String(x).includes('api.whatsapp.com')));
+  assert.ok(botoesFlat.some((b) => /No Top/.test(b.text) || /^p\|/.test(String(b.callback_data || ''))));
+  assert.ok(cbDatas.some((x) => /^z\|/.test(String(x))));
+
+  // 5) WhatsApp API Zero-Toque (Evolution API, WAHA e Webhook Genérico)
+  const cfgEvo = L.montarConfig([
+    { chave: 'whatsapp.webhook_url', valor: 'https://evo.local/message/sendText/oferto' },
+    { chave: 'whatsapp.api_key', valor: 'evo_key_123' },
+    { chave: 'whatsapp.grupo_destino', valor: '120363000@g.us' },
+  ]);
+  const chEvo = L.montarChamadasWhatsAppAuto(ofProva, 'Texto Zap', '', cfgEvo);
+  assert.equal(chEvo.length, 1);
+  assert.equal(chEvo[0].headers.apikey, 'evo_key_123');
+  assert.equal(chEvo[0].body.number, '120363000@g.us');
+
+  const cfgWaha = L.montarConfig([
+    { chave: 'whatsapp.webhook_url', valor: 'https://waha.local/api/sendText' },
+    { chave: 'whatsapp.api_key', valor: 'waha_k' },
+    { chave: 'whatsapp.grupo_destino', valor: '120363000@g.us' },
+  ]);
+  assert.equal(L.montarChamadasWhatsAppAuto(ofProva, 'Oi', '', cfgWaha)[0].headers['X-Api-Key'], 'waha_k');
+
+  // 6) Agente 5 · Guardião 30min + Queda Extra >=6% + Limpeza Pendentes >18h + Esquenta 18h45
+  const wfGuard = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'n8n', 'workflows', '05-guardiao-ofertas.json'), 'utf8'));
+  const trigG = wfGuard.nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
+  assert.equal(trigG.parameters.rule.interval[0].expression, '15,45 8-23 * * *');
+
+  const ts1845 = new Date('2026-11-18T21:45:00Z').getTime(); // 18:45 BRT
+  const ofAtiva = {
+    oferta_id: 'o_drop_1', produto_id: 'amz_B0DROP11', loja: 'amazon', categoria: 'tech',
+    titulo: 'SSD NVMe 1TB Kingston', preco: 400, status: 'aprovada',
+    url: 'https://www.amazon.com.br/dp/B0DROP11', ts: ts1845 - 30 * 60000, links_manuais: '{}',
+  };
+  const ofPendVelha = {
+    oferta_id: 'o_pend_old', produto_id: 'ml_OLD', loja: 'ml', categoria: 'casa',
+    titulo: 'Pendente Antiga', preco: 99, status: 'pendente', url: 'https://www.mercadolivre.com.br/p/MLB1',
+    ts: ts1845 - 20 * HORA,
+  };
+  const planG = rodarCodeNode(wfGuard, 'Planejar guardião', { Config: [{ cfg }], 'Ofertas 36h': [ofAtiva, ofPendVelha] }, [], ts1845)[0].json;
+  assert.equal(planG.hora, 18);
+  assert.equal(planG.minuto, 45);
+  assert.equal(planG.reqs.length, 1);
+
+  const execG = JSON.parse(JSON.stringify(rodarCodeNode(
+    wfGuard,
+    'Executar guardião',
+    {
+      Config: [{ cfg }],
+      'Planejar guardião': [planG],
+      'Checar páginas ativas': [{
+        statusCode: 200,
+        data: '<html><script type="application/ld+json">{"@type":"Product","name":"SSD NVMe 1TB Kingston","offers":{"price":349.90}}</script>'.padEnd(600, ' '),
+      }],
+      'Ofertas 36h': [ofAtiva, ofPendVelha],
+      'Posts 36h': [{ oferta_id: 'o_drop_1', plataforma: 'tg', categoria: 'tech', message_id: 777 }],
+      'Links 36h': [{ oferta_id: 'o_drop_1', plataforma: 'tg', url: 'https://www.amazon.com.br/dp/B0DROP11?tag=meuaff-20' }],
+    },
+    [],
+    ts1845,
+  )[0].json));
+
+  const pedDot = L.detectarPedidoOfertaChat('alguém sabe se tem promoção de fralda até 199.90?');
+  assert.ok(pedDot);
+  assert.equal(pedDot.preco_max, 199.9);
+  assert.equal(pedDot.termo, 'fralda');
+
+  const updQueda = execG.updatesOfertas.find((u) => u.oferta_id === 'o_drop_1');
+  assert.equal(updQueda.preco, 349.9);
+  for (const upd of execG.updatesOfertas) {
+    assert.deepEqual(L.colunasInvalidas('bfx_ofertas', upd), []);
+  }
+  assert.ok(execG.updatesOfertas.some((u) => u.oferta_id === 'o_pend_old' && u.status === 'expirada'));
+  assert.ok(execG.chamadas.some((c) => c.metodo === 'editMessageText' && c.payload.message_id === 777 && /BAIXOU AINDA MAIS/.test(c.payload.text)));
+  assert.ok(execG.chamadas.some((c) => c.metodo === 'sendMessage' && c.payload.message_thread_id === 3 && /ESQUENTA DE CUPONS DAS 19H/.test(c.payload.text)));
+  assert.deepEqual(execG.upsertsConfig, [{ chave: 'cupons.ultimo_esquenta', valor: '2026-11-18' }]);
+
+  // 7) VM sandbox: pilotoCompacto liga Auto radar? direto em Finalizar radar + Publicar lote radar sem Telegram (cards radar) + sem $json nos novos Code nodes
+  const wfRad = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'n8n', 'workflows', '04-radar-ofertas.json'), 'utf8'));
+  const connsFin = wfRad.connections['Finalizar radar'].main[0].map((c) => c.node);
+  assert.ok(connsFin.includes('Auto radar?'), 'Auto radar? conectado direto em Finalizar radar');
+  const loteVm = rodarCodeNode(
+    wfRad,
+    'Publicar lote radar',
+    { Config: [{ cfg }], 'Finalizar radar': [finComp] },
+    [],
+    AGORA,
+  )[0].json;
+  assert.equal(loteVm.ofertasPublicadas.length, 1);
+  const wfRout = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'n8n', 'workflows', '01-telegram-router.json'), 'utf8'));
+  const prepMktOut = rodarCodeNode(wfRout, 'Preparar mercado oferta', { Config: [{ cfg }] }, [{ json: { rota: 'oferta', oferta: { titulo: 'Teste', preco: 50, eh_cupom_loja: true } } }], AGORA);
+  assert.equal(Array.isArray(prepMktOut), true);
+});

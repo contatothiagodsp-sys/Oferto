@@ -208,6 +208,29 @@ function httpShopee(name) {
   };
 }
 
+function httpWhatsAppAuto(name) {
+  return {
+    name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
+    notes: 'Opcional Zero-Toque: dispara HTTP POST para WhatsApp API (Evolution, WAHA ou Webhook) quando whatsapp.webhook_url estiver configurado.',
+    parameters: {
+      method: 'POST',
+      url: '={{ $json.url }}',
+      sendHeaders: true,
+      specifyHeaders: 'json',
+      jsonHeaders: '={{ JSON.stringify($json.headers || {}) }}',
+      sendBody: true,
+      contentType: 'raw',
+      rawContentType: 'application/json',
+      body: '={{ JSON.stringify($json.body || {}) }}',
+      options: {
+        batching: { batch: { batchSize: 1, batchInterval: 250 } },
+        response: { response: { neverError: true } },
+        timeout: 15000,
+      },
+    },
+  };
+}
+
 function switchExpr(name, expr, saidas) {
   return {
     name, type: 'n8n-nodes-base.switch', typeVersion: 3.2,
@@ -415,7 +438,7 @@ return [{ json: LIB.juntarPagina(e, resp, cfg) }];`, { lib: true, nota: 'Complet
   wf.link('Ler página do produto', 'Juntar página');
   wf.link('Consultar página?', 'Juntar página', 1);
   wf.add(code('Preparar mercado oferta', `
-return [{ json: LIB.prepararMercadoOferta($json, cfg) }];`, { lib: true }), 2960, -100);
+return [{ json: LIB.prepararMercadoOferta($input.first().json, cfg) }];`, { lib: true }), 2960, -100);
   wf.add(switchExpr('Consultar mercado oferta?', '$json.reqs_mercado && $json.reqs_mercado.length > 0 ? 0 : 1', 2), 3080, -100);
   wf.add(itens('Itens mercado oferta', `$('Preparar mercado oferta').first().json.reqs_mercado`), 3200, -180);
   wf.add(httpRadarGet('Checar mercado oferta', true), 3320, -180);
@@ -558,9 +581,10 @@ return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { l
 
   // Disparar alertas pessoais (bfx_alertas) para membros interessados no produto publicado
   wf.add(code('Disparar alertas oferta?', `
+const dPub = $input.first().json;
 const p = $('Plano de links').first().json;
-if (!$json.ok || (p && p.ctx && p.ctx.so_textos) || !p || !p.oferta) return [];
-return [{ json: { oferta: p.oferta, linksRows: $json.linksRows || [], ts: (p.ctx && p.ctx.ts) || Date.now() } }];`, { cfg: false }), 2640, 880);
+if (!dPub.ok || (p && p.ctx && p.ctx.so_textos) || !p || !p.oferta) return [];
+return [{ json: { oferta: p.oferta, linksRows: dPub.linksRows || [], ts: (p.ctx && p.ctx.ts) || Date.now() } }];`, { cfg: false }), 2640, 880);
   wf.add(dtGet('Alertas ativos pub', 'bfx_alertas', [['ativo', 'eq', true]]), 2860, 880);
   wf.add(code('Calcular DMs alerta', `
 const base = $('Disparar alertas oferta?').first().json;
@@ -570,9 +594,12 @@ return [{ json: LIB.dispararAlertasOferta([base.oferta], base.linksRows, rows, c
   wf.add(httpTelegram('Telegram (DMs alertas)'), 3520, 840);
   wf.add(itens('Marcar alertas pub', "$('Calcular DMs alerta').first().json.updatesAlertas"), 3300, 960);
   wf.add(dtUpdate('Atualizar avisos alertas', 'bfx_alertas', 'alerta_id'), 3520, 960);
+  wf.add(itens('WhatsApp auto pub', "$('Publicar').first().json.chamadasWhatsApp"), 2640, 1020);
+  wf.add(httpWhatsAppAuto('Webhook WhatsApp auto'), 2860, 1020);
   wf.chain('Publicar', 'Disparar alertas oferta?', 'Alertas ativos pub', 'Calcular DMs alerta');
   wf.chain('Calcular DMs alerta', 'DMs alertas pub', 'Telegram (DMs alertas)');
   wf.chain('Calcular DMs alerta', 'Marcar alertas pub', 'Atualizar avisos alertas');
+  wf.chain('Publicar', 'WhatsApp auto pub', 'Webhook WhatsApp auto');
 
   // 2 · entrada/saída no grupo
   wf.add(itens('Linha de entrada', '$json.linha'), 1100, 960);
@@ -718,8 +745,10 @@ return [{ json: LIB.processarAlertaMembro(${CLS}, rows, cfg) }];`, { lib: true }
   wf.add(dtGet('Vitrine links 7d', 'bfx_links', [['ts', 'gte', '={{ Date.now() - 7 * 86400000 }}']]), 1560, 3240);
   wf.add(dtGet('Vitrine alertas', 'bfx_alertas', [['ativo', 'eq', true]]), 1780, 3240);
   wf.add(code('Montar vitrine', `
+let estado = {};
+try { estado = $getWorkflowStaticData('global'); } catch (e) { /* sem estado */ }
 const pega = (n, col) => $(n).all().map((i) => i.json).filter((r) => r[col]);
-return [{ json: LIB.responderVitrineMembro(${CLS}, pega('Vitrine ofertas 7d', 'oferta_id'), pega('Vitrine links 7d', 'oferta_id'), pega('Vitrine alertas', 'alerta_id'), cfg) }];`, { lib: true }), 2000, 3240);
+return [{ json: LIB.responderVitrineMembro(${CLS}, pega('Vitrine ofertas 7d', 'oferta_id'), pega('Vitrine links 7d', 'oferta_id'), pega('Vitrine alertas', 'alerta_id'), cfg, estado) }];`, { lib: true }), 2000, 3240);
   wf.add(itens('Mensagens vitrine', '$json.chamadas'), 2220, 3240);
   wf.add(httpTelegram('Telegram (vitrine)'), 2440, 3240);
   wf.link('Rota comunidade', 'Vitrine ofertas 7d', 2);
@@ -838,7 +867,7 @@ return f.autoPlanos && f.autoPlanos.length ? [{ json: f }] : [];`, { cfg: false 
   wf.add(code(N('Publicar lote radar'), `
 const fin = $('${N('Finalizar radar')}').first().json;
 const respSh = fin.reqsShopeeLinks.length && $('${N('Shopee: links radar')}').isExecuted ? $('${N('Shopee: links radar')}').all().map((i) => i.json) : [];
-const respCards = $('${N('Telegram (cards radar)')}').all().map((i) => i.json);
+const respCards = fin.chamadas.length && $('${N('Telegram (cards radar)')}').isExecuted ? $('${N('Telegram (cards radar)')}').all().map((i) => i.json) : [];
 const postsAnt = $('${N('Posts recentes radar')}').isExecuted ? $('${N('Posts recentes radar')}').all().map((i) => i.json).filter((r) => r.oferta_id) : [];
 return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt) }];`, { lib: true }), x + 7040, y + 180);
 
@@ -858,8 +887,9 @@ return [{ json: LIB.resultadoChamadas(chamadas, $input.all().map((i) => i.json),
 
   // Notificar membros interessados (bfx_alertas) nas ofertas auto-publicadas pelo radar
   wf.add(code(N('Disparar alertas radar?'), `
-if (!$json.ofertasPublicadas || !$json.ofertasPublicadas.length) return [];
-return [{ json: { ofertas: $json.ofertasPublicadas, linksRows: $json.linksRows || [], ts: ($('${N('Finalizar radar')}').first().json.opcoes || {}).ts || Date.now() } }];`, { cfg: false }), x + 7260, y + 500);
+const l = $input.first().json;
+if (!l.ofertasPublicadas || !l.ofertasPublicadas.length) return [];
+return [{ json: { ofertas: l.ofertasPublicadas, linksRows: l.linksRows || [], ts: ($('${N('Finalizar radar')}').first().json.opcoes || {}).ts || Date.now() } }];`, { cfg: false }), x + 7260, y + 500);
   wf.add(dtGet(N('Alertas ativos radar'), 'bfx_alertas', [['ativo', 'eq', true]]), x + 7480, y + 500);
   wf.add(code(N('Calcular DMs radar'), `
 const base = $('${N('Disparar alertas radar?')}').first().json;
@@ -869,6 +899,8 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
   wf.add(httpTelegram(N('Telegram (DMs radar)')), x + 8140, y + 460);
   wf.add(itens(N('Marcar alertas radar'), `$('${N('Calcular DMs radar')}').first().json.updatesAlertas`), x + 7920, y + 560);
   wf.add(dtUpdate(N('Atualizar avisos radar'), 'bfx_alertas', 'alerta_id'), x + 8140, y + 560);
+  wf.add(itens(N('WhatsApp auto radar'), `$('${N('Publicar lote radar')}').first().json.chamadasWhatsApp`), x + 7260, y + 640);
+  wf.add(httpWhatsAppAuto(N('Webhook WhatsApp radar')), x + 7480, y + 640);
 
   wf.link(cfgFluxo.entradaNode, N('Planejar'), cfgFluxo.entradaSaida || 0);
   wf.chain(N('Planejar'), N('Tem web?'));
@@ -905,7 +937,8 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
 
   wf.chain(N('Finalizar radar'), N('Preços radar'), N('Gravar preços radar'));
   wf.chain(N('Finalizar radar'), N('Ofertas radar'), N('Gravar ofertas radar'));
-  wf.chain(N('Finalizar radar'), N('Cards radar'), N('Telegram (cards radar)'), N('Auto radar?'), N('Posts recentes radar'), N('Tem Shopee auto?'));
+  wf.chain(N('Finalizar radar'), N('Cards radar'), N('Telegram (cards radar)'));
+  wf.chain(N('Finalizar radar'), N('Auto radar?'), N('Posts recentes radar'), N('Tem Shopee auto?'));
 
   wf.link(N('Tem Shopee auto?'), N('Itens Shopee auto'), 0);
   wf.chain(N('Itens Shopee auto'), N('Shopee: links radar'), N('Publicar lote radar'));
@@ -919,6 +952,7 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
   wf.chain(N('Publicar lote radar'), N('Disparar alertas radar?'), N('Alertas ativos radar'), N('Calcular DMs radar'));
   wf.chain(N('Calcular DMs radar'), N('DMs alertas radar'), N('Telegram (DMs radar)'));
   wf.chain(N('Calcular DMs radar'), N('Marcar alertas radar'), N('Atualizar avisos radar'));
+  wf.chain(N('Publicar lote radar'), N('WhatsApp auto radar'), N('Webhook WhatsApp radar'));
 }
 
 /* ---------- 04 · radar multi-fonte ---------- */
@@ -1009,15 +1043,15 @@ return LIB.relatorioDiario({ posts: pega('Posts'), links: pega('Links'), ofertas
 /* ---------- 05 · guardião de ofertas e vitrine 21h ---------- */
 
 function wfGuardiao() {
-  const wf = new WF('05 · Guardião de ofertas e Top 5 (a cada 2h)');
+  const wf = new WF('05 · Guardião 30min, Quedas Extras e Esquenta/Top 5');
   wf.add({
-    name: 'A cada 2 horas (guardião)',
+    name: 'A cada 30 minutos (guardião)',
     type: 'n8n-nodes-base.scheduleTrigger',
     typeVersion: 1.2,
-    parameters: { rule: { interval: [{ field: 'cronExpression', expression: '15 9-23/2 * * *' }] } },
+    parameters: { rule: { interval: [{ field: 'cronExpression', expression: '15,45 8-23 * * *' }] } },
   }, 0, 300);
   configNodes(wf, 220, 300);
-  wf.link('A cada 2 horas (guardião)', 'Ler config');
+  wf.link('A cada 30 minutos (guardião)', 'Ler config');
   const janela = '={{ Date.now() - 36 * 3600000 }}';
   wf.add(dtGet('Ofertas 36h', 'bfx_ofertas', [['ts', 'gte', janela]]), 660, 300);
   wf.add(dtGet('Posts 36h', 'bfx_posts', [['ts', 'gte', janela]]), 880, 300);

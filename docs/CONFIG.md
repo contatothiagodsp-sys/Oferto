@@ -33,7 +33,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `alertas.ativo` | `sim` | sim/nao: permite aos membros cadastrar alertas pessoais (/alerta ps5) no bot publicador e receber DM automática com seu link de afiliado |
 | `alertas.max_por_membro` | `10` | Quantidade máxima de alertas ativos por membro |
 | `post.botoes_extras` | `nao` | sim/nao: adiciona botões [🔔 Criar alerta] e [📲 Mandar no Zap] embaixo dos posts do Telegram |
-| `guardiao.ativo` | `sim` | sim/nao: verifica a cada 2h se ofertas publicadas esgotaram ou subiram forte de preço e encerra o post automaticamente |
+| `guardiao.ativo` | `sim` | sim/nao: verifica a cada 30 min se ofertas publicadas esgotaram ou caíram >=6% extra e encerra/atualiza automaticamente |
 | `vitrine.auto_noite` | `sim` | sim/nao: às 21h15 publica o resumão Top 5 Ofertas Ainda Ativas do Dia (também disponível com /resumao) |
 | `vitrine.ultimo_dia` |  | Gerado automaticamente pelo guardião para não repetir a vitrine noturna no mesmo dia |
 | `selo.tolerancia_pct` | `0` | Tolerância do selo em % acima do menor preço de 90 dias (recomendado: 0) |
@@ -67,9 +67,12 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `radar.max_por_ciclo` | `4` | Máximo base de promoções publicadas por rodada de 2 min do radar (nos picos de oferta escala até 8 com cadencia_dinamica) |
 | `radar.cadencia_dinamica` | `sim` | sim/nao: ajusta o volume do radar conforme o horário (até 6–8 ofertas nos picos 11h–14h e 18h–23h quando há promoções fortes, e até 2 na madrugada) |
 | `radar.canais_telegram` |  | Opcional: @canais públicos de ofertas no Telegram (separados por ;) para o radar garimpar via t.me/s/ e trocar pelo seu afiliado |
+| `radar.canais_curados` | `sim` | sim/nao: inclui fontes públicas curadas gratuitas (@canaltechofertas, @xetdaspromocoes, Gatry) no radar agendado, trocando pelo seu afiliado |
 | `radar.api_url` |  | Deixe vazio (usado só em testes para simular fontes do radar) |
 | `mercado.checar` | `sim` | sim/nao: compara automaticamente o preço em buscadores públicos (Zoom e busca Amazon) antes de publicar e bloqueia falsos descontos ou ofertas mais caras que a concorrência |
 | `cupons.radar_auto` | `sim` | sim/nao: publica alertas automáticos de cupons gerais e lotes de horário das lojas (ex.: 19h Mercado Livre, Shopee, Shein, Amazon) |
+| `cupons.esquenta_19h` | `sim` | sim/nao: às 18h45 publica um lembrete automático de Esquenta para resgatar cupons das 19h antes de acabarem |
+| `cupons.ultimo_esquenta` |  | Gerado automaticamente para não repetir o alerta de esquenta das 18h45 no mesmo dia |
 | `cupons.link_ml` |  | Seu link de afiliado (/sec/) para a Aba de Cupons do Mercado Livre (vazio = etiqueta ou link direto /cupons) |
 | `cupons.link_amazon` |  | Seu link de afiliado para a Central de Cupons da Amazon (vazio = usa tag_padrao) |
 | `cupons.link_shopee` |  | Seu link de afiliado para a Aba de Cupons da Shopee (vazio = gera via Shopee API) |
@@ -78,6 +81,17 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `cupons.logo_amazon` |  | URL da logo oficial da Amazon usada nos alertas de cupons (vazio = logo padrão) |
 | `cupons.logo_shopee` |  | URL da logo oficial da Shopee usada nos alertas de cupons (vazio = logo padrão) |
 | `cupons.logo_shein` |  | URL da logo oficial da Shein usada nos alertas de cupons (vazio = logo padrão) |
+| `agentes.cacador` | `sim` | sim/nao: ativa o Agente 1 · Caçador Multi-Fonte (Promobit + Canais Curados + Gatry) |
+| `agentes.auditor` | `sim` | sim/nao: ativa o Agente 2 · Auditor de Preço & Prova Social (Zoom + Amazon) |
+| `agentes.marketing` | `sim` | sim/nao: ativa o Agente 3 · Marketing, Anti-Fadiga (90 min) & Sazonalidade (Esquenta 18h45) |
+| `agentes.concierge` | `sim` | sim/nao: ativa o Agente 4 · Concierge 24/7 no chat aberto/DM + expansão de sinônimos |
+| `agentes.guardiao` | `sim` | sim/nao: ativa o Agente 5 · Guardião 30min, auto-atualização >=6% e limpeza de pendentes >18h |
+| `admin.notificacao_piloto` | `completa` | completa/compacta: no /modo piloto, compacta elimina o card preliminar e manda 1 mensagem única com Top/Encerrar/Zap |
+| `topico_chat_aberto` |  | message_thread_id opcional do tópico de Bate-papo & Pedidos liberado para o Concierge responder dúvidas |
+| `whatsapp.webhook_url` |  | Opcional (Zero-Toque): URL de disparo HTTP para WhatsApp (Evolution API /message/sendText/, WAHA /api/sendText ou webhook) |
+| `whatsapp.api_key` |  | Opcional: chave/token (apikey / Bearer) da API de WhatsApp configurada em whatsapp.webhook_url |
+| `whatsapp.grupo_destino` |  | Opcional: JID/ID do grupo de WhatsApp para envio automático via whatsapp.webhook_url |
+| `whatsapp.canal_destino` |  | Opcional: JID/ID do canal de WhatsApp para envio automático via whatsapp.webhook_url |
 | `tunel.dominio` |  | Servidor local: domínio próprio aceito pelo workflow 90 · Túnel além de trycloudflare.com e ngrok (ex.: bot.seudominio.com.br). Vazio = só esses |
 | `saude.ultimo_alerta` |  | Servidor local: gerado pelo workflow 91 · Saúde (anti-spam dos alertas). Não precisa mexer |
 | `amazon.mostrar_preco` | `sim` | sim/nao: os posts da Amazon mostram o preço e o %. Com nao, dizem só "no menor preço dos últimos 90 dias" e "Veja o preço atual na Amazon" (use se os termos exigirem preço vindo da API oficial) |

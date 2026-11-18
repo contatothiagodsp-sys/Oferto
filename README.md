@@ -17,11 +17,11 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem c
 | Arquivo | O que é |
 |---|---|
 | `n8n/workflows/00-setup.json` | Rodar manualmente. Cria as Data Tables, as linhas de configuração, registra os webhooks e cria/organiza os tópicos do grupo. |
-| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/cupom`, `/radar`, `/buscas`, `/canais` (`/canais migrar`, `/canais apagar_topico`), `/divulgar`, `/logo`, `/afiliados`, `/alerta`, `/buscar`, `/cupons`, `/tophoje`, `/admin` (denúncia no chat), cliques nos botões e entradas/saídas. |
+| `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/cupom`, `/radar`, `/buscas`, `/canais` (`/canais migrar`, `/canais apagar_topico`), `/divulgar`, `/logo`, `/agentes`, `/afiliados`, `/alerta`, `/buscar`, `/cupons`, `/tophoje`, Concierge 24/7 no chat/DM, `/admin` (denúncia no chat), cliques nos botões e WhatsApp API opcional. |
 | `n8n/workflows/02-coleta-shopee.json` | A cada 2 h (8h–22h) busca ofertas na Shopee Affiliate API e manda as candidatas para aprovação. |
 | `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite, sinalização de afiliados e divulgação cruzada automática dos canais). |
-| `n8n/workflows/04-radar-ofertas.json` | A cada 2 min (sem custo extra) caça promoções multi-fonte e cupons de loja (29 lojas incluindo Shein, Centauro, Netshoes, Nike, Adidas, Renner, C&A, Riachuelo, Dafiti, Zattini e Hering), escala envios nos horários de pico (até 6–8 ofertas/rodada), prioriza produtos **em alta**, **Moda/Tênis**, **Perfumes Árabes no ML**, **Nicho**, **Skincare** e **Suplementos**, evita repetições de 24h (ou responde ao post anterior se o preço cair/entrar cupom) e publica automaticamente. |
-| `n8n/workflows/05-guardiao-ofertas.json` | A cada 2h verifica se ofertas publicadas esgotaram ou subiram forte de preço (riscando e encerrando o post sozinho) e às 21h15 publica a vitrine **Top 5 Ofertas Ainda Ativas do Dia**. |
+| `n8n/workflows/04-radar-ofertas.json` | A cada 2 min (R\$ 0 de custo) os Agentes **Caçador + Auditor + Marketing** varrem 28 lojas + `@canaltechofertas`, `@xetdaspromocoes` e Gatry, removem tags concorrentes (incl. `link.amazon`/`amzlinks`), comparam Zoom+Amazon, aplicam anti-fadiga de 90 min, priorizam afiliados ativos e publicam automaticamente. |
+| `n8n/workflows/05-guardiao-ofertas.json` | A cada 30 min (`15,45 8-23 * * *`) verifica ofertas publicadas: encerra esgotadas/subidas, atualiza posts ao vivo quando o preço cai `>= 6%` extra, expira pendentes `> 18h`, dispara às 18h45 o **Esquenta de Cupons das 19h** e às 21h15 o **Top 5 Ainda Ativas**. |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
 | `servidor-local/` | n8n Community grátis no seu computador (Docker + túnel). Guia em [servidor-local/README.md](servidor-local/README.md). |
@@ -311,7 +311,8 @@ Estimativa para o mês de pico (novembro), com 1.500–2.500 entradas, ~30% de s
 - **Keepa (opcional):** formato da API conferido no SDK oficial (`keepacom/api_backend`) e testado contra um servidor falso. **VERIFICAR** com a chave real: preço do plano e custo em tokens de `buybox=1`.
 - **Post com falha:** se o post no grupo falhar (ex.: bot sem permissão), a oferta fica como `falha` e você recebe um alerta "❗ A oferta NÃO saiu no grupo".
 - **X:** o bot entrega o texto pronto (desative com `/config publicar.plataformas wag` se usar só WhatsApp e Telegram).
-- **WhatsApp:** usa botão oficial `📲 Enviar no WhatsApp (1 toque)` (`api.whatsapp.com/send`), que abre o texto já preenchido para enviar ao seu grupo em 1 toque, **100% grátis e sem risco de banir seu número** (APIs não-oficiais de WhatsApp causam bloqueio de conta).
+- **WhatsApp:** usa por padrão o botão oficial `📲 Enviar no WhatsApp (1 toque)` (`api.whatsapp.com/send`), gratuito e sem risco de bloqueio; opcionalmente aceita envio HTTP Zero-Toque via `whatsapp.webhook_url` (Evolution API `/message/sendText/`, WAHA `/api/sendText` ou Webhook).
+- **Ecossistema dos 5 Agentes Autônomos (`/agentes`):** gerencie em tempo real via `/agentes` (`/agentes pausar|ligar <1..5|nome|todos>`): **1. Caçador Multi-Fonte**, **2. Auditor de Preço & Prova Social**, **3. Marketing, Anti-Fadiga & Esquenta 18h45**, **4. Concierge 24/7 & Sinônimos**, **5. Guardião 30min & Auto-Cura** (detalhes em [docs/SALVAMENTO-PROJETO.md](docs/SALVAMENTO-PROJETO.md)).
 
 ## Para quem for mexer no código
 
