@@ -151,7 +151,10 @@ test('links Amazon por tag e ML manual', () => {
   const amz = L.planejarLinks({ oferta_id: 'o1', categoria: 'casa', loja: 'amazon', url: 'https://www.amazon.com.br/dp/B0ABCDEF12' }, cfg, AGORA);
   assert.deepEqual(amz.map((i) => i.url), ['tg', 'wac', 'wag', 'x'].map((p) => `https://www.amazon.com.br/dp/B0ABCDEF12?tag=marca-casa${p}-20`));
   const semTag = L.pendenciasLinks({ categoria: 'beleza', loja: 'amazon', links_manuais: '{}' }, cfg);
-  assert.ok(semTag[0].startsWith('BLOQUEIO'));
+  assert.equal(semTag.some((p) => p.startsWith('BLOQUEIO')), false);
+  assert.match(semTag[0], /sem comissão/);
+  const amzSemTag = L.planejarLinks({ oferta_id: 'o1b', categoria: 'beleza', loja: 'amazon', url: 'https://www.amazon.com.br/dp/B0ABCDEF12' }, cfg, AGORA);
+  assert.deepEqual(amzSemTag.map((i) => i.url), ['tg', 'wac', 'wag', 'x'].map(() => 'https://www.amazon.com.br/dp/B0ABCDEF12'));
   const ml = L.planejarLinks({ oferta_id: 'o2', categoria: 'casa', loja: 'ml', url: 'https://x', links_manuais: { tg: 'https://ml/tg', wac: 'https://ml/wac' } }, cfg, AGORA);
   assert.equal(ml[0].url, 'https://ml/tg');
   assert.equal(ml[2].url, 'https://ml/tg'); // wag cai no primeiro manual

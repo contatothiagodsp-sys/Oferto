@@ -276,7 +276,7 @@ test('loja bloqueou preço no link cru → pede só o preço → resposta rápid
   assert.equal(respOk.oferta.categoria, 'casa');
 });
 
-test('afiliados sem burocracia: Shopee sem API com s.shopee, Amazon com ?tag= ou amzn.to, Magalu divulgador e bloqueio ML sem /sec/', () => {
+test('afiliados sem burocracia: Shopee sem API com s.shopee, Amazon com ?tag= ou amzn.to, Magalu divulgador e aprovação liberada sem afiliado', () => {
   const cfgSemApi = L.montarConfig([
     { chave: 'admins', valor: '111' },
     { chave: 'bot_token', valor: 'T' },
@@ -305,9 +305,19 @@ test('afiliados sem burocracia: Shopee sem API com s.shopee, Amazon com ?tag= ou
   assert.deepEqual(L.pendenciasLinks(ofMagalu, cfgSemApi), []);
   assert.equal(L.planejarLinks(ofMagalu, cfgSemApi, AGORA)[0].url, 'https://divulgador.magalu.com/xyz');
 
-  // ML cru (sem /sec/ e sem linhas manuais) → alerta BLOQUEIO para o afiliado não perder comissão!
-  const ofMlCru = { oferta_id: 'o3', categoria: 'casa', loja: 'ml', url: 'https://produto.mercadolivre.com.br/MLB-123-x', links_manuais: {} };
-  assert.ok(L.pendenciasLinks(ofMlCru, cfgSemApi)[0].startsWith('BLOQUEIO'));
+  // Links crus SEM afiliado (Amazon sem tag, Shopee sem API/s.shopee, ML sem /sec/) → libera ✅ Aprovar com aviso "sem comissão" e link direto
+  for (const ofCru of [
+    { oferta_id: 'o3', categoria: 'tech', loja: 'amazon', titulo: 'Controle Xbox', preco: 350, selo: 'sem_ref', url: 'https://www.amazon.com.br/dp/B099988877', links_manuais: { modo_link: true } },
+    { oferta_id: 'o4', categoria: 'casa', loja: 'shopee', titulo: 'Cafeteira', preco: 149.9, selo: 'sem_ref', url: 'https://shopee.com.br/product/1/2', links_manuais: { modo_link: true } },
+    { oferta_id: 'o5', categoria: 'casa', loja: 'ml', titulo: 'Aspirador', preco: 499, selo: 'sem_ref', url: 'https://produto.mercadolivre.com.br/MLB-123-x', links_manuais: { modo_link: true } },
+  ]) {
+    const pend = L.pendenciasLinks(ofCru, cfgSemApi);
+    assert.equal(pend.some((p) => p.startsWith('BLOQUEIO')), false);
+    assert.ok(pend.some((p) => /sem comissão/i.test(p)));
+    assert.deepEqual(L.planejarLinks(ofCru, cfgSemApi, AGORA).map((i) => i.url), [ofCru.url, ofCru.url, ofCru.url, ofCru.url]);
+    const card = L.cardAprovacao(ofCru, cfgSemApi, pend);
+    assert.ok(card.reply_markup.inline_keyboard.flat().some((b) => b.callback_data === `a|${ofCru.oferta_id}` && b.text === '✅ Aprovar'));
+  }
 });
 
 test('/modo rapido, /config, proteção de segredos, 📋 Só textos sem grupo_id e guarda de duplicata 24h', () => {

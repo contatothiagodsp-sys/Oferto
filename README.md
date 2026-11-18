@@ -169,6 +169,7 @@ cupom BF10
   2. **Com Affiliate Open API (grátis):** preencha `shopee.app_id` e `shopee.secret` para gerar sub-IDs por plataforma e ligar o **02 · Coleta Shopee** automática a cada 2 h!
 - **Mercado Livre:** basta colar **1 link** do gerador de afiliados (`https://mercadolivre.com/sec/…` ou `meli.la/…`)! O bot descobre o produto real por trás do redirecionamento e mantém o seu link `/sec/` nos posts. (Se quiser um link por plataforma no `/oferta`, use as linhas `tg`, `wac`, `wag`, `x`).
 - **Magalu / Magazine Você / KaBuM! / AliExpress:** cole seu link de divulgador (`divulgador.magalu.com/…`, `magazinevoce.com.br/…`, `s.click.aliexpress.com/…` ou link Awin `?awc=…`) que o bot preserva o link de comissão e extrai título, preço e foto da página.
+- **Mesmo sem link ou tag de afiliado:** o botão **✅ Aprovar** (e o `/modo rapido`) continua liberado usando o link direto do produto — o card apenas mostra um aviso informativo de *"sem comissão"*.
 - Por último, se quiser o resumo das 22h, clique em **Publish** no **03 · Relatório diário**.
 
 ### 9. Keepa (opcional): menor preço de 90 dias da Amazon automático
