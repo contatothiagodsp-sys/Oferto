@@ -116,3 +116,12 @@ flowchart LR
   - `htmlParaTexto` remove tags HTML antes do parsing em Amazon, Mercado Livre (incluindo JSON `"quantity"/"amount"/"rate"` e centavos separados por `<span>`) e lojas gerais, calculando o valor da parcela quando o anúncio informa apenas `"Xx sem juros"` e atualizando `recalcularParcelamentoComCupom`.
   - `blocoPreco` passou a exibir uma linha própria e limpa `💳 <b>10x de R$ ... sem juros</b>` (e `<i>(total R$ ...)</i>` quando o total parcelado é maior que o valor à vista/Pix).
 - **Validação:** `npm run build` + `npm test` (**95/95** passando, `0` falhas, com novo teste em [tests/radar-auditoria.test.js](file:///C:/Users/tHg/Documents/Oferto/tests/radar-auditoria.test.js)), redeploy concluído em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`).
+
+### 🔧 Correção 18/11 (Noite/Fim de tarde) — Preservação do cupom real (`BLACK100OFF`), Compra com Recorrência & Post Amazon ainda mais limpo
+- **Proteção contra cupom parcial ([lib/extrator.js](file:///C:/Users/tHg/Documents/Oferto/lib/extrator.js), [lib/radar.js](file:///C:/Users/tHg/Documents/Oferto/lib/radar.js)):**
+  - `lerPaginaProduto` passou a varrer todos os blocos de cupom da Amazon (`blocosIndiv` + `blocosCont`) com suporte a *"R$ X de desconto / off"*, e `enriquecerCandidatosComPaginas` não sobrescreve mais um preço menor já calculado com cupom real (ex.: R\$ 961 com `BLACK100OFF`) pelo cálculo de outro cupom menor na página (ex.: R\$ 25 = R\$ 1.036,09), evitando falso repost depois.
+- **Compra com Recorrência / Programe e Poupe ([lib/extrator.js](file:///C:/Users/tHg/Documents/Oferto/lib/extrator.js), [lib/radar.js](file:///C:/Users/tHg/Documents/Oferto/lib/radar.js), [lib/textos.js](file:///C:/Users/tHg/Documents/Oferto/lib/textos.js)):**
+  - Detecta blocos `snsAccordionRow`/`snsPrice`/*"Comprar com recorrência"*/"Programe e Poupe" na Amazon e menções em texto; calcula/exibe `🔄 <b>Com recorrência: R$ ...</b> (-X%) <i>(cancele grátis a qualquer momento)</i>`.
+- **Remoção da frase da Amazon nos posts do Telegram ([lib/textos.js](file:///C:/Users/tHg/Documents/Oferto/lib/textos.js)):**
+  - Removido `"Como Associado da Amazon, ganhamos com compras qualificadas."` do corpo de `textoTelegram` (mantido `#publi` na 1ª linha).
+- **Validação:** `npm run build` OK (8 workflows), `npm test` (**96/96** passando, `0` falhas), redeploy concluído em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`).

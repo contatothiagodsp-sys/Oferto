@@ -554,4 +554,43 @@ test('repost exige queda mínima >= 5% (>= R$ 1) e parcelamento HTML/JSON sempre
     links_manuais: { preco_de: 4500, pix: true, parcelamento: 'Em até 12x de R$ 350,00 sem juros', preco_parcelado: 4200 },
   }, 'https://amzn.to/ps5', cfg);
   assert.match(tg, /💳 <b>12x de R\$ 350,00 sem juros<\/b> <i>\(total R\$ 4\.200,00\)<\/i>/);
+  assert.doesNotMatch(tg, /Como Associado da Amazon/);
+});
+
+test('cupom Amazon R$ 100 não infla preço com cupom parcial de R$ 25 + desconto com recorrência avisa cancelamento grátis e valor', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const textos = require('../lib/textos');
+  const cfg = cfgBase();
+
+  // 1) Candidato do Telegram já veio com R$ 961 e BLACK100OFF; página Amazon retorna R$ 1.061,09 + badge menor de R$ 25 -> não sobe para 1.036,09
+  const cands = [{
+    radar_key: 'tg_aoc_1', loja: 'amazon', produto_id: 'amz_B0FGDK8DJM',
+    url: 'https://www.amazon.com.br/dp/B0FGDK8DJM', titulo: 'Monitor Gamer AOC AGON 27 QHD',
+    preco: 961, preco_de: 1299, cupom: 'BLACK100OFF', pix: true, resolved: true,
+  }];
+  const htmlAoc = '<html><body><span id="productTitle">Monitor Gamer AOC AGON QUAD 27"</span><span class="priceToPay"><span class="a-offscreen">R$ 1.061,09</span></span><label id="greenBadge1">Salve o cupom R$ 25</label><span>12x de R$ 89,50 sem juros</span></body></html>';
+  const finAoc = radar.finalizarRadar(
+    { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: cands, reqsPag: [{ idx: 0, url: cands[0].url }], reqsMercado: [] },
+    [], [], [], cfg, [{ statusCode: 200, body: htmlAoc }], [],
+  );
+  assert.equal(finAoc.ofertasNovas.length, 1);
+  assert.equal(finAoc.ofertasNovas[0].preco, 961);
+  const manAoc = JSON.parse(finAoc.ofertasNovas[0].links_manuais);
+  assert.equal(manAoc.preco_sem_cupom, 1061.09);
+
+  // 2) Amazon "R$ 100 de desconto" + Subscribe & Save ("Comprar com recorrência" / Programe e Poupe)
+  const htmlSns = '<html><body><span id="productTitle">Creatina 300g</span><span class="priceToPay"><span class="a-offscreen">R$ 100,00</span></span><div id="snsAccordionRowMiddle"><span>Comprar com recorrência</span><span id="snsPrice">R$ 85,00</span><span>Economize 15%</span><span>Economize R$ 15,00</span></div></body></html>';
+  const lidoSns = extrator.lerPaginaProduto({ statusCode: 200, body: htmlSns }, 'https://www.amazon.com.br/dp/B0CREA0001');
+  assert.equal(lidoSns.recorrencia, true);
+  assert.equal(lidoSns.recorrencia_preco, 85);
+  assert.equal(lidoSns.recorrencia_pct, 15);
+
+  const tgSns = textos.textoTelegram({
+    oferta_id: 'o_sns_1', loja: 'amazon', categoria: 'saude',
+    titulo: 'Creatina 300g', preco: 100,
+    links_manuais: { preco_de: 130, recorrencia: true, recorrencia_preco: 85, recorrencia_pct: 15 },
+  }, 'https://amzn.to/crea', cfg);
+  assert.match(tgSns, /🔄 <b>Com recorrência: R\$ 85,00<\/b> \(-15%\) <i>\(cancele grátis a qualquer momento\)<\/i>/);
+  assert.doesNotMatch(tgSns, /Como Associado da Amazon/);
 });

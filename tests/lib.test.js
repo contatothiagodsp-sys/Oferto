@@ -169,7 +169,7 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
   };
   const tg = L.textoTelegram(oferta, 'https://l/tg?a=1&b=2', cfg);
   assert.match(tg, /#publi/);
-  assert.match(tg, /Como Associado da Amazon/);
+  assert.doesNotMatch(tg, /Como Associado da Amazon/);
   assert.doesNotMatch(tg, /Frete: confira na loja/);
   assert.match(tg, /&lt;Mondial&gt;/);
   assert.match(tg, /a=1&amp;b=2/);
@@ -197,8 +197,7 @@ test('textos: #publi na 1ª linha, aviso de preço, selo honesto e cobertura do 
   for (const t of [L.textoWhatsAppCanal(base, 'https://l', cfg), L.textoWhatsAppGrupo(base, 'https://l', cfg), L.textoX(base, cfg)]) {
     assert.match(t, /24\/11 às 12:30/);
   }
-  assert.doesNotMatch(L.textoTelegram(base, 'https://l', cfg), /Preço e disponibilidade de|Frete: confira na loja/);
-  assert.match(L.textoTelegram(base, 'https://l', cfg), /Como Associado da Amazon, ganhamos com compras qualificadas\./);
+  assert.doesNotMatch(L.textoTelegram(base, 'https://l', cfg), /Preço e disponibilidade de|Frete: confira na loja|Como Associado da Amazon/);
   assert.doesNotMatch(L.textoTelegram(Object.assign({}, base, { loja: 'shopee' }), 'https://l', cfg), /Associado da Amazon|Contém link de afiliado/);
   // 0%: sem a palavra "desconto"
   const zero = Object.assign({}, base, { preco: 399.9, desconto_pct: 0 });
