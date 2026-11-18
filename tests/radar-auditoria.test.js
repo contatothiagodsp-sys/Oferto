@@ -268,3 +268,234 @@ test('imagem: Amazon logo /images/G/ é substituído por landingImage, og:image 
   assert.equal(fin.ofertasNovas.length, 1);
   assert.equal(fin.ofertasNovas[0].imagem, 'https://i.zst.com.br/thumbs/12/ssd.jpg');
 });
+
+test('categoria: perfumes com Vaporizador/EDT/sem "perfume" e calçados vão para perfumes/moda, nunca casa; radar descarta sem_categoria e ignora anterior casa errado', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const comunidade = require('../lib/comunidade');
+  const cfg = cfgBase();
+
+  const perfumes = [
+    'Ralph Lauren Polo Red EDT 125ml Vaporizador',
+    'Antonio Banderas Blue Seduction Masculino 100ml',
+    'Nautica Voyage EDT 100ml',
+    'Bvlgari Man in Black EDP 100ml',
+    'Ferrari Black Scuderia EDT 125ml',
+  ];
+  for (const tit of perfumes) {
+    const c = extrator.classificarCategoria(tit, cfg);
+    assert.equal(c.categoria, 'perfumes', `Esperava perfumes para: ${tit}, veio ${c.categoria}`);
+    assert.ok(c.confianca > 0);
+  }
+
+  const calcados = [
+    'Sapatênis Masculino Democrata Denim',
+    'Chuteira Umbro Society Class',
+    'Skechers Go Walk Joy Feminino',
+  ];
+  for (const tit of calcados) {
+    const c = extrator.classificarCategoria(tit, cfg);
+    assert.equal(c.categoria, 'moda', `Esperava moda para: ${tit}, veio ${c.categoria}`);
+    assert.ok(c.confianca > 0);
+  }
+
+  // Item sem categoria confiável no radar agendado não pode cair em Casa & Eletro
+  const htmlSemCat = `<html><head><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: {
+      pageProps: {
+        serverOffers: {
+          offers: [
+            {
+              offerId: 901,
+              offerTitle: 'Produto Misterioso Xpto 5000',
+              offerPrice: 99,
+              offerOldPrice: 199,
+              offerPhoto: 'https://i.promobit.com.br/500/x.jpg',
+              storeDomain: 'amazon.com.br',
+              offerLikes: 10,
+            },
+            {
+              offerId: 902,
+              offerTitle: 'Ralph Lauren Polo Red EDT 125ml Vaporizador',
+              offerPrice: 299,
+              offerOldPrice: 499,
+              offerPhoto: 'https://i.promobit.com.br/500/p.jpg',
+              storeDomain: 'mercadolivre.com.br',
+              offerLikes: 15,
+            },
+          ],
+        },
+      },
+    },
+  })}</script></head></html>`;
+
+  const respsWeb = [
+    { statusCode: 200, body: htmlSemCat },
+  ];
+  const reqsWeb = [{ tipo: 'promobit_alta', url: 'https://www.promobit.com.br/' }];
+  // Simula oferta antiga do mesmo perfume erroneamente salva em 'casa'
+  const ofertasAntigas = [{
+    oferta_id: 'o_old_casa',
+    produto_id: 'pb_902',
+    loja: 'ml',
+    categoria: 'casa',
+    titulo: 'Ralph Lauren Polo Red EDT 125ml Vaporizador',
+    preco: 399,
+    status: 'aprovada',
+    ts: AGORA - 3600 * 1000,
+  }];
+
+  const sel = radar.selecionarCandidatosRadar(
+    { opcoes: { modo: 'agendado', ts: AGORA }, fontesWeb: reqsWeb },
+    respsWeb,
+    [],
+    ofertasAntigas,
+    [],
+    cfg,
+    [],
+    [],
+  );
+
+  const candPerf = sel.candidatos.find((x) => x.radar_key === 'pb_902');
+  assert.ok(candPerf, 'perfume deve ser selecionado');
+  assert.equal(candPerf.categoria, 'perfumes', 'não deve herdar categoria casa errada da oferta anterior');
+
+  const candSemCat = sel.candidatos.find((x) => x.radar_key === 'pb_901');
+  assert.ok(candSemCat && candSemCat.categoria_indefinida === true);
+
+  // Resolve ambos e finaliza: pb_901 sem categoria definida deve ser descartado como sem_categoria (não ir para casa)
+  candSemCat.resolved = true;
+  candSemCat.url = 'https://www.amazon.com.br/dp/B000000001';
+  candSemCat.produto_id = 'amz_B000000001';
+  candPerf.resolved = true;
+  candPerf.url = 'https://www.mercadolivre.com.br/ralph-lauren-polo-red/p/MLB123';
+  candPerf.produto_id = 'ml_MLB123';
+
+  const est = { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: [candSemCat, candPerf], reqsPag: [], reqsMercado: [] };
+  const fin = radar.finalizarRadar(est, [], [], ofertasAntigas, cfg, [], []);
+  assert.equal(fin.ofertasNovas.length, 1);
+  assert.equal(fin.ofertasNovas[0].categoria, 'perfumes');
+  assert.ok(fin.resumo.descartadas.some((d) => d.radar_key === 'pb_901' && d.motivo === 'sem_categoria'));
+
+  // /alerta de termo desconhecido grava 'geral', não 'casa'
+  const al = comunidade.processarAlertaMembro(
+    { rota: 'comunidade', subtipo: 'alerta', termo: 'xpto_desconhecido_99', chat_id: 1, user_hash: 'u1', ts: AGORA },
+    [],
+    cfg,
+  );
+  assert.equal(al.inserir[0].categoria, 'geral');
+});
+
+test('boost/radar: sidebarFeaturedOffers não herda categoria_hint casa, /radar perfumes enriquece antes de filtrar, modoAuto descarta sem_categoria e /oferta não regride para casa', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const fluxos = require('../lib/fluxos');
+  const cfg = cfgBase();
+
+  // 1) Perfumes comuns sem a palavra "perfume" (e sem falso positivo de 'pet' em 'frasco pet')
+  for (const tit of [
+    'Avon Far Away 50ml',
+    'Lacoste Essential 125ml',
+    'Hinode Empire 100ml',
+    'Cacharel Amor Amor 100ml',
+    'Britney Spears Fantasy 100ml',
+    'Frasco PET Spray Corporal 100ml',
+  ]) {
+    const cls = extrator.classificarCategoria(tit, cfg);
+    assert.notEqual(cls.categoria, 'casa', `${tit} não deve ir para casa (foi ${cls.categoria})`);
+  }
+
+  // 2) Promobit categoria eletroportateis (categoria_hint: 'casa') não vaza 'casa' para sidebarFeaturedOffers
+  const htmlPbCat = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: {
+      pageProps: {
+        serverOffers: {
+          offers: [{
+            offerId: 101, offerTitle: 'Air Fryer Mondial 4L', offerPrice: 250, offerOldPrice: 400,
+            offerLikes: 20, offerClicks: 100, storeDomain: 'amazon.com.br', offerPhoto: '/500/af.png',
+          }],
+        },
+        sidebarFeaturedOffers: [{
+          offerId: 102, offerTitle: 'Item Misterioso XYZ 100ml', offerPrice: 120, offerOldPrice: 200,
+          offerLikes: 15, offerClicks: 80, storeDomain: 'amazon.com.br', offerPhoto: '/500/x.png',
+        }],
+      },
+    },
+  })}</script>`;
+  const pbExtraidos = radar.lerPromobitHtml(htmlPbCat, { tipo: 'promobit_cat', categoria_hint: 'casa' });
+  const pb101 = pbExtraidos.find((x) => x.radar_key === 'pb_101');
+  const pb102 = pbExtraidos.find((x) => x.radar_key === 'pb_102');
+  assert.equal(pb101.categoria_hint, 'casa');
+  assert.equal(pb102.categoria_hint, '');
+
+  // 3) /radar perfumes (o.categorias = ['perfumes']) mantém candidato indefinido da Amazon para enriquecer pela página
+  const selPerf = radar.selecionarCandidatosRadar(
+    {
+      opcoes: { modo: 'comando', categorias: ['perfumes'], lojas: ['amazon'], ts: AGORA },
+      fontesWeb: [{ tipo: 'promobit_loja', loja_hint: 'amazon' }],
+    },
+    [{
+      statusCode: 200,
+      body: `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+        props: {
+          pageProps: {
+            serverOffers: {
+              offers: [{
+                offerId: 201, offerTitle: 'Kit Presente Luxo 100ml', offerPrice: 199, offerOldPrice: 350,
+                offerLikes: 25, offerClicks: 120, storeDomain: 'amazon.com.br', offerPhoto: '/500/p.png',
+              }],
+            },
+          },
+        },
+      })}</script>`,
+    }],
+    [], [], [], cfg, [], [],
+  );
+  assert.equal(selPerf.candidatos.length, 1);
+  const cand201 = selPerf.candidatos[0];
+  cand201.resolved = true;
+  cand201.url = 'https://www.amazon.com.br/dp/B0PERF0001';
+  cand201.produto_id = 'amz_B0PERF0001';
+  cand201.imagem = 'https://m.media-amazon.com/images/G/32/social_share/amazon_logo.png';
+
+  const htmlAmzPerf = `<html><head><meta property="og:image" content="https://m.media-amazon.com/images/I/61perf._AC_SL1000_.jpg"/></head><body><span id="productTitle">Perfume Importado Eau de Parfum 100ml</span><div id="corePrice_feature_div"><span class="a-offscreen">R$ 199,00</span></div></body></html>`;
+  const finPerf = radar.finalizarRadar(
+    { opcoes: selPerf.opcoes, candidatos: [cand201], reqsPag: [{ idx: 0, url: cand201.url }], reqsMercado: [] },
+    [], [], [], cfg, [{ statusCode: 200, body: htmlAmzPerf }], [],
+  );
+  assert.equal(finPerf.ofertasNovas.length, 1);
+  assert.equal(finPerf.ofertasNovas[0].categoria, 'perfumes');
+  assert.equal(finPerf.ofertasNovas[0].imagem, 'https://m.media-amazon.com/images/I/61perf._AC_SL1000_.jpg');
+
+  // 4) o.modo === 'comando' com publicar_direto=true (modoAuto) descarta sem_categoria em vez de publicar em casa
+  const cfgAuto = cfgBase([{ chave: 'radar.publicar_direto', valor: 'sim' }]);
+  const candSem = {
+    radar_key: 'pb_301', loja: 'amazon', produto_id: 'amz_B0SEMCAT01',
+    url: 'https://www.amazon.com.br/dp/B0SEMCAT01', titulo: 'Item Genérico Sem Palavra Chave',
+    preco: 100, preco_de: 200, desconto_pct: 50, categoria: 'casa', categoria_indefinida: true, resolved: true,
+  };
+  const finAuto = radar.finalizarRadar(
+    { opcoes: { modo: 'comando', ts: AGORA }, candidatos: [candSem], reqsPag: [], reqsMercado: [] },
+    [], [], [], cfgAuto, [], [],
+  );
+  assert.equal(finAuto.ofertasNovas.length, 0);
+  assert.ok(finAuto.resumo.descartadas.some((d) => d.motivo === 'sem_categoria'));
+
+  // 5) /oferta repost em fluxos.js não regride perfume de volta para 'casa' anterior
+  const prevCasa = [{
+    oferta_id: 'o_old_1', produto_id: 'amz_B0PERF9999', loja: 'amazon', categoria: 'casa',
+    titulo: 'Ralph Lauren Polo Red EDT 125ml', preco: 450, status: 'aprovada', ts: AGORA - 3600 * 1000,
+  }];
+  const entPerf = {
+    rota: 'oferta', chat_id: 1, user_id: 1, ts: AGORA,
+    oferta: {
+      categoria: 'perfumes', loja: 'amazon', produto_id: 'amz_B0PERF9999',
+      url: 'https://www.amazon.com.br/dp/B0PERF9999',
+      titulo: 'Ralph Lauren Polo Red EDT 125ml', preco: 350,
+      links_manuais: { modo_link: true, categoria_auto: true },
+    },
+    avisos_card: [],
+  };
+  const proc = fluxos.avaliarNovaOferta(entPerf, [], cfg, prevCasa);
+  assert.equal(proc.oferta.categoria, 'perfumes');
+});

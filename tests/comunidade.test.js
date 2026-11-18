@@ -137,7 +137,7 @@ test('Motor Em Alta + Perfumes Árabes no ML & Perfumes de Nicho (/radar alta, /
   assert.equal(ofPs5.top, true);
   const txtPs5 = L.textoTelegram(ofPs5, 'https://amzn.to/ps5', cfg);
   assert.match(txtPs5, /💠 PIX/);
-  assert.match(txtPs5, /BOMBANDO AGORA|EM ALTA NO BRASIL|FEBRE DE BUSCAS|DISPAROU ENTRE OS MAIS PROCURADOS|SUCESSO DE CLIQUES|TODO MUNDO PROCURANDO|QUERIDINHO DO MOMENTO|HIT DO DIA/);
+  assert.match(txtPs5, /🎮 GAMER|🕹️ CONSOLE &amp; GAMER/);
   const txtAsad = L.textoTelegram(ofAsad, 'https://mercadolivre.com/sec/asad', cfg);
   assert.match(txtAsad, /PERFUMARIA ÁRABE|PERFUME ÁRABE|FRAGRÂNCIA ÁRABE|PRODUTO EM ALTA/);
 });
@@ -286,14 +286,12 @@ test('Vitrine (/buscar, /cupons, /tophoje, /demanda, /resumao), Preço Unitário
   const txtFralda = L.textoTelegram(ofertas[1], 'https://amzn.to/fralda', cfg);
   assert.match(txtFralda, /🧮 <i>Sai a R\$ 0,89 por tira<\/i>/);
 
-  // Botões virais só com post.botoes_extras = sim (+ botão Resgatar Cupons automático no ML/Shopee)
-  const kbExtras = L.botaoCompra(ofertas[0], 'https://mercadolivre.com/sec/kh1', cfg).inline_keyboard;
-  assert.equal(kbExtras[1][0].text, '🎟️ Resgatar Cupons no Mercado Livre');
-  assert.equal(kbExtras[2][0].text, '🔔 Criar alerta');
-  assert.equal(kbExtras[2][1].text, '📲 Mandar no Zap');
-  const kbSemExtras = L.botaoCompra(ofertas[0], 'https://mercadolivre.com/sec/kh1', cfgComunidade()).inline_keyboard;
-  assert.equal(kbSemExtras.length, 2);
-  assert.ok(!kbSemExtras.flat().some((b) => b.text === '🔔 Criar alerta'));
+  // Botões poluídos (Ver na loja / Resgatar Cupons / Criar alerta / Mandar no Zap) removidos por padrão; nome clicável e cupom no texto
+  const txtKhamrah = L.textoTelegram(ofertas[0], 'https://mercadolivre.com/sec/kh1', cfg);
+  assert.match(txtKhamrah, /href="https:\/\/mercadolivre\.com\/sec\/kh1"/);
+  assert.match(txtKhamrah, /<code>ARABE20<\/code>/);
+  assert.equal(L.botaoCompra(ofertas[0], 'https://mercadolivre.com/sec/kh1', cfg), undefined);
+  assert.equal(L.botaoCompra(ofertas[0], 'https://mercadolivre.com/sec/kh1', cfgComunidade()), undefined);
 
   // /buscar, /cupons, /tophoje pelo membro
   const cBusca = L.classificarUpdate(msgGrupoPriv('/buscar khamrah'), HS, cfg, AGORA, { bot: 'grupo' });
@@ -657,7 +655,7 @@ test('Moda separada + 10 lojas de moda, cupons de loja (19h/tech/resgate prévio
   assert.equal(postsGrupoLote.length, 1, 'No supergrupo publica apenas 1 vez (Top) para não spamar 7 tópicos');
   assert.equal(postsGrupoLote[0].payload.message_thread_id, 3);
   assert.match(postsGrupoLote[0].payload.text || postsGrupoLote[0].payload.caption, /Resgate agora na aba de cupons/);
-  assert.equal(postsGrupoLote[0].payload.reply_markup.inline_keyboard[0][0].text, '🎟️ Resgatar Cupons no Mercado Livre');
+  assert.equal(postsGrupoLote[0].payload.reply_markup, undefined);
   assert.ok(postsCanaisLote.length >= 4, 'Nos canais separados posta nos canais compatíveis + Top');
 
   // 4) Cupom restrito só a Tech (/cupom ml MELI15 só em tech) NÃO vai para Moda nem Beleza nem Top
@@ -683,10 +681,8 @@ test('Moda separada + 10 lojas de moda, cupons de loja (19h/tech/resgate prévio
   };
   const tgPrev = L.textoTelegram(oPrevio, 'https://www.mercadolivre.com.br/p/MLB11223344', cfg);
   assert.match(tgPrev, /FULL1811[\s\S]*Funcionando pra quem resgatou!/);
-  assert.match(tgPrev, /resgate os próximos na aba de cupons/);
-  const kbPrev = L.botaoCompra(oPrevio, 'https://www.mercadolivre.com.br/p/MLB11223344', cfg).inline_keyboard;
-  assert.equal(kbPrev[1][0].text, '🎟️ Resgatar Cupons no Mercado Livre');
-  assert.equal(kbPrev[1][0].url, 'https://mercadolivre.com/sec/cupons_vip');
+  assert.match(tgPrev, /https:\/\/mercadolivre\.com\/sec\/cupons_vip[\s\S]*resgate os próximos na aba de cupons/);
+  assert.equal(L.botaoCompra(oPrevio, 'https://www.mercadolivre.com.br/p/MLB11223344', cfg), undefined);
 
   const baseRad = L.planejarFontesRadar(cfg, { modo: 'comando', ts: AGORA });
   assert.ok(baseRad.fontesWeb.some((f) => f.tipo === 'promobit_cupons'));

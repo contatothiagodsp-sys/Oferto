@@ -168,11 +168,12 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
     loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString(),
   };
   const tg = L.textoTelegram(oferta, 'https://l/tg?a=1&b=2', cfg);
-  assert.match(tg, /Contém link de afiliado/);
+  assert.match(tg, /#publi/);
+  assert.match(tg, /Como Associado da Amazon/);
+  assert.doesNotMatch(tg, /Frete: confira na loja/);
   assert.match(tg, /&lt;Mondial&gt;/);
   assert.match(tg, /a=1&amp;b=2/);
   assert.match(tg, /12% abaixo do menor preço dos últimos 90 dias \(R\$ 399,90\)/);
-  assert.match(tg, /24\/11 às 12:30/);
   assert.ok(tg.length < 1024);
   assert.match(L.textoWhatsAppCanal(oferta, 'https://l/wac', cfg), /_Contém link de afiliado\. Como Associado da Amazon, ganhamos com compras qualificadas\._/);
   const wag = L.textoWhatsAppGrupo(oferta, 'https://l/wag', cfg);
@@ -183,7 +184,7 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
   assert.match(x, /^#publi/);
   assert.match(L.textoXResposta('https://l/x'), /afiliado/);
   assert.doesNotMatch(tg, /Cupom/);
-  assert.deepEqual(L.botaoCompra(oferta, 'https://l/tg'), { inline_keyboard: [[{ text: '🛒 Ver na Amazon', url: 'https://l/tg' }]] });
+  assert.equal(L.botaoCompra(oferta, 'https://l/tg'), undefined);
 });
 
 test('textos: #publi na 1ª linha, aviso de preço, selo honesto e cobertura do histórico', () => {
@@ -192,11 +193,13 @@ test('textos: #publi na 1ª linha, aviso de preço, selo honesto e cobertura do 
   const todos = (o) => [L.textoTelegram(o, 'https://l', cfg), L.textoWhatsAppCanal(o, 'https://l', cfg), L.textoWhatsAppGrupo(o, 'https://l', cfg), L.textoX(o, cfg)];
   for (const t of todos(base)) {
     assert.match(t.split('\n')[0], /#publi/);
+  }
+  for (const t of [L.textoWhatsAppCanal(base, 'https://l', cfg), L.textoWhatsAppGrupo(base, 'https://l', cfg), L.textoX(base, cfg)]) {
     assert.match(t, /24\/11 às 12:30/);
   }
-  assert.match(L.textoTelegram(base, 'https://l', cfg), /Preço e disponibilidade de 24\/11 às 12:30, sujeitos a alteração\. Frete: confira na loja\./);
+  assert.doesNotMatch(L.textoTelegram(base, 'https://l', cfg), /Preço e disponibilidade de|Frete: confira na loja/);
   assert.match(L.textoTelegram(base, 'https://l', cfg), /Como Associado da Amazon, ganhamos com compras qualificadas\./);
-  assert.doesNotMatch(L.textoTelegram(Object.assign({}, base, { loja: 'shopee' }), 'https://l', cfg), /Associado da Amazon/);
+  assert.doesNotMatch(L.textoTelegram(Object.assign({}, base, { loja: 'shopee' }), 'https://l', cfg), /Associado da Amazon|Contém link de afiliado/);
   // 0%: sem a palavra "desconto"
   const zero = Object.assign({}, base, { preco: 399.9, desconto_pct: 0 });
   for (const t of todos(zero)) {
@@ -229,20 +232,20 @@ test('amazon.mostrar_preco = nao: posts da Amazon sem valor nem %', () => {
     assert.match(t, /Veja o preço atual na Amazon/);
   }
   const share = L.botaoCompra(o, 'https://l', Object.assign({}, cfg, { telegram: Object.assign({}, cfg.telegram, { grupo_link: 'https://t.me/+g' }) }));
-  assert.doesNotMatch(decodeURIComponent(share.inline_keyboard[1][0].url), /R\$/);
+  assert.doesNotMatch(decodeURIComponent(share.inline_keyboard[0][0].url), /R\$/);
   // outras lojas continuam com preço
   assert.match(L.textoTelegram(Object.assign({}, o, { loja: 'shopee' }), 'https://l', cfg), /R\$ 349,90/);
 });
 
-test('botaoCompra: compra + Chamar amigos (só com grupo_link)', () => {
+test('botaoCompra: sem botões poluídos por padrão; Chamar amigos (só com grupo_link)', () => {
   const o = { titulo: 'Air Fryer & Cia', preco: 349.9, loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString() };
-  assert.deepEqual(L.botaoCompra(o, 'https://l/tg', cfgTeste()), { inline_keyboard: [[{ text: '🛒 Ver na Amazon', url: 'https://l/tg' }]] });
+  assert.equal(L.botaoCompra(o, 'https://l/tg', cfgTeste()), undefined);
   const cfg = cfgTeste([{ chave: 'grupo_link', valor: 'https://t.me/+AbC' }]);
   const b = L.botaoCompra(o, 'https://l/tg', cfg).inline_keyboard;
-  assert.equal(b.length, 2);
-  assert.equal(b[1][0].text, '📣 Chamar amigos');
-  const m = b[1][0].url.match(/^https:\/\/t\.me\/share\/url\?url=([^&]+)&text=(.+)$/);
-  assert.ok(m, b[1][0].url);
+  assert.equal(b.length, 1);
+  assert.equal(b[0][0].text, '📣 Chamar amigos');
+  const m = b[0][0].url.match(/^https:\/\/t\.me\/share\/url\?url=([^&]+)&text=(.+)$/);
+  assert.ok(m, b[0][0].url);
   assert.equal(decodeURIComponent(m[1]), 'https://t.me/+AbC');
   assert.match(decodeURIComponent(m[2]), /Air Fryer & Cia por R\$ 349,90/);
 });
@@ -275,7 +278,8 @@ test('cupom: lido no /oferta, guardado nos links manuais e mostrado nos textos',
   assert.ok(r.ok, JSON.stringify(r.erros));
   assert.equal(r.oferta.links_manuais.cupom, 'BF<10>');
   const o = Object.assign({}, r.oferta, { links_manuais: JSON.stringify(r.oferta.links_manuais), min90: 349.9, desconto_pct: 14.3, data: new Date(AGORA).toISOString() });
-  assert.match(L.textoTelegram(o, 'https://l', cfg), /<code>BF&lt;10&gt;<\/code>[\s\S]*Preço com cupom da loja, sujeito a limite e validade/);
+  assert.match(L.textoTelegram(o, 'https://l', cfg), /<code>BF&lt;10&gt;<\/code>/);
+  assert.doesNotMatch(L.textoTelegram(o, 'https://l', cfg), /sujeito a limite e validade/);
   assert.match(L.textoWhatsAppCanal(o, 'https://l', cfg), /Cupom: \*BF<10>\*\n_Preço com cupom da loja, sujeito a limite e validade\._/);
   const x = L.textoX(o, cfg);
   assert.match(x, /Cupom BF<10>: preço com cupom da loja, sujeito a limite e validade/);
@@ -877,7 +881,7 @@ test('canais por categoria: posta no canal, grava tgc, encerra lá também e apa
     ['@ofertas_casa', undefined, 'tgc', 'casa'], ['-1009876543210', undefined, 'tgc', 'top'],
   ]);
   assert.match(grupo[2].payload.text, /tag=marca-casatg-20/);
-  assert.equal(grupo[2].payload.reply_markup.inline_keyboard[0][0].url.includes('tag=marca-casatg-20'), true);
+  assert.equal(grupo[2].payload.reply_markup, undefined);
   assert.equal(grupo[3].payload.disable_notification, undefined); // canal do Top notifica (fora das 22h–8h)
   assert.match(pub.chamadas.find((c) => c.metodo === 'sendMessage' && c.bot === 'admin').payload.text, /\+ 2 canal\(is\)/);
   const res = L.resultadoChamadas(grupo, grupo.map((_, i) => ({ ok: true, result: { message_id: 60 + i } })), cfg, AGORA);
@@ -1141,4 +1145,22 @@ test('admin manda /oferta ao bot publicador no privado: vira oferta no bot de ap
   const r = L.classificarUpdate(privado('/oferta casa https://www.amazon.com.br/dp/B0ABCDEF12\nT\npreço 10', 111), HS, cfg, AGORA, { bot: 'grupo' });
   assert.deepEqual([r.rota, r.chat_id, r.oferta.categoria], ['oferta', 111, 'casa']);
   assert.equal(L.classificarUpdate(privado('/oferta casa https://www.amazon.com.br/dp/B0ABCDEF12', 999), HS, cfg, AGORA, { bot: 'grupo' }).rota, 'start');
+});
+
+test('ganchoOferta: prioriza ganchos curtos ligados ao produto e evita poluição genérica', () => {
+  const cfg = cfgTeste();
+  const casos = [
+    [{ titulo: 'Smartphone Samsung Galaxy S24 256GB', categoria: 'tech', preco: 2999, min90: 4999, desconto_pct: 40 }, /SMARTPHONE/],
+    [{ titulo: 'Air Fryer Mondial 4L', categoria: 'casa', preco: 249, min90: 399, desconto_pct: 37 }, /COZINHA/],
+    [{ titulo: 'Perfume Lattafa Asad 100ml', categoria: 'perfumes', preco: 179, min90: 299, desconto_pct: 40 }, /PERFUME ÁRABE|FRAGRÂNCIA ÁRABE/],
+    [{ titulo: 'Creatina Monohidratada 300g', categoria: 'saude', preco: 59, min90: 99, desconto_pct: 40 }, /SUPLEMENTOS/],
+    [{ titulo: 'Tênis Nike Revolution 7', categoria: 'moda', preco: 249, min90: 399, desconto_pct: 37 }, /CALÇADOS/],
+  ];
+  for (const [o, re] of casos) {
+    const g = L.ganchoOferta(o, cfg);
+    assert.match(g, re);
+    assert.doesNotMatch(g, /DESCONTAÇO REAL|QUEDA BRUSCA/i);
+  }
+  assert.doesNotMatch(L.ganchoOferta({ titulo: 'Item X', preco: 100, min90: 100, desconto_pct: 0 }, cfg), /desconto/i);
+  assert.equal(L.ganchoOferta({ titulo: 'Air Fryer', preco: 200 }, { copy: { chamativa: false } }), '');
 });

@@ -96,3 +96,16 @@ flowchart LR
   - `lerPaginaProduto` passou a descartar logos genéricos da Amazon (`/images/G/`), aceitar `&quot;` em `data-a-dynamic-image` e casar `landingImage` independentemente da ordem de `id`/`src`; também passou a aceitar URLs protocol-relative `//...` em `og:image`/`twitter:image`.
   - `aplicarMercadoNosCandidatos` em `lib/radar.js` agora também substitui `wsrv.nl` pela `imagem_mercado` normalizada quando disponível.
 - **Validação:** `npm test` (**91/91** passando, `0` falhas), `GET /healthz` (`ok`), `POST /webhook/oferto-saude` (`{"ok":true,"problemas":[],"avisos":0}`), execuções recentes `689`, `692`, `693`, `695` de `wfRadar000000001` em `success` e últimas ofertas `bfx_ofertas` (`id 67–76`) publicadas com URLs reais de imagem (`http2.mlstatic.com`, `m.media-amazon.com`, `image.zst.com.br`).
+
+### 🔧 Correção 18/11 (Rodada 3 `/boost`) — Classificação estrita de categorias + copy enxuta sem poluição de botões
+- **Classificação & Anti-vazamento ([radar.js](file:///C:/Users/tHg/Documents/Oferto/lib/radar.js), [extrator.js](file:///C:/Users/tHg/Documents/Oferto/lib/extrator.js), [fluxos.js](file:///C:/Users/tHg/Documents/Oferto/lib/fluxos.js)):**
+  - `lerPromobitHtml`: `categoria_hint` só é herdado por itens de `serverOffers`, nunca por `serverFeaturedOffers` ou `sidebarFeaturedOffers`.
+  - `selecionarCandidatosRadar` & `finalizarRadar`: não descartam prematuramente itens enriquecíveis em `/radar <categoria>`, revalidam `catsPerm` após enriquecimento e descartam `sem_categoria` também quando `modoAuto` (`radar.publicar_direto`) está ativo.
+  - `enriquecerCandidatosComPaginas`: reclassifica com `lido.titulo` no contexto e substitui `/images/G/`.
+  - `avaliarNovaOferta` (`lib/fluxos.js`): não herda `rep.anterior.categoria` errado quando `classificarCategoria` tem `confianca > 0`.
+  - `PALAVRAS_CAT` (`lib/extrator.js`): removido `'pet '` genérico de `casa` (evitando falso positivo em `"Frasco PET"`) e ampliadas marcas/termos de `perfumes`.
+- **Copy Enxuta & Botões Limpos ([textos.js](file:///C:/Users/tHg/Documents/Oferto/lib/textos.js), [copy.js](file:///C:/Users/tHg/Documents/Oferto/lib/copy.js), [comunidade.js](file:///C:/Users/tHg/Documents/Oferto/lib/comunidade.js)):**
+  - Removido o rodapé longo (`🕒 Preço e disponibilidade..., sujeitos a alteração. Frete: confira na loja. · Preço com cupom...`) dos posts do Telegram; mantido `#publi` na 1ª linha e a frase obrigatória de Associado apenas em posts da Amazon.
+  - `ganchoOferta` prioriza ganchos curtos ligados ao produto antes de frases genéricas.
+  - Nome do produto já aponta diretamente para o link de afiliado da loja e o cupom/link da aba de cupons permanece no corpo do texto; removidos os botões poluídos (`🛒 Ver no ...`, `🎟️ Resgatar Cupons ...`, `🔔 Criar alerta`, `📲 Mandar no Zap`).
+- **Validação:** `npm run build` OK (8 workflows), `npm test` (**94/94** passando, `0` falhas), redeploy em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`), execuções `715`–`723` de `wfRadar000000001` em `success` e `id 91` (`POLO RED`) classificado corretamente em `perfumes`.

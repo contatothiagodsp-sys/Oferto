@@ -598,7 +598,7 @@ test('Modo Somente Canais: /canais, /logo, /divulgar (com logo), Outros canais e
   assert.equal(pubCh.ok, true);
   const postCanal = pubCh.chamadas.find((c) => c.bot === 'grupo' && c.payload.chat_id === '@oferto_tech_games');
   assert.ok(postCanal);
-  assert.ok(postCanal.payload.reply_markup.inline_keyboard[1][0].url.includes('t.me/oferto_pub_bot?start=canais'));
+  assert.ok(postCanal.payload.reply_markup.inline_keyboard[0][0].url.includes('t.me/oferto_pub_bot?start=canais'));
 
   // 3) /divulgar tech posta com sendPhoto usando o logo configurado para os outros canais + botão WhatsApp para o admin
   const clsDiv = L.classificarUpdate(msgPriv('/divulgar tech'), HS, cfg, AGORA);
