@@ -332,7 +332,7 @@ return [{ json: LIB.linkCurtoDoUpdate(w.body, cfg) || {} }];`, { lib: true }), 6
       jsonHeaders: '={{ JSON.stringify({ "User-Agent": "Mozilla/5.0 (compatible; OfertoBot/1.0)" }) }}',
       options: {
         redirect: { redirect: { followRedirects: false } },
-        response: { response: { fullResponse: true, neverError: true, responseFormat: 'text' } },
+        response: { response: { fullResponse: true, neverError: true, responseFormat: 'text', outputPropertyName: 'body' } },
         timeout: 10000,
       },
     },
@@ -342,24 +342,29 @@ return [{ json: LIB.linkCurtoDoUpdate(w.body, cfg) || {} }];`, { lib: true }), 6
   wf.add(code('Classificar', `
 const w = $('Webhook Telegram').first().json;
 const lc = $('Link curto?').first().json;
-const body = lc.curto && $('Abrir link curto').isExecuted ? LIB.expandirUpdate(w.body, lc.curto, $('Abrir link curto').first().json).body : w.body;
-return [{ json: LIB.classificarUpdate(body, w.headers, cfg, Date.now(), w.query) }];`, { lib: true }), 660, 600);
+const respCurto = lc.curto && $('Abrir link curto').isExecuted ? $('Abrir link curto').first().json : null;
+const exp = lc.curto && respCurto ? LIB.expandirUpdate(w.body, lc.curto, respCurto) : { body: w.body, expandido: '' };
+const meta = lc.curto ? { curto: lc.curto, expandido: exp.expandido, resp_curto: respCurto } : null;
+return [{ json: LIB.classificarUpdate(exp.body, w.headers, cfg, Date.now(), w.query, meta) }];`, { lib: true }), 660, 600);
   wf.link('Abrir link curto', 'Classificar');
   wf.link('Abrir link curto?', 'Classificar', 1);
   // Chamadas imediatas de qualquer rota (ex.: apagar do grupo o /oferta que um admin mandou lá).
   wf.add(itens('Chamadas imediatas', '$json.imediatas'), 880, 780);
   wf.add(httpTelegram('Telegram (imediatas)'), 1100, 780);
   wf.chain('Classificar', 'Chamadas imediatas', 'Telegram (imediatas)');
-  wf.add(switchExpr('Rota', "({ oferta: 0, callback: 1, membro: 2, convite: 3, responder: 4, pospub: 5, start: 6, sugestao: 7 })[$json.rota] ?? 8", 9), 880, 600);
+  wf.add(switchExpr('Rota', "({ oferta: 0, callback: 1, membro: 2, convite: 3, responder: 4, pospub: 5, start: 6, sugestao: 7, config: 8 })[$json.rota] ?? 9", 10), 880, 600);
   wf.link('Classificar', 'Rota');
 
-  // 0 · /oferta
-  // Antes do selo: resposta ao card (busca a oferta respondida) e Keepa (Amazon com keepa.chave e algo faltando).
-  wf.add(dtGet('Oferta respondida', 'bfx_ofertas', [['oferta_id', 'eq', "={{ ($json.resposta && $json.resposta.oferta_id) || '-' }}"]], { returnAll: false, limit: 1 }), 1100, -300);
+  // 0 · oferta (/oferta, /link ou link colado direto no privado)
+  // Antes do selo: resposta ao card, checagem de duplicata 24h, Keepa (opcional) e leitura gratuita da página HTML.
+  wf.add(dtGet('Oferta respondida', 'bfx_ofertas', [
+    ['oferta_id', 'eq', "={{ ($json.resposta && $json.resposta.oferta_id) || '-' }}"],
+    ['produto_id', 'eq', "={{ ($json.oferta && $json.oferta.produto_id) || '-' }}"],
+  ], { match: 'anyCondition' }), 1100, -300);
   wf.add(code('Preparar oferta', `
 const cls = $('Classificar').first().json;
 const rows = $input.all().map((i) => i.json).filter((r) => r.oferta_id);
-return [{ json: LIB.prepararOferta(cls, rows, cfg) }];`, { lib: true, nota: 'Monta a consulta à Keepa ou remonta a oferta respondida com o ref90 novo.' }), 1320, -300);
+return [{ json: LIB.prepararOferta(cls, rows, cfg) }];`, { lib: true, nota: 'Monta consulta à Keepa, leitura gratuita de página ou remonta oferta respondida.' }), 1320, -300);
   wf.add(switchExpr('Consultar Keepa?', '$json.keepa_http ? 0 : 1', 2), 1540, -300);
   wf.add({
     name: 'Keepa', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
@@ -374,9 +379,29 @@ return [{ json: LIB.prepararOferta(cls, rows, cfg) }];`, { lib: true, nota: 'Mon
 const e = $('Preparar oferta').first().json;
 const resp = e.keepa_http && $('Keepa').isExecuted ? $('Keepa').first().json : null;
 return [{ json: LIB.juntarKeepa(e, resp, cfg) }];`, { lib: true, nota: 'O que o admin digitou tem prioridade; a Keepa preenche o que falta.' }), 1980, -300);
-  wf.add(switchExpr('Oferta completa?', "$json.rota === 'oferta' ? 0 : 1", 2), 2200, -300);
-  wf.add(itens('Erro da oferta', '$json.chamadas'), 2420, -200);
-  wf.add(httpTelegram('Telegram (erro da oferta)'), 2640, -200);
+  wf.add(switchExpr('Consultar página?', '$json.pagina_http ? 0 : 1', 2), 2200, -300);
+  wf.add({
+    name: 'Ler página do produto', type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
+    notes: 'Lê gratuitamente metadados públicos da página (JSON-LD, OpenGraph, preço e imagem). Erro não para o fluxo.',
+    parameters: {
+      method: 'GET',
+      url: '={{ $json.pagina_http.url }}',
+      sendHeaders: true,
+      specifyHeaders: 'json',
+      jsonHeaders: '={{ JSON.stringify($json.pagina_http.headers) }}',
+      options: {
+        response: { response: { fullResponse: true, neverError: true, responseFormat: 'text', outputPropertyName: 'body' } },
+        timeout: 12000,
+      },
+    },
+  }, 2420, -400);
+  wf.add(code('Juntar página', `
+const e = $('Juntar Keepa').first().json;
+const resp = e.pagina_http && $('Ler página do produto').isExecuted ? $('Ler página do produto').first().json : null;
+return [{ json: LIB.juntarPagina(e, resp, cfg) }];`, { lib: true, nota: 'Completa título, preço, preço antigo e imagem lidos gratuitamente da página.' }), 2640, -300);
+  wf.add(switchExpr('Oferta completa?', "$json.rota === 'oferta' ? 0 : 1", 2), 2860, -300);
+  wf.add(itens('Erro da oferta', '$json.chamadas'), 3080, -200);
+  wf.add(httpTelegram('Telegram (erro da oferta)'), 3300, -200);
   wf.add(itens('Marcar substituída', '$json.update'), 1540, -500);
   wf.add(dtUpdate('Atualizar substituída', 'bfx_ofertas', 'oferta_id'), 1760, -500);
   wf.link('Rota', 'Oferta respondida', 0);
@@ -384,14 +409,18 @@ return [{ json: LIB.juntarKeepa(e, resp, cfg) }];`, { lib: true, nota: 'O que o 
   wf.link('Consultar Keepa?', 'Keepa', 0);
   wf.link('Keepa', 'Juntar Keepa');
   wf.link('Consultar Keepa?', 'Juntar Keepa', 1);
-  wf.chain('Juntar Keepa', 'Oferta completa?');
+  wf.chain('Juntar Keepa', 'Consultar página?');
+  wf.link('Consultar página?', 'Ler página do produto', 0);
+  wf.link('Ler página do produto', 'Juntar página');
+  wf.link('Consultar página?', 'Juntar página', 1);
+  wf.chain('Juntar página', 'Oferta completa?');
   wf.link('Oferta completa?', 'Histórico do produto', 0);
   wf.link('Oferta completa?', 'Erro da oferta', 1);
   wf.chain('Erro da oferta', 'Telegram (erro da oferta)');
   wf.chain('Preparar oferta', 'Marcar substituída', 'Atualizar substituída');
   wf.add(dtGet('Histórico do produto', 'bfx_precos', [['produto_id', 'eq', '={{ $json.oferta.produto_id }}']]), 1100, 100);
   wf.add(code('Avaliar oferta', `
-const cls = $('Juntar Keepa').first().json;
+const cls = $('Juntar página').first().json;
 const rows = $input.all().map((i) => i.json).filter((r) => r.produto_id);
 return [{ json: LIB.avaliarNovaOferta(cls, rows, cfg) }];`, { lib: true }), 1320, 100);
   wf.add(itens('Linhas de preço', '$json.precosNovos'), 1540, 0);
@@ -400,11 +429,21 @@ return [{ json: LIB.avaliarNovaOferta(cls, rows, cfg) }];`, { lib: true }), 1320
   wf.add(dtInsert('Gravar oferta', 'bfx_ofertas'), 1760, 180);
   wf.add(itens('Card de aprovação', "$('Avaliar oferta').first().json.chamadas"), 1980, 180);
   wf.add(httpTelegram('Telegram (card)'), 2200, 180);
+  wf.add(code('Auto-publicar?', `
+const av = $('Avaliar oferta').first().json;
+if (!av.auto_publicar) return [];
+const cardResp = $input.first() && $input.first().json;
+const cardMsgId = (cardResp && cardResp.result && cardResp.result.message_id) || null;
+return [{ json: {
+  oferta: av.auto_publicar.oferta,
+  linkItens: av.auto_publicar.linkItens,
+  ctx: { ts: av.auto_publicar.ts, chat_id: av.auto_publicar.chat_id, message_id: cardMsgId, so_textos: !!av.auto_publicar.so_textos },
+} }];`, { cfg: false, nota: 'Com auto.publicar_direto = sim (/modo rapido), publica sem exigir clique.' }), 2420, 180);
   wf.chain('Histórico do produto', 'Avaliar oferta');
   wf.chain('Avaliar oferta', 'Linhas de preço', 'Gravar preços');
-  wf.chain('Avaliar oferta', 'Linha da oferta', 'Gravar oferta', 'Card de aprovação', 'Telegram (card)');
+  wf.chain('Avaliar oferta', 'Linha da oferta', 'Gravar oferta', 'Card de aprovação', 'Telegram (card)', 'Auto-publicar?');
 
-  // 1 · clique nos botões
+  // 1 · clique nos botões (e convergência da publicação automática)
   wf.add(dtGet('Buscar oferta', 'bfx_ofertas', [['oferta_id', 'eq', '={{ $json.oferta_id }}']], { returnAll: false, limit: 1 }), 1100, 520);
   wf.add(code('Decidir', `
 const cb = $('Classificar').first().json;
@@ -415,28 +454,36 @@ return [{ json: LIB.decidirCallback(cb, $input.all().map((i) => i.json), cfg) }]
   wf.add(itens('Atualização', '$json.update'), 1540, 480);
   // Só muda a linha que ainda está "pendente": num clique duplo simultâneo, o segundo não acha linha e não publica.
   wf.add(dtUpdate('Atualizar oferta', 'bfx_ofertas', 'oferta_id', 'update', [['status', 'eq', 'pendente']]), 1760, 480);
-  wf.add(code('Itens de link', `
+  wf.add(code('Plano do clique', `
+const cls = $('Classificar').first().json;
 const d = $('Decidir').first().json;
-// Publica só se o "Atualizar oferta" mudou esta oferta de pendente para publicando.
 if (d.proximo !== 'publicar' || !$input.all().some((i) => i.json.oferta_id === d.oferta.oferta_id)) return [];
+return [{ json: {
+  oferta: d.oferta,
+  linkItens: d.linkItens,
+  ctx: { ts: cls.ts, chat_id: cls.chat_id, message_id: cls.message_id, so_textos: !!d.so_textos },
+} }];`, { cfg: false }), 1980, 480);
+  wf.add(code('Plano de links', 'return [{ json: $input.first().json }];', { cfg: false }), 2160, 480);
+  wf.add(code('Itens de link', `
+const d = $input.first().json;
 const sh = d.linkItens.filter((i) => i.metodo === 'shopee');
-return (sh.length ? sh : d.linkItens).map((j) => ({ json: j }));`, { cfg: false }), 1980, 480);
+return (sh.length ? sh : d.linkItens).map((j) => ({ json: j }));`, { cfg: false }), 2340, 480);
   wf.add(switchExpr('Precisa da Shopee?', "$json.metodo === 'shopee' ? 0 : 1", 2), 1760, 600);
   wf.add(httpShopee('Shopee: link curto'), 1980, 540);
   wf.add(code('Ler links Shopee', `
-const todos = $('Decidir').first().json.linkItens;
+const todos = $('Plano de links').first().json.linkItens;
 const resp = $input.all().map((i) => i.json);
 let k = 0;
 return todos.map((it) => ({ json: it.metodo === 'shopee' ? LIB.lerRespostasShopee([it], [resp[k++]])[0] : it }));`, { lib: true, cfg: false }), 2200, 540);
   wf.add(code('Publicar', `
-const cls = $('Classificar').first().json;
-const d = $('Decidir').first().json;
+const p = $('Plano de links').first().json;
 const itensLink = $input.all().map((i) => i.json);
-return [{ json: LIB.prepararPublicacao(d.oferta, itensLink, cfg, { ts: cls.ts, chat_id: cls.chat_id, message_id: cls.message_id }) }];`, { lib: true }), 2420, 640);
+return [{ json: LIB.prepararPublicacao(p.oferta, itensLink, cfg, p.ctx) }];`, { lib: true }), 2420, 640);
   wf.link('Rota', 'Buscar oferta', 1);
   wf.chain('Buscar oferta', 'Decidir');
   wf.chain('Decidir', 'Respostas do clique', 'Telegram (clique)');
-  wf.chain('Decidir', 'Atualização', 'Atualizar oferta', 'Itens de link', 'Precisa da Shopee?');
+  wf.chain('Decidir', 'Atualização', 'Atualizar oferta', 'Plano do clique', 'Plano de links', 'Itens de link', 'Precisa da Shopee?');
+  wf.link('Auto-publicar?', 'Plano de links');
   wf.link('Precisa da Shopee?', 'Shopee: link curto', 0);
   wf.chain('Shopee: link curto', 'Ler links Shopee', 'Publicar');
   wf.link('Precisa da Shopee?', 'Publicar', 1);
@@ -573,6 +620,14 @@ return LIB.filtrarSugestao(cls, estado, cls.ts).map((c) => ({ json: c }));`, { l
   wf.add(httpTelegram('Telegram (sugestão)'), 1320, 2120);
   wf.link('Rota', 'Antiflood', 7);
   wf.chain('Antiflood', 'Telegram (sugestão)');
+
+  // 8 · /modo e /config: salva ajustes rápidos na bfx_config e responde no privado
+  wf.add(itens('Upserts de config', '$json.upserts'), 1100, 2280);
+  wf.add(Object.assign(dtUpdate('Salvar config rápida', 'bfx_config', 'chave', 'upsert'), { alwaysOutputData: true }), 1320, 2280);
+  wf.add(itens('Resposta de config', `${CLS}.chamadas`), 1540, 2280);
+  wf.add(httpTelegram('Telegram (config)'), 1760, 2280);
+  wf.link('Rota', 'Upserts de config', 8);
+  wf.chain('Upserts de config', 'Salvar config rápida', 'Resposta de config', 'Telegram (config)');
   return wf;
 }
 

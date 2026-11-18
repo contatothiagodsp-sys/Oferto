@@ -22,7 +22,13 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `rastrear_entradas` | `sim` | sim/nao: grava entradas e saídas por link de convite (1 execução do n8n por evento) |
 | `campanha_prefixo` | `bf26` | Prefixo dos sub-IDs |
 | `fuso` | `America/Sao_Paulo` | Fuso horário dos textos |
+| `auto.link_direto` | `sim` | sim/nao: no privado, basta colar ou encaminhar o link do produto que o bot extrai título, preço, imagem e categoria sem exigir /oferta |
+| `auto.publicar_direto` | `nao` | sim/nao: publica direto no grupo do Telegram e já entrega o texto do WhatsApp sem precisar clicar em Aprovar (ative rápido com /modo rapido) |
+| `auto.categoria_padrao` | `casa` | Categoria usada quando o bot não identifica pelas palavras do produto (casa, beleza, bebe, tech) |
+| `copy.chamativa` | `sim` | sim/nao: gera ganchos persuasivos, comparação De/Por e economia em R$ nos textos de Telegram e WhatsApp para atrair cliques |
+| `publicar.plataformas` | `wag,wac,x` | Quais textos prontos enviar ao aprovar: wag (Grupo WhatsApp), wac (Canal WhatsApp), x (X/Twitter). Use só wag para focar em Telegram + Grupo WhatsApp |
 | `selo.tolerancia_pct` | `0` | Tolerância do selo em % acima do menor preço de 90 dias (recomendado: 0) |
+| `selo.exigir_ref90` | `sim` | sim/nao: exigir referência de 90 dias no /oferta e na coleta Shopee (links colados direto já liberam aprovação sem ref90 quando não estão acima do histórico) |
 | `shopee.app_id` |  | App ID da Shopee Affiliate Open API |
 | `shopee.secret` |  | Secret da Shopee Affiliate Open API |
 | `shopee.endpoint` | `https://open-api.affiliate.shopee.com.br/graphql` | Endpoint GraphQL (VERIFICAR no painel) |
@@ -33,7 +39,8 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `shopee.enviar_sem_ref` | `sim` | sim/nao: enviar candidatas sem referência de 90 dias (para você informar o ref90) |
 | `telegram_api` | `https://api.telegram.org` | Endereço da Bot API (não altere; usado em testes) |
 | `link_curto_api` |  | Deixe vazio (usado só em testes para abrir links curtos a.co/amzn.to) |
-| `amazon.tag_padrao` |  | Tag usada quando não há tag específica (perde a atribuição por plataforma) |
+| `pagina_api` |  | Deixe vazio (usado só em testes para ler o HTML da página do produto) |
+| `amazon.tag_padrao` |  | Tag única da Amazon usada quando não há tag específica por categoria/plataforma (ex.: suatag-20) |
 | `tunel.dominio` |  | Servidor local: domínio próprio aceito pelo workflow 90 · Túnel além de trycloudflare.com e ngrok (ex.: bot.seudominio.com.br). Vazio = só esses |
 | `saude.ultimo_alerta` |  | Servidor local: gerado pelo workflow 91 · Saúde (anti-spam dos alertas). Não precisa mexer |
 | `amazon.mostrar_preco` | `sim` | sim/nao: os posts da Amazon mostram o preço e o %. Com nao, dizem só "no menor preço dos últimos 90 dias" e "Veja o preço atual na Amazon" (use se os termos exigirem preço vindo da API oficial) |

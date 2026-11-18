@@ -35,11 +35,33 @@ http.createServer((req, res) => {
     if (req.url.startsWith('/mock/barrar')) { barrar = Number(req.url.split('/')[3] || 1); res.end('ok'); return; }
     if (req.url.startsWith('/mock/erro-webhook/')) { erroWebhook = req.url.endsWith('/on'); res.end('ok'); return; }
     if (req.url.startsWith('/curto?')) {
-      // Link curto (a.co): responde 301 com o endereço completo no Location, como a Amazon.
+      // Link curto (a.co, amzn.to, mercadolivre.com/sec, s.shopee.com.br): responde 301 com Location.
       const u = new URL(req.url, 'http://mock').searchParams.get('u') || '';
       fs.appendFileSync(LOG, JSON.stringify({ api: 'curto', u }) + '\n');
-      if (/a\.co\//.test(u)) { res.writeHead(301, { Location: 'https://www.amazon.com.br/dp/B0CURTO123?ref_=cm_sw_r_apan' }); res.end(); }
+      if (/a\.co\/|amzn\.to\//.test(u)) { res.writeHead(301, { Location: 'https://www.amazon.com.br/dp/B0CURTO123?ref_=cm_sw_r_apan' }); res.end(); }
+      else if (/mercadolivre\.com\/sec\//.test(u)) { res.writeHead(302, { Location: 'https://www.mercadolivre.com.br/fone-bluetooth-jbl-tune-520bt-preto/p/MLB19876543' }); res.end(); }
+      else if (/s\.shopee\.com\.br\//.test(u)) { res.writeHead(302, { Location: 'https://shopee.com.br/opaanlp/987/654321' }); res.end(); }
       else { res.writeHead(404); res.end('not found'); }
+      return;
+    }
+    if (req.url.startsWith('/pagina?')) {
+      const u = new URL(req.url, 'http://mock').searchParams.get('u') || '';
+      fs.appendFileSync(LOG, JSON.stringify({ api: 'pagina', u }) + '\n');
+      if (/bloqueado/i.test(u)) {
+        res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<html><title>Access Denied</title></html>');
+        return;
+      }
+      const html = '<html><head>' +
+        '<script type="application/ld+json">' + JSON.stringify({
+          '@type': 'Product',
+          name: 'Fone Bluetooth JBL Tune 520BT Preto',
+          image: 'https://img.example/jbl520.jpg',
+          offers: { '@type': 'Offer', price: '189.90', highPrice: '279.90' },
+        }) + '</script>' +
+        '</head><body></body></html>';
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(html);
       return;
     }
     if (req.url.startsWith('/product?')) {

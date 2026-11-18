@@ -1,14 +1,14 @@
-# Ofertô: bot de ofertas (Telegram + n8n)
+# Ofertô: bot automático de ofertas para afiliados (Telegram + WhatsApp + n8n — R$ 0 de custo)
 
-Automação da seção 4 do plano ("publicar uma vez, distribuir em quatro"):
+Automação "colou o link, está publicado":
 
 ```
-/oferta (você) ou coleta Shopee (a cada 2 h)
-        → cálculo do menor preço em 90 dias + selo ✓ Desconto real
-        → card de aprovação no seu Telegram (1 clique)
-        → post automático no tópico da categoria (supergrupo do Telegram)
-        → textos prontos para Canal WhatsApp, Grupo WhatsApp (alerta de preço) e X
-        → 1 link por plataforma, com sub-ID/tag próprio
+Só colar/encaminhar o link no Telegram (ou coleta automática Shopee a cada 2 h)
+        → expande links curtos preservando seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to…)
+        → extrai título, preço atual, preço "De:", cupom, imagem e categoria DE GRAÇA (sem API paga)
+        → gera copy persuasiva com gancho de atenção, economia em R$ e avisos do CONAR (#publi)
+        → publica no grupo do Telegram (1 clique no card, ou 0 cliques com /modo rapido)
+        → entrega o texto pronto do Grupo do WhatsApp com botão [📲 Enviar no WhatsApp (1 toque)]
 ```
 
 ## O que tem aqui
@@ -114,9 +114,40 @@ Para quem quer **só Tech**, por exemplo, sem conversa e sem os outros tópicos.
 
 Os canais aparecem no `/links`, no 👋 Comece aqui (rode `grupo.textos = atualizar`) e no `/start` do bot publicador. Os posts ficam em `bfx_posts` com `plataforma = tgc`. Use quantos quiser: `canal.top`, `canal.casa`, `canal.beleza`, `canal.bebe` e `canal.tech`.
 
-### 7. Teste
+### 7. Teste rápido (só colando o link!)
 
-Mande ao bot de aprovação:
+Primeiro, cadastre sua tag única da Amazon direto pelo chat (sem precisar criar 16 tags):
+
+```
+/config amazon.tag_padrao suatag-20
+```
+
+E se quiser focar **só em Grupo do Telegram + Grupo do WhatsApp** publicando direto sem nem precisar clicar em Aprovar:
+
+```
+/modo rapido
+```
+
+Agora **basta colar ou compartilhar do app qualquer link** na conversa privada com o bot (sem comando, sem categoria, sem digitar título nem preço!):
+
+```
+https://s.shopee.com.br/seu-link
+```
+ou
+```
+https://mercadolivre.com/sec/seu-link
+```
+ou
+```
+https://amzn.to/seu-link
+```
+
+O bot abre o link preservando seu código de afiliado, lê os metadados da página gratuitamente (título, preço, preço antigo "De:", imagem), escolhe a categoria sozinho, monta um texto chamativo com cálculo de economia e:
+- **No `/modo aprovar` (padrão, 1 clique):** envia o card pronto (com troca rápida de categoria em 1 toque e botão `📋 Só textos` caso você ainda não tenha grupo no Telegram). Toque em **✅ Aprovar**.
+- **No `/modo rapido` (0 cliques):** já publica direto no grupo do Telegram e te devolve na hora o texto do **Grupo do WhatsApp** com o botão **`[📲 Enviar no Grupo do WhatsApp]`** (1 toque abre o WhatsApp com o texto preenchido, sem risco de banimento do número!).
+- **Se alguma loja bloquear a leitura automática do preço:** o bot já identifica o produto e o seu link de afiliado e pede `"💬 Falta só o preço!"` — basta responder à mensagem só com o número (ex.: `249,90` ou `de 349,90 por 249,90 cupom CASA10`).
+
+Você também continua podendo usar o formato manual completo (`/oferta`) quando quiser informar `ref90` de 90 dias:
 
 ```
 /oferta casa
@@ -128,42 +159,17 @@ img https://link-da-imagem.jpg
 cupom BF10
 ```
 
-As linhas `img` e `cupom` são opcionais. Com cupom, informe em `preço` o valor **já com o cupom**; o post mostra o código para copiar com um toque e avisa "preço com cupom da loja, sujeito a limite e validade".
+### 8. Programas de afiliados (simplificado)
 
-Você deve receber o card. Clique **✅ Aprovar** e confira o post no tópico Casa & Eletro e as mensagens com os textos para WhatsApp e X. O post sai assim:
-
-```
-🏠 Casa & Eletro · #publi
-Air Fryer Mondial 4L
-
-💰 R$ 349,90 na Amazon
-🕒 Preço e disponibilidade de 24/11 às 12:30, sujeitos a alteração. Frete: confira na loja.
-✅ Desconto real: 12% abaixo do menor preço dos últimos 90 dias (R$ 399,90)
-🎟️ Cupom: BF10 (toque para copiar)
-Preço com cupom da loja, sujeito a limite e validade.
-
-👉 Ver na Amazon
-Contém link de afiliado. Como Associado da Amazon, ganhamos com compras qualificadas.
-[🛒 Ver na Amazon]
-[📣 Chamar amigos]   ← só com grupo_link preenchido
-```
-Antes, crie as tags da Amazon (passo 8); sem elas o card avisa **BLOQUEIO** e não mostra o botão de aprovar.
-
-### 8. Programas de afiliados
-
-- **Amazon:** no Associates Central, em **Gerenciar IDs de rastreamento**, crie uma tag por **categoria × plataforma** (16 tags; ex.: `ofertocasatg-20`, `ofertocasawac-20`…).
-  - Preencha as linhas `amazon.tag.casa_tg`, `amazon.tag.casa_wac` etc.
-  - `amazon.tag_padrao` serve de fallback, mas aí você perde a separação por plataforma.
-  - `amazon.mostrar_preco` (padrão `sim`): com `nao`, os posts da Amazon não mostram valor nem %; dizem "no menor preço dos últimos 90 dias" e "👉 Veja o preço atual na Amazon". Use se os termos exigirem preço vindo da API oficial.
-- **Shopee:** com acesso à **Affiliate Open API**, preencha `shopee.app_id` e `shopee.secret`. Ajuste as palavras-chave em `shopee.busca.<categoria>`, separadas por `;`. Depois, **Publish** no **02 · Coleta Shopee**.
-- **Mercado Livre:** sem API. Gere os links no gerador de links do ML e inclua no `/oferta`, um por plataforma:
-  ```
-  tg https://mercadolivre.com/sec/...
-  wac https://mercadolivre.com/sec/...
-  wag https://mercadolivre.com/sec/...
-  x https://mercadolivre.com/sec/...
-  ```
-- Por último, **Publish** no **03 · Relatório diário**.
+- **Amazon:** basta **1 tag** configurada com `/config amazon.tag_padrao suatag-20` (ou colar links `amzn.to/…` / `?tag=…` gerados no app/SiteStripe).
+  - Quem quiser atribuição separada por **categoria × plataforma** pode preencher `amazon.tag.casa_tg`, `amazon.tag.casa_wac` etc.
+  - `amazon.mostrar_preco` (padrão `sim`): com `nao`, os posts da Amazon não mostram valor nem %.
+- **Shopee:** funciona de dois jeitos (ambos grátis):
+  1. **Sem API:** compartilhe direto do app da Shopee (`https://s.shopee.com.br/…`); o bot mantém seu link curto de afiliado.
+  2. **Com Affiliate Open API (grátis):** preencha `shopee.app_id` e `shopee.secret` para gerar sub-IDs por plataforma e ligar o **02 · Coleta Shopee** automática a cada 2 h!
+- **Mercado Livre:** basta colar **1 link** do gerador de afiliados (`https://mercadolivre.com/sec/…` ou `meli.la/…`)! O bot descobre o produto real por trás do redirecionamento e mantém o seu link `/sec/` nos posts. (Se quiser um link por plataforma no `/oferta`, use as linhas `tg`, `wac`, `wag`, `x`).
+- **Magalu / Magazine Você / KaBuM! / AliExpress:** cole seu link de divulgador (`divulgador.magalu.com/…`, `magazinevoce.com.br/…`, `s.click.aliexpress.com/…` ou link Awin `?awc=…`) que o bot preserva o link de comissão e extrai título, preço e foto da página.
+- Por último, se quiser o resumo das 22h, clique em **Publish** no **03 · Relatório diário**.
 
 ### 9. Keepa (opcional): menor preço de 90 dias da Amazon automático
 
@@ -187,10 +193,12 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 
 | Comando | Faz |
 |---|---|
-| `/oferta <categoria> [top]` + linhas | Cria a oferta e manda o card. Categorias: `casa`, `beleza`, `bebe`, `tech`. `top` também publica no Top do Dia. |
-| `/oferta <categoria> <link da Amazon>` | Formato curto (precisa da Keepa ligada, passo 9). Veja abaixo. |
-| Link de compartilhar do app (`a.co/…`, `amzn.to/…`) | Aceito: o bot abre o link e usa o endereço completo. |
-| `/oferta` mandado **dentro de um tópico** do grupo (por admin) | O bot apaga a mensagem do grupo e manda o card no seu privado. Sem categoria na 1ª linha, vale a do tópico. |
+| **Só colar o link** (ou encaminhar do app) | Extrai título, preço, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto no `/modo rapido`). Aceita preço/cupom junto na mesma mensagem (`<link> 199,90 cupom OFF10`). |
+| `/modo rapido` · `/modo aprovar` · `/modo padrao` | Alterna entre **0 cliques** (publica direto no Telegram + entrega só Grupo WhatsApp) e **1 clique** (revisão no card). |
+| `/config` · `/config <chave> <valor>` | Mostra ou altera configurações pelo chat (ex.: `/config amazon.tag_padrao suatag-20`, `/config publicar.plataformas wag`). |
+| `/link [categoria] [top] <url>` | Igual a colar só o link, mas permite fixar a categoria ou `top` (também funciona dentro de um tópico do grupo). |
+| `/oferta <categoria> [top]` + linhas | Formato manual completo (para informar `ref90` de 90 dias, links por plataforma etc.). |
+| `/oferta <categoria> <link da Amazon>` | Formato curto do `/oferta` com Keepa ligada (passo 9, opcional). |
 | `/convite <categoria> <nome>` | Cria um **link de convite nomeado** (ex.: `/convite beleza meta_beleza_v1`). Use um link por anúncio: o relatório mostra entradas, saídas e retenção por link. |
 | `/links` | Lista os **links de divulgação por tópico** (`t.me/<bot publicador>?start=beleza`). Para campanha, acrescente `_nome`: `?start=beleza_meta1`. |
 | `/id` | Mostra seu ID. |
@@ -232,11 +240,13 @@ Só o valor (`399,90`) também serve. O bot recalcula o selo e manda um **card n
 
 ### Botões do card
 
-- **✅ Aprovar** publica no tópico da categoria e manda 3 textos prontos: Canal WhatsApp, post do X e 1ª resposta do X (com o link).
-- **⚡ Relâmpago** faz o mesmo, abre o post do Telegram com "⚡ ALERTA DE PREÇO" e manda também o texto do **Grupo WhatsApp** (alerta de preço, sem prometer escassez).
-  - **Cole** esse texto no grupo em vez de encaminhar do canal: o encaminhamento leva o link do canal (`wac`) e você perde a medição do grupo (`wag`).
+- **✅ Aprovar** publica no tópico da categoria e manda os textos prontos configurados em `publicar.plataformas` (por padrão: **Grupo WhatsApp** com botão `📲 Enviar no Grupo do WhatsApp`, **Canal WhatsApp** e **X**; use `/config publicar.plataformas wag` ou `/modo rapido` para receber só o Grupo WhatsApp).
+  - No WhatsApp, **use o botão de 1 toque (ou cole o texto `wag`)** no grupo em vez de encaminhar do canal: o encaminhamento leva o link do canal (`wac`) e você perde a medição do grupo (`wag`).
+- **⚡ Relâmpago** faz o mesmo com notificação imediata e abre o post do Telegram com "⚡ ALERTA DE PREÇO".
 - **⭐ Aprovar + Top do Dia** publica também no tópico Top do Dia.
-- **✏️ Editar** devolve o `/oferta` preenchido para você corrigir (normalmente o `ref90`) e reenviar.
+- **📋 Só textos (Zap/TG)** gera os textos prontos de Telegram e WhatsApp sem postar no grupo (útil para copiar ou quando `grupo_id` ainda não está configurado).
+- **Botões de categoria (`🏠 Casa`, `💻 Tech`, `🎁 Beleza`, `👶 Bebê`)** trocam em 1 toque a categoria escolhida automaticamente pelo extrator.
+- **✏️ Editar** devolve o `/link` (ou `/oferta`) preenchido preservando seu link de afiliado para você corrigir e reenviar.
 - **❌ Rejeitar** descarta a oferta.
 
 Depois de publicada, o card ganha:
@@ -249,7 +259,7 @@ Posts entre 22h e 8h e as cópias no Top do Dia saem **sem notificação**. O re
 
 Com `grupo.limpar_avisos = sim` e `grupo.antispam = sim` (padrão), o bot publicador apaga mensagens de membros com link de outro grupo (`t.me/`), WhatsApp ou encurtador (`bit.ly`, `amzn.to`, `s.shopee.com.br`, `mercadolivre.com/sec`…). Admins (IDs de `admins`, admin anônimo e posts do canal vinculado) ficam de fora. Link de produto da Amazon, Shopee ou Mercado Livre (`.com.br`) vira **sugestão**: o bot responde "Valeu! Vamos conferir o preço 👀" (no máximo 1 vez a cada 10 min por membro) e manda aos admins o link com um `/oferta` pré-preenchido.
 
-Os botões de aprovar **só aparecem com o selo ✓**. Os cards da coleta Shopee chegam primeiro sem referência de 90 dias: o card traz links grátis para achar a referência (gráfico de 90 dias da Keepa para Amazon, Google Shopping e Buscapé); **responda ao card** com o `ref90` (veja acima) ou use **✏️ Editar**. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
+No `/oferta` manual e na coleta automática da Shopee (com `selo.exigir_ref90 = sim`), os botões de aprovar aparecem com o selo ✓ (já nos links colados direto no privado, o botão **✅ Aprovar** fica liberado desde que o preço não esteja `acima` do histórico). Os cards sem referência trazem links grátis para consultar o histórico (gráfico de 90 dias da Keepa para Amazon, Google Shopping e Buscapé); **responda ao card** com o `ref90` (veja acima) ou use **✏️ Editar**. O card também mostra de onde veio o menor preço (Keepa, histórico próprio ou manual) e a frase que vai sair no post.
 
 ### Critério público do selo (para fixar nos grupos e canais)
 
@@ -283,12 +293,12 @@ Estimativa para o mês de pico (novembro), com 1.500–2.500 entradas, ~30% de s
 ## Limitações conhecidas e itens a VERIFICAR
 
 - **Shopee Affiliate API:** endpoint, nomes dos campos (`productOfferV2`, `generateShortLink`), formato de `commissionRate` e caracteres aceitos nos subIds foram implementados conforme a documentação pública conhecida. Confira no painel e, se algo divergir, ajuste `lib/shopee.js` e rode o build. A assinatura foi testada contra um servidor falso.
-- **Histórico de 90 dias:** começa do zero hoje. Até completar 90 dias, o selo depende do `ref90` com fonte.
-- **Amazon e Mercado Livre:** preço e título são informados por você, ou vêm da Keepa na Amazon (passo 9). Não há raspagem de páginas, para não violar os termos das lojas.
-- **Keepa:** formato da API conferido no SDK oficial (`keepacom/api_backend`) e testado contra um servidor falso. **VERIFICAR** com a chave real: preço do plano e custo em tokens de `buybox=1`.
-- **Post com falha:** se o post no grupo falhar (ex.: bot sem permissão), a oferta fica como `aprovada` e você recebe um alerta "⚠️ Falhas na Bot API". Reenvie com `/oferta`.
-- **X:** o bot entrega o texto pronto; a postagem é manual ou por agendador. Posts com link externo costumam ter menos alcance, por isso o link vai na 1ª resposta.
-- **WhatsApp:** sem automação, de propósito: só a API oficial é segura contra banimento, e canais não têm API.
+- **Histórico de 90 dias:** começa do zero hoje. No modo automático por link (ou com `selo.exigir_ref90 = nao`), ofertas sem histórico de 90 dias saem com copy honesta sem citar 90 dias; quando há histórico ou `ref90`, o selo de 90 dias entra automaticamente.
+- **Leitura gratuita de páginas:** quando você cola só o link, o bot lê os metadados públicos (JSON-LD, OpenGraph, `__NEXT_DATA__` e slug da URL). Lojas com bloqueio anti-bot em IPs de nuvem (como o Mercado Livre em algumas consultas) podem ocultar o preço no HTML; nesse caso o bot identifica título e link de afiliado sozinho e pede apenas que você responda à mensagem com o valor (ou mande `<link> 249,90`).
+- **Keepa (opcional):** formato da API conferido no SDK oficial (`keepacom/api_backend`) e testado contra um servidor falso. **VERIFICAR** com a chave real: preço do plano e custo em tokens de `buybox=1`.
+- **Post com falha:** se o post no grupo falhar (ex.: bot sem permissão), a oferta fica como `falha` e você recebe um alerta "❗ A oferta NÃO saiu no grupo".
+- **X:** o bot entrega o texto pronto (desative com `/config publicar.plataformas wag` se usar só WhatsApp e Telegram).
+- **WhatsApp:** usa botão oficial `📲 Enviar no WhatsApp (1 toque)` (`api.whatsapp.com/send`), que abre o texto já preenchido para enviar ao seu grupo em 1 toque, **100% grátis e sem risco de banir seu número** (APIs não-oficiais de WhatsApp causam bloqueio de conta).
 
 ## Para quem for mexer no código
 
