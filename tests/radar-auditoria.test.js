@@ -499,3 +499,59 @@ test('boost/radar: sidebarFeaturedOffers não herda categoria_hint casa, /radar 
   const proc = fluxos.avaliarNovaOferta(entPerf, [], cfg, prevCasa);
   assert.equal(proc.oferta.categoria, 'perfumes');
 });
+
+test('repost exige queda mínima >= 5% (>= R$ 1) e parcelamento HTML/JSON sempre aparece com total parcelado', () => {
+  const extrator = require('../lib/extrator');
+  const textos = require('../lib/textos');
+  const cfg = cfgBase();
+
+  const pubAnterior = [{
+    oferta_id: 'o_neu_1', produto_id: 'amz_B0NEUTRO01', loja: 'amazon', categoria: 'beleza',
+    titulo: 'Creme Hidratante Facial Matte 3 em 1 Neutrogena 100g', preco: 25.77, status: 'aprovada',
+    ts: AGORA - 8 * 60 * 1000,
+  }];
+  // R$ 25,77 -> R$ 25,00 (R$ 0,77 / 2,99%): bloqueado tanto em 24h quanto em 72h
+  const repCurto = extrator.avaliarRepeticao24h(
+    { produto_id: 'amz_B0NEUTRO01', preco: 25.00 },
+    pubAnterior,
+    AGORA,
+  );
+  assert.equal(repCurto.bloquear, true);
+  assert.equal(repCurto.motivo, 'ja_publicada_24h');
+
+  const rep72 = extrator.avaliarRepeticao24h(
+    { produto_id: 'amz_B0NEUTRO01', preco: 25.00 },
+    [{ ...pubAnterior[0], ts: AGORA - 30 * 3600 * 1000 }],
+    AGORA,
+    { modo_radar: true, janela_radar_72h: true },
+  );
+  assert.equal(rep72.bloquear, true);
+  assert.equal(rep72.motivo, 'recente_72h');
+
+  // R$ 25,77 -> R$ 24,40 (R$ 1,37 / 5,3%): libera atualização
+  const repOk = extrator.avaliarRepeticao24h(
+    { produto_id: 'amz_B0NEUTRO01', preco: 24.40 },
+    pubAnterior,
+    AGORA,
+  );
+  assert.equal(repOk.bloquear, false);
+  assert.equal(repOk.eh_atualizacao, true);
+
+  // Amazon com spans separando parcelas
+  const htmlAmz = '<html><body><span id="productTitle">Fritadeira Mondial</span><span class="priceToPay"><span class="a-offscreen">R$ 299,00</span></span><div><span>ou em até <b>10x</b> de <span>R$ 29,90</span> sem juros</span></div></body></html>';
+  const lidoAmz = extrator.lerPaginaProduto({ statusCode: 200, body: htmlAmz }, 'https://www.amazon.com.br/dp/B0AIRF1234');
+  assert.equal(lidoAmz.parcelamento, 'Em até 10x de R$ 29,90 sem juros');
+
+  // ML com JSON quantity/amount/rate:0
+  const htmlMl = '<html><body><h1 class="ui-pdp-title">Perfume Polo Red 125ml</h1><script>{"installments":{"quantity":10,"amount":34.0,"rate":0}}</script></body></html>';
+  const lidoMl = extrator.lerPaginaProduto({ statusCode: 200, body: htmlMl }, 'https://www.mercadolivre.com.br/polo-red/p/MLB999');
+  assert.equal(lidoMl.parcelamento, 'Em até 10x de R$ 34,00 sem juros');
+
+  // Exibição em blocoPreco com total parcelado quando > Pix
+  const tg = textos.textoTelegram({
+    oferta_id: 'o_pix_parc', loja: 'amazon', categoria: 'tech',
+    titulo: 'Console PS5 Slim Digital', preco: 3800,
+    links_manuais: { preco_de: 4500, pix: true, parcelamento: 'Em até 12x de R$ 350,00 sem juros', preco_parcelado: 4200 },
+  }, 'https://amzn.to/ps5', cfg);
+  assert.match(tg, /💳 <b>12x de R\$ 350,00 sem juros<\/b> <i>\(total R\$ 4\.200,00\)<\/i>/);
+});

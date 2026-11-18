@@ -109,3 +109,10 @@ flowchart LR
   - `ganchoOferta` prioriza ganchos curtos ligados ao produto antes de frases genéricas.
   - Nome do produto já aponta diretamente para o link de afiliado da loja e o cupom/link da aba de cupons permanece no corpo do texto; removidos os botões poluídos (`🛒 Ver no ...`, `🎟️ Resgatar Cupons ...`, `🔔 Criar alerta`, `📲 Mandar no Zap`).
 - **Validação:** `npm run build` OK (8 workflows), `npm test` (**94/94** passando, `0` falhas), redeploy em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`), execuções `715`–`723` de `wfRadar000000001` em `success` e `id 91` (`POLO RED`) classificado corretamente em `perfumes`.
+
+### 🔧 Correção 18/11 (Fim de tarde) — Trava de repost >= 5% (>= R$ 1) + parcelamento sem juros/total sempre exibido
+- **Repost mínimo de 5% ([lib/extrator.js](file:///C:/Users/tHg/Documents/Oferto/lib/extrator.js)):** `avaliarRepeticao24h` (janelas de 24h e 72h) passou a exigir queda mínima de **>= 5% e >= R\$ 1,00** para liberar repost de preço menor, evitando notificações por centavos (ex.: R\$ 25,77 -> R\$ 25,00).
+- **Parcelamento sem juros & total parcelado ([lib/extrator.js](file:///C:/Users/tHg/Documents/Oferto/lib/extrator.js), [lib/textos.js](file:///C:/Users/tHg/Documents/Oferto/lib/textos.js)):**
+  - `htmlParaTexto` remove tags HTML antes do parsing em Amazon, Mercado Livre (incluindo JSON `"quantity"/"amount"/"rate"` e centavos separados por `<span>`) e lojas gerais, calculando o valor da parcela quando o anúncio informa apenas `"Xx sem juros"` e atualizando `recalcularParcelamentoComCupom`.
+  - `blocoPreco` passou a exibir uma linha própria e limpa `💳 <b>10x de R$ ... sem juros</b>` (e `<i>(total R$ ...)</i>` quando o total parcelado é maior que o valor à vista/Pix).
+- **Validação:** `npm run build` + `npm test` (**95/95** passando, `0` falhas, com novo teste em [tests/radar-auditoria.test.js](file:///C:/Users/tHg/Documents/Oferto/tests/radar-auditoria.test.js)), redeploy concluído em `servidor-local` (`GET /healthz` = `ok`, `POST /webhook/oferto-saude` = `{"ok":true,"problemas":[],"avisos":0}`).
