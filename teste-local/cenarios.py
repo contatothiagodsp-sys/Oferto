@@ -111,13 +111,13 @@ checar('card enviado com botões de aprovação', oid and any('a|' + oid == b['c
 limpar_log()
 update(clique('t', oid), espera=10)
 cs = chamadas()
-grupo = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']
+grupo = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] in ('sendMessage', 'sendPhoto')]
 checar('2 posts no grupo (categoria + Top do Dia)', len(grupo) == 2)
 checar('tópicos certos', sorted(c['payload'].get('message_thread_id') for c in grupo) == sorted([
     int(r['valor']) for r in linhas('bfx_config', "where chave in ('topico.casa','topico.top')")]))
-textos = '\n'.join(c['payload'].get('text', '') for c in cs)
+textos = '\n'.join(c['payload'].get('text') or c['payload'].get('caption', '') for c in cs)
 checar('4 tags distintas da Amazon nos textos', all(f'tag=marca-casa{p}-20' in textos for p in ['tg', 'wac', 'x']))
-checar('aviso de afiliado no post', 'Contém link de afiliado' in grupo[0]['payload']['text'])
+checar('aviso de afiliado no post', 'Contém link de afiliado' in (grupo[0]['payload'].get('text') or grupo[0]['payload'].get('caption', '')))
 of = linhas('bfx_ofertas', f"where oferta_id = '{oid}'")[0]
 checar('status aprovada e top', of['status'] == 'aprovada' and of['top'] in (1, True))
 checar('posts gravados', len(linhas('bfx_posts', f"where oferta_id = '{oid}'")) == 2)
@@ -130,7 +130,7 @@ urllib.request.urlopen('http://127.0.0.1:8787/mock/barrar').read()
 limpar_log()
 update(clique('a', oid2), espera=14)
 cs = chamadas()
-envios = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']
+envios = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] in ('sendMessage', 'sendPhoto')]
 checar('post barrado reenviado (2 tentativas)', len(envios) == 2)
 checar('post gravado e sem alerta de falha', len(linhas('bfx_posts', f"where oferta_id = '{oid2}'")) == 1 and not any('Falhas' in c['payload'].get('text', '') for c in cs))
 
@@ -164,7 +164,7 @@ for t in ts_: t.start()
 for t in ts_: t.join()
 time.sleep(14)
 cs = chamadas()
-checar('um post só no grupo', len([c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']) == 1)
+checar('um post só no grupo', len([c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] in ('sendMessage', 'sendPhoto')]) == 1)
 checar('oferta aprovada com 1 post', linhas('bfx_ofertas', f"where oferta_id = '{oid4}'")[0]['status'] == 'aprovada' and len(linhas('bfx_posts', f"where oferta_id = '{oid4}'")) == 1)
 
 print('3) Segredo errado é ignorado')
@@ -326,7 +326,7 @@ limpar_log()
 update(clique('p', oid2), espera=8)
 cs = chamadas()
 top = int(linhas('bfx_config', "where chave = 'topico.top'")[0]['valor'])
-envio = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] == 'sendMessage']
+envio = [c for c in cs if c['token'] == 'TOKGRUPO' and c['metodo'] in ('sendMessage', 'sendPhoto')]
 checar('post no Top, silencioso', len(envio) == 1 and envio[0]['payload'].get('message_thread_id') == top and envio[0]['payload'].get('disable_notification') is True)
 checar('resposta com contagem do dia', any(c['metodo'] == 'answerCallbackQuery' and '2/5' in c['payload'].get('text', '') for c in cs))
 checar('post do Top gravado e oferta marcada top', len(linhas('bfx_posts', f"where oferta_id = '{oid2}' and categoria = 'top'")) == 1
@@ -460,7 +460,7 @@ checar('card no privado do admin pelo bot de aprovação', cid and any(c['metodo
                                                                       and cid in c['payload'].get('text', '') for c in cs))
 of = linhas('bfx_ofertas', f"where oferta_id = '{cid}'") if cid else []
 checar('categoria do tópico (tech) e ASIN do link completo', len(of) == 1 and of[0]['categoria'] == 'tech' and of[0]['produto_id'] == 'amz_B0CURTO123')
-checar('nada publicado no grupo', not any(c['metodo'] == 'sendMessage' and c['token'] == 'TOKGRUPO' for c in cs))
+checar('nada publicado no grupo', not any(c['metodo'] in ('sendMessage', 'sendPhoto') and c['token'] == 'TOKGRUPO' for c in cs))
 config_set('link_curto_api', '')
 
 c = sqlite3.connect(DB)
