@@ -427,3 +427,83 @@ test('Regressões pós-auditoria: Rx/Vitamina D alta dose, categorias Oral-B/Ten
   assert.ok(resEnxAmz[0].json.body.includes('NOWKENVUE30'), 'Enxugar páginas radar deve preservar cupom Amazon');
   assert.ok(resEnxAmz[0].json.body.length < 5000, 'Header, footer e data-csa-* devem ser removidos');
 });
+
+test('K-Pop: bloqueia romance/livros não-K-Pop (Hamartia/POP BOOK), usa buscas single-group + coleções variadas e limita monopólio de grupo por ciclo', () => {
+  const cfg = L.padrao();
+
+  // 1. Bloqueio de romance/ficção e livros não oficiais em classificarCategoria e lerAmazonBuscaHtml
+  const titHamartia = 'Scarlett Drake e Carlos César da Silva — Hamartia: Amor além da música – um romance proibido entre um astro do k-pop';
+  assert.equal(L.ehFalsoKpop(titHamartia), true);
+  assert.notEqual(L.classificarCategoria(titHamartia, cfg, 'kpop').categoria, 'kpop', 'Hamartia nunca pode cair em kpop');
+  assert.equal(L.ehFalsoKpop('Equipe Ediouro — BTS: POP BOOK'), true);
+  assert.equal(L.ehFalsoKpop('Stray Kids — HOP[SKZHOP VER.]'), false);
+  assert.equal(L.ehFalsoKpop('Beyond The Story: Uma história dos 10 anos de BTS'), false);
+
+  const htmlAmzKpop = `
+    <div role="listitem" data-asin="B0HAMARTIA">
+      <h2><span>Hamartia: Amor além da música – um romance proibido entre um astro do k-pop</span></h2>
+      <span>Capa comum</span>
+      <span class="a-price"><span class="a-offscreen">R$ 44,40</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$ 89,90</span></span>
+    </div>
+    <div role="listitem" data-asin="B0STRAY001">
+      <h2><span>Stray Kids - HOP [SKZHOP VER.] CD Album</span></h2>
+      <span>CD de áudio</span>
+      <span class="a-price"><span class="a-offscreen">R$ 155,90</span></span>
+      <span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$ 229,90</span></span>
+    </div>
+  `;
+  const lidoAmzKpop = L.lerAmazonBuscaHtml(htmlAmzKpop, 'https://www.amazon.com.br/s?k=kpop+album&i=popular', { categoria_hint: 'kpop', loja_oficial: true });
+  assert.equal(lidoAmzKpop.length, 1, 'Amazon K-pop deve filtrar Hamartia/Capa comum e manter Stray Kids');
+  assert.match(lidoAmzKpop[0].titulo, /Stray Kids/i);
+
+  // 2. Fontes K-pop diversificadas: 25+ coleções Shopify, 20+ buscas single-group Amazon i=popular, Nuvemshop paginada
+  assert.ok(RF.CATALOGOS_SHOPIFY_KPOP.length >= 20, 'KpopAlbums deve rotacionar por 20+ coleções de grupos');
+  assert.ok(RF.CATALOGOS_SHOPIFY_KPOP.some((c) => c.url.includes('/collections/stray-kids/')));
+  assert.ok(RF.CATALOGOS_SHOPIFY_KPOP.some((c) => c.url.includes('/collections/twice/')));
+  assert.ok(RF.CATALOGOS_SHOPIFY_KPOP.some((c) => c.url.includes('/collections/seventeen/')));
+  assert.ok(RF.CATALOGOS_SHOPIFY_KPOP.some((c) => c.url.includes('/collections/light-sticks/')));
+  assert.ok(RF.BUSCAS_AMAZON_KPOP.filter((q) => q.url.includes('i=popular')).length >= 18, 'Amazon K-pop deve usar i=popular em buscas single-group');
+  assert.ok(RF.NUVEMSHOP_KPOP_BUSCAS.some((n) => n.url.includes('hopescolor.com/produtos/?page=2')));
+  assert.ok(RF.NUVEMSHOP_KPOP_BUSCAS.some((n) => n.url.includes('hopescolor.com/produtos/?page=4')));
+
+  // Cada ciclo agendado dispara 2 coleções distintas de kpopalbums + 1 página Nuvemshop BR
+  const planAg = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA_14H });
+  const shAg = planAg.fontesWeb.filter((f) => f.tipo === 'shopify_catalogo');
+  const nvAg = planAg.fontesWeb.filter((f) => f.tipo === 'nuvemshop_kpop');
+  assert.equal(shAg.length, 2, 'Ciclo agendado deve buscar 2 coleções K-pop distintas no kpopalbums');
+  assert.notEqual(shAg[0].url_real, shAg[1].url_real);
+  assert.equal(nvAg.length, 1, 'Ciclo agendado deve buscar 1 página Nuvemshop BR por ciclo');
+
+  // 3. Diversidade por grupo K-pop em selecionarCandidatosRadar: máx 1 por grupo/ciclo + penaliza grupo repetido (BTS) nas últimas 6h
+  assert.equal(L.detectarGrupoKpop('BTS — MAP OF THE SOUL : PERSONA'), 'bts');
+  assert.equal(L.detectarGrupoKpop('Jungkook Golden Album'), 'bts');
+  assert.equal(L.detectarGrupoKpop('STRAY KIDS - HOP [SKZHOP VER.]'), 'stray_kids');
+  assert.equal(L.detectarGrupoKpop('TWICE - [CANDYBONG] Official Light Stick'), 'twice');
+  assert.equal(L.detectarGrupoKpop('SEVENTEEN 5th Album Happy Burstday'), 'seventeen');
+
+  const planFake = {
+    opcoes: { modo: 'agendado', ts: AGORA_14H, lojas: ['kpopalbums'], categorias: ['kpop'], limite: 4 },
+    fontesWeb: [{ tipo: 'shopify_catalogo', loja_hint: 'kpopalbums', categoria_hint: 'kpop', envio_internacional: true }],
+    fontesShopee: [],
+  };
+  const prodsFake = {
+    products: [
+      { id: 1, handle: 'bts-1', title: 'BTS - Proof Anthology Album', variants: [{ price: '180.00', compare_at_price: '300.00', available: true }], images: [{ src: 'https://cdn.shopify.com/1.jpg' }] },
+      { id: 2, handle: 'bts-2', title: 'BTS - Dark & Wild Album', variants: [{ price: '120.00', compare_at_price: '220.00', available: true }], images: [{ src: 'https://cdn.shopify.com/2.jpg' }] },
+      { id: 3, handle: 'skz-1', title: 'STRAY KIDS - HOP Album', variants: [{ price: '130.00', compare_at_price: '200.00', available: true }], images: [{ src: 'https://cdn.shopify.com/3.jpg' }] },
+      { id: 4, handle: 'twice-1', title: 'TWICE - With YOU-th Album', variants: [{ price: '125.00', compare_at_price: '190.00', available: true }], images: [{ src: 'https://cdn.shopify.com/4.jpg' }] },
+      { id: 5, handle: 'svt-1', title: 'SEVENTEEN - 17 IS RIGHT HERE Album', variants: [{ price: '140.00', compare_at_price: '210.00', available: true }], images: [{ src: 'https://cdn.shopify.com/5.jpg' }] },
+    ],
+  };
+  const recentesBts = [
+    { categoria: 'kpop', loja: 'amazon', titulo: 'BTS Album A', status: 'aprovada', ts: AGORA_14H - 30 * 60000 },
+    { categoria: 'kpop', loja: 'umusic', titulo: 'BTS Album B', status: 'aprovada', ts: AGORA_14H - 60 * 60000 },
+    { categoria: 'kpop', loja: 'klinestore', titulo: 'J-Hope Photo', status: 'aprovada', ts: AGORA_14H - 90 * 60000 },
+  ];
+  const selDiv = L.selecionarCandidatosRadar(planFake, [{ statusCode: 200, body: JSON.stringify(prodsFake) }], [], recentesBts, [], cfg, []);
+  const grpsEsc = selDiv.candidatos.map((c) => L.detectarGrupoKpop(c.titulo));
+  assert.equal(grpsEsc.filter((g) => g === 'bts').length, 1, 'No máximo 1 item do mesmo grupo (BTS) por ciclo agendado');
+  assert.ok(grpsEsc.includes('stray_kids') && grpsEsc.includes('twice') && grpsEsc.includes('seventeen'), 'Outros grupos devem ser priorizados');
+  assert.notEqual(grpsEsc[0], 'bts', 'Grupo sem post nas últimas 6h deve rankear acima de BTS já saturado');
+});
