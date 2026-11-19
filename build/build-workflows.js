@@ -1,7 +1,13 @@
 #!/usr/bin/env node
 'use strict';
-// Gera n8n/workflows/*.json com a biblioteca lib/ embutida nos Code nodes.
-// Uso: node build/build-workflows.js
+// Gera os workflows do n8n com a biblioteca lib/ embutida nos Code nodes.
+// Uso:
+//   node build/build-workflows.js                      → só n8n/workflows/*.json (não toca a produção)
+//   node build/build-workflows.js --out <dir>          → os 6 workflows em <dir> (em vez de n8n/workflows/)
+//   node build/build-workflows.js --local-out <dir>    → também os 8 workflows do servidor local (com id) em <dir>
+//   node build/build-workflows.js --release            → grava os 8 em servidor-local/workflows/ (npm run release)
+//   node build/build-workflows.js --doc-config         → também reescreve docs/CONFIG.md
+// Só --release escreve em servidor-local/: é o que o preparar.sh importa (com PUBLICAR_WORKFLOWS=sim).
 const fs = require('fs');
 const path = require('path');
 const { TABELAS } = require('../lib/tabelas');
@@ -9,6 +15,7 @@ const { TABELAS } = require('../lib/tabelas');
 const RAIZ = path.join(__dirname, '..');
 const SAIDA = path.join(RAIZ, 'n8n', 'workflows');
 const SAIDA_LOCAL = path.join(RAIZ, 'servidor-local', 'workflows');
+const SERVIDOR_LOCAL = path.join(RAIZ, 'servidor-local');
 // IDs fixos no servidor local: a CLI importa e publica por ID, e o workflow do túnel chama o setup por ID.
 const IDS_LOCAL = {
   '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001',
@@ -16,37 +23,283 @@ const IDS_LOCAL = {
   '90-tunel.json': 'wfTunel000000001', '91-saude.json': 'wfSaude000000001',
 };
 
-/* ---------- bundle da lib ---------- */
+/* ---------- bundle da lib (tree-shaking por nó + minificação) ---------- */
 
-function bundle() {
+// Módulos da Fase 2 ficam fora do bundle de runtime até ativação explícita.
+const MODULOS_FASE2 = new Set(['desconto', 'imagem', 'legenda', 'setup-canal']);
+const RE_KW_REGEX = /^(?:return|case|throw|in|of|typeof|void|delete|else|do|new|yield|await)$/;
+
+/**
+ * Minificador seguro sem dependências externas: remove comentários // e /* * /,
+ * espaços supérfluos de borda e linhas vazias preservando strings, templates e regexes.
+ */
+function minificarJs(src) {
+  const s = String(src || '').replace(/\r\n?/g, '\n');
+  const n = s.length;
+  let out = '';
+  let i = 0;
+  let state = 'NORMAL';
+  let inClass = false;
+  const tplStack = [];
+  let braceDepth = 0;
+  let lastTok = '';
+
+  const isIdentStart = (ch) => (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch === '_' || ch === '$';
+  const isIdentPart = (ch) => isIdentStart(ch) || (ch >= '0' && ch <= '9');
+  let pendingSpace = false;
+  let pendingNl = false;
+
+  const lastOutChar = () => (out.length ? out[out.length - 1] : '');
+  const flushSep = (nextCh) => {
+    const prev = lastOutChar();
+    if (!prev) { pendingSpace = false; pendingNl = false; return; }
+    if (pendingNl) {
+      pendingNl = false;
+      pendingSpace = false;
+      if (prev === ';' || prev === '{' || prev === ',') {
+        if ((isIdentPart(prev) && isIdentPart(nextCh)) || (prev === '/' && (nextCh === '/' || nextCh === '*'))) out += ' ';
+        return;
+      }
+      out += '\n';
+      return;
+    }
+    if (pendingSpace) {
+      pendingSpace = false;
+      const precisa = (isIdentPart(prev) && isIdentPart(nextCh))
+        || (prev === '+' && nextCh === '+')
+        || (prev === '-' && nextCh === '-')
+        || (prev === '/' && (nextCh === '/' || nextCh === '*'))
+        || (prev === '!' && nextCh === '=')
+        || (prev === '=' && nextCh === '=');
+      if (precisa) out += ' ';
+    }
+  };
+
+  while (i < n) {
+    const ch = s[i];
+    const nx = i + 1 < n ? s[i + 1] : '';
+
+    if (state === 'NORMAL') {
+      if (ch === '/' && nx === '/') {
+        i += 2;
+        while (i < n && s[i] !== '\n') i++;
+        continue;
+      }
+      if (ch === '/' && nx === '*') {
+        i += 2;
+        let hasNl = false;
+        while (i < n && !(s[i] === '*' && s[i + 1] === '/')) {
+          if (s[i] === '\n') hasNl = true;
+          i++;
+        }
+        i += 2;
+        if (hasNl) pendingNl = true; else pendingSpace = true;
+        continue;
+      }
+      if (ch === ' ' || ch === '\t') {
+        pendingSpace = true;
+        i++;
+        continue;
+      }
+      if (ch === '\n') {
+        pendingNl = true;
+        i++;
+        continue;
+      }
+      if (ch === "'" || ch === '"') {
+        flushSep(ch);
+        state = ch;
+        out += ch;
+        i++;
+        continue;
+      }
+      if (ch === '`') {
+        flushSep(ch);
+        state = 'TEMPLATE';
+        out += ch;
+        i++;
+        continue;
+      }
+      if (ch === '/' && (lastTok === '' || /^[\(\[\{,;:=\!&\|\?~\^\+\-\*%<>]$/.test(lastTok) || RE_KW_REGEX.test(lastTok))) {
+        flushSep(ch);
+        state = 'REGEX';
+        inClass = false;
+        out += ch;
+        i++;
+        continue;
+      }
+      if (ch === '{') {
+        flushSep(ch);
+        if (tplStack.length) braceDepth++;
+        lastTok = '{';
+        out += ch;
+        i++;
+        continue;
+      }
+      if (ch === '}') {
+        if (tplStack.length && braceDepth === tplStack[tplStack.length - 1]) {
+          pendingSpace = false;
+          pendingNl = false;
+          tplStack.pop();
+          state = 'TEMPLATE';
+          out += ch;
+          i++;
+          continue;
+        }
+        flushSep(ch);
+        if (tplStack.length) braceDepth--;
+        lastTok = '}';
+        out += ch;
+        i++;
+        continue;
+      }
+      if (isIdentStart(ch)) {
+        let j = i + 1;
+        while (j < n && isIdentPart(s[j])) j++;
+        const word = s.slice(i, j);
+        flushSep(ch);
+        lastTok = word;
+        out += word;
+        i = j;
+        continue;
+      }
+      if (ch >= '0' && ch <= '9') {
+        let j = i + 1;
+        while (j < n && (isIdentPart(s[j]) || s[j] === '.')) j++;
+        flushSep(ch);
+        lastTok = 'NUM';
+        out += s.slice(i, j);
+        i = j;
+        continue;
+      }
+      flushSep(ch);
+      lastTok = ch;
+      out += ch;
+      i++;
+      continue;
+    }
+
+    if (state === "'" || state === '"') {
+      out += ch;
+      if (ch === '\\' && i + 1 < n) { out += s[i + 1]; i += 2; continue; }
+      if (ch === state) { state = 'NORMAL'; lastTok = 'STR'; }
+      i++;
+      continue;
+    }
+
+    if (state === 'TEMPLATE') {
+      if (ch === '\\' && i + 1 < n) { out += ch + s[i + 1]; i += 2; continue; }
+      if (ch === '$' && nx === '{') {
+        tplStack.push(braceDepth);
+        out += '${';
+        state = 'NORMAL';
+        lastTok = '{';
+        i += 2;
+        continue;
+      }
+      if (ch === '`') {
+        out += ch;
+        state = 'NORMAL';
+        lastTok = 'STR';
+        i++;
+        continue;
+      }
+      out += ch;
+      i++;
+      continue;
+    }
+
+    if (state === 'REGEX') {
+      out += ch;
+      if (ch === '\\' && i + 1 < n) { out += s[i + 1]; i += 2; continue; }
+      if (ch === '[') inClass = true;
+      else if (ch === ']') inClass = false;
+      else if (ch === '/' && !inClass) { state = 'NORMAL'; lastTok = 'VAL'; }
+      i++;
+      continue;
+    }
+  }
+
+  return out.trim();
+}
+
+function carregarIndiceLib() {
   const dir = path.join(RAIZ, 'lib');
-  const mods = fs.readdirSync(dir).filter((f) => f.endsWith('.js')).sort();
-  const defs = mods.map((f) => {
-    const nome = f.replace(/\.js$/, '');
-    const src = fs.readFileSync(path.join(dir, f), 'utf8').replace(/^'use strict';\n/, '');
-    return `  ${JSON.stringify(nome)}: function (module, exports, require) {\n${src}\n  },`;
-  });
+  const idxSrc = fs.readFileSync(path.join(dir, 'index.js'), 'utf8');
+  // Respeita a ordem de exportação de lib/index.js para resolução determinística de símbolos.
+  const ordemIndex = [...idxSrc.matchAll(/require\(\s*['"]\.\/([a-z0-9_-]+)(?:\.js)?['"]\s*\)/gi)]
+    .map((m) => m[1])
+    .filter((n) => !MODULOS_FASE2.has(n));
+  const todosArqs = fs.readdirSync(dir)
+    .filter((f) => f.endsWith('.js') && f !== 'index.js')
+    .map((f) => f.replace(/\.js$/, ''))
+    .filter((n) => !MODULOS_FASE2.has(n))
+    .sort();
+  const ordem = ordemIndex.concat(todosArqs.filter((n) => !ordemIndex.includes(n)));
+
+  const mods = {};
+  const exportMap = {};
+  for (const nome of ordem) {
+    const raw = fs.readFileSync(path.join(dir, nome + '.js'), 'utf8').replace(/^'use strict';\r?\n/, '');
+    const deps = [...new Set([...raw.matchAll(/require\(\s*['"]\.\/([a-z0-9_-]+)(?:\.js)?['"]\s*\)/gi)].map((m) => m[1]))]
+      .filter((d) => !MODULOS_FASE2.has(d));
+    const min = minificarJs(raw);
+    // Valida sintaxe da versão minificada no build.
+    new Function('module', 'exports', 'require', min);
+    mods[nome] = { deps, min };
+    const exp = require(path.join(dir, nome + '.js'));
+    if (exp && typeof exp === 'object') {
+      for (const k of Object.keys(exp)) exportMap[k] = nome;
+    }
+  }
+  return { ordem, mods, exportMap };
+}
+
+const LIB_INDEX = carregarIndiceLib();
+
+function resolverDepsTransitivas(raizes) {
+  const vistos = new Set();
+  const fila = [...raizes];
+  while (fila.length) {
+    const m = fila.shift();
+    if (vistos.has(m)) continue;
+    if (!LIB_INDEX.mods[m]) throw new Error('módulo ausente no bundle: ' + m);
+    vistos.add(m);
+    for (const d of LIB_INDEX.mods[m].deps) {
+      if (!vistos.has(d)) fila.push(d);
+    }
+  }
+  return LIB_INDEX.ordem.filter((m) => vistos.has(m));
+}
+
+function bundle(raizes) {
+  const roots = Array.isArray(raizes) && raizes.length ? raizes : LIB_INDEX.ordem;
+  const incluidos = resolverDepsTransitivas(roots);
+  const defs = incluidos.map((nome) => `${JSON.stringify(nome)}:function(module,exports,require){\n${LIB_INDEX.mods[nome].min}\n},`);
+  const exportRoots = roots.filter((r, idx) => roots.indexOf(r) === idx);
   return [
-    '// ===== Biblioteca gerada de lib/ (não edite aqui; edite lib/ e rode o build) =====',
-    'const LIB = (() => {',
-    '  const defs = {',
+    'const LIB=(()=>{const d={',
     ...defs,
-    '  };',
-    '  const cache = {};',
-    '  function req(n) {',
-    "    n = n.replace(/^\\.\\//, '').replace(/\\.js$/, '');",
-    '    if (cache[n]) return cache[n].exports;',
-    "    if (!defs[n]) throw new Error('módulo ausente: ' + n);",
-    '    const module = { exports: {} };',
-    '    cache[n] = module;',
-    '    defs[n](module, module.exports, req);',
-    '    return module.exports;',
-    '  }',
-    "  return req('index');",
-    '})();',
-    '// ===== Fim da biblioteca =====',
+    '};const c={};function r(n){n=n.replace(/^\\.\\//,"").replace(/\\.js$/,"");if(c[n])return c[n].exports;if(!d[n])throw new Error("módulo ausente: "+n);const m={exports:{}};c[n]=m;d[n](m,m.exports,r);return m.exports;}',
+    `return Object.assign({},...${JSON.stringify(exportRoots)}.map(r));})();`,
     '',
   ].join('\n');
+}
+
+function bundlePara(corpo) {
+  const s = String(corpo || '');
+  // Se LIB for usado dinamicamente (ex.: LIB[k] ou passado sem .prop), cai no bundle completo de runtime.
+  const semProp = s.replace(/\bLIB\.[A-Za-z0-9_$]+/g, '');
+  if (/\bLIB\b/.test(semProp)) return bundle(LIB_INDEX.ordem);
+  const syms = [...new Set([...s.matchAll(/\bLIB\.([A-Za-z0-9_$]+)/g)].map((m) => m[1]))];
+  if (!syms.length) return '';
+  const roots = [];
+  for (const sym of syms) {
+    const mod = LIB_INDEX.exportMap[sym];
+    if (!mod) throw new Error('símbolo LIB.' + sym + ' não encontrado nos módulos de runtime');
+    if (!roots.includes(mod)) roots.push(mod);
+  }
+  return bundle(roots);
 }
 
 const LIB_SRC = bundle();
@@ -68,13 +321,40 @@ class WF {
     this.settings = Object.assign({ executionOrder: 'v1', timezone: 'America/Sao_Paulo', saveDataSuccessExecution: 'all' }, settings || {});
   }
   add(node, x, y) {
+    if (node.__portao) return this.addComPortao(node, x, y);
     if (this.nodes.some((n) => n.name === node.name)) throw new Error('nome duplicado: ' + node.name);
     node.id = uuid(this.nome + '/' + node.name);
     node.position = [x, y];
     this.nodes.push(node);
     return node.name;
   }
+  /**
+   * Nó de envio (Telegram/WhatsApp) atrás do portão de dry-run (P1-06). Vira 4 nós:
+   *   "<nome> · portão" (Switch: 0 = envio real, 1 = simulado) → "<nome> · envio real" (HTTP) ou
+   *   "<nome> · simulado" (Code, sem rede) → "<nome>" (Code que só repassa a resposta).
+   * Quem liga para "<nome>" entra no portão; quem lê $('<nome>') ou sai de "<nome>" recebe a resposta
+   * (real ou simulada) na mesma ordem dos itens. Propriedades extras (retryOnFail etc.) ficam no HTTP.
+   */
+  addComPortao(desc, x, y) {
+    const { __portao: tipo, name } = desc;
+    const http = Object.assign({}, desc, { name: name + ' · envio real' });
+    delete http.__portao;
+    this.add(switchExpr(name + ' · portão', `${PORTAO_REAL} ? 0 : 1`, 2), x - 180, y);
+    Object.assign(this.nodes[this.nodes.length - 1], {
+      notes: `Portão de dry-run (publicacao.dry_run). Saída 0: envio real (só com publicacao.dry_run=nao). Saída 1: simulado, sem rede.`,
+    });
+    this.add(http, x, y - 90);
+    this.add(simuladorNode(name + ' · simulado', tipo, name), x, y + 90);
+    this.add(code(name, REPASSE_JS, { cfg: false, nota: 'Resposta do envio (real ou simulada), na ordem dos itens.' }), x + 180, y);
+    this.link(name + ' · portão', name + ' · envio real', 0);
+    this.link(name + ' · portão', name + ' · simulado', 1);
+    this.link(name + ' · envio real', name);
+    this.link(name + ' · simulado', name);
+    (this.entradas = this.entradas || {})[name] = name + ' · portão';
+    return name;
+  }
   link(de, para, saida) {
+    if (this.entradas && this.entradas[para] && de !== this.entradas[para] && !de.startsWith(para + ' · ')) para = this.entradas[para];
     const s = saida || 0;
     const c = (this.connections[de] = this.connections[de] || { main: [] });
     while (c.main.length <= s) c.main.push([]);
@@ -109,7 +389,7 @@ const CFG = "$('Config').first().json.cfg";
 
 function code(name, corpo, opts) {
   const o = opts || {};
-  const src = (o.lib ? LIB_SRC : '') + (o.cfg !== false ? `const cfg = ${CFG};\n` : '') + corpo.trim() + '\n';
+  const src = (o.lib ? bundlePara(corpo) : '') + (o.cfg !== false ? `const cfg = ${CFG};\n` : '') + corpo.trim() + '\n';
   return { name, type: 'n8n-nodes-base.code', typeVersion: 2, parameters: { jsCode: src }, notes: o.nota || '' };
 }
 
@@ -173,8 +453,75 @@ function dtCreate(name, t) {
   };
 }
 
+/* ---------- portão de dry-run (P1-06) ---------- */
+
+// Envio real SÓ quando publicacao.dry_run está explicitamente desligado (false, ou texto nao/no/false/0/off).
+// Chave ausente, cfg sem "publicacao", "sim" ou qualquer outro valor = dry-run (nenhuma chamada de rede).
+// Erro na expressão (ex.: nó Config ausente) para o workflow: também não envia.
+const PORTAO_REAL = `(${CFG}.publicacao && (${CFG}.publicacao.dry_run === false || /^(n|nao|não|no|false|0|off|desligado)$/i.test(String(${CFG}.publicacao.dry_run).trim())))`;
+
+// Repassa a resposta do ramo que executou (real ou simulado), mantendo o par com o item de entrada.
+const REPASSE_JS = 'return $input.all().map((it, i) => ({ json: it.json, pairedItem: { item: i } }));';
+
+/**
+ * Resposta simulada do dry-run (roda no Code node, sem rede; não use require nem closures externas).
+ * Telegram: métodos que mandam mensagem → { ok:true, result:{ message_id <0, chat, date, ... } };
+ * métodos que só confirmam (set*, pin*, delete*, answer*, close* ...) → { ok:true, result:true };
+ * leituras e criações (getMe, getChat, createForumTopic, createChatInviteLink ...) → ok:false com
+ * description "DRY-RUN", para que nada inventado (username, tópico, link de convite) seja gravado na bfx_config.
+ * O message_id sintético é NEGATIVO: o Telegram nunca usa id negativo, então um post simulado jamais
+ * coincide com um post real (nem é editado/apagado por engano quando o dry-run for desligado).
+ * WhatsApp: { ok:true, result:{ message_id <0 } }.
+ */
+function simularResposta(tipo, item, i, agoraMs, no) {
+  const j = item || {};
+  const p = j.payload || {};
+  const metodo = tipo === 'whatsapp' ? 'whatsapp' : String(j.metodo || '');
+  const id = -((agoraMs % 1000000000) * 1000 + (i % 1000)) - 1;
+  const registro = {
+    simulado: true, no, tipo, metodo, bot: j.bot || '',
+    chat_id: tipo === 'whatsapp' ? '' : (p.chat_id == null ? '' : String(p.chat_id)),
+    message_thread_id: p.message_thread_id || 0,
+    em: new Date(agoraMs).toISOString(),
+  };
+  if (tipo === 'whatsapp') return { ok: true, dry_run: registro, result: { message_id: id, simulado: true } };
+  const MENSAGEM = /^(send(Message|Photo|Video|Animation|Document|Audio|Voice|Sticker|Poll|Location|Venue|Contact|Dice)|copyMessage|forwardMessage|editMessage(Text|Caption|Media|ReplyMarkup|LiveLocation)|stopMessageLiveLocation)$/;
+  const CONFIRMA = /^(set\w+|delete\w+|pin\w+|unpin\w+|answer\w+|close\w*ForumTopic|reopen\w*ForumTopic|edit(General)?ForumTopic|hideGeneralForumTopic|unhideGeneralForumTopic|ban\w+|unban\w+|restrict\w+|promote\w+|approve\w+|decline\w+|leaveChat|sendChatAction|copyMessages|forwardMessages|deleteMessages|revokeChatInviteLink)$/;
+  if (MENSAGEM.test(metodo)) {
+    const msg = { message_id: id, date: Math.floor(agoraMs / 1000), chat: { id: p.chat_id == null ? 0 : p.chat_id }, simulado: true };
+    if (p.message_thread_id) msg.message_thread_id = p.message_thread_id;
+    if (typeof p.text === 'string') msg.text = p.text;
+    if (typeof p.caption === 'string') msg.caption = p.caption;
+    if (p.reply_markup) msg.reply_markup = p.reply_markup;
+    return { ok: true, dry_run: registro, result: msg };
+  }
+  if (metodo === 'sendMediaGroup') {
+    const n = Array.isArray(p.media) ? p.media.length : 1;
+    const ms = [];
+    for (let k = 0; k < n; k++) ms.push({ message_id: id - k * 1000000000000, date: Math.floor(agoraMs / 1000), chat: { id: p.chat_id == null ? 0 : p.chat_id }, simulado: true });
+    return { ok: true, dry_run: registro, result: ms };
+  }
+  if (CONFIRMA.test(metodo)) return { ok: true, dry_run: registro, result: true };
+  return { ok: false, dry_run: registro, error_code: 0, description: 'DRY-RUN: ' + (metodo || 'chamada') + ' não foi feita (publicacao.dry_run=sim)' };
+}
+
+function simuladorNode(name, tipo, no) {
+  return code(name, `
+${simularResposta.toString()}
+const agora = Date.now();
+const out = $input.all().map((it, i) => ({ json: simularResposta(${JSON.stringify(tipo)}, it.json, i, agora, ${JSON.stringify(no)}), pairedItem: { item: i } }));
+// Log do envio simulado (aparece no log do n8n e fica no histórico da execução). Sem tokens nem textos.
+for (const o of out) console.log('[oferto dry-run] ' + JSON.stringify(o.json.dry_run));
+return out;`, { cfg: false, nota: 'DRY-RUN: não chama a rede. Devolve resposta simulada compatível (ok, result.message_id negativo) e registra o envio no log.' });
+}
+
+/** Marca um nó HTTP como envio que precisa passar pelo portão de dry-run. */
+function comPortao(tipo, node) {
+  return Object.assign(node, { __portao: tipo });
+}
+
 function httpTelegram(name, intervalo) {
-  return {
+  return comPortao('telegram', {
     name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
     notes: 'Chama a Bot API do Telegram. Cada item: { bot, metodo, payload }.',
     parameters: {
@@ -187,10 +534,46 @@ function httpTelegram(name, intervalo) {
       options: {
         batching: { batch: { batchSize: 1, batchInterval: intervalo || 60 } },
         response: { response: { neverError: true } },
-        timeout: 20000,
+        timeout: 45000,
       },
     },
-  };
+  });
+}
+
+/**
+ * Bot API com arquivo binário (P1-14): sendPhoto/sendDocument/setChatPhoto em multipart/form-data.
+ * Cada item: { bot, metodo, payload, arquivo: { campo: 'photo', binario: 'data' } } + o binário em
+ * item.binary[arquivo.binario] (ex.: o JPEG do render). Os demais campos do payload vão na query string
+ * (a Bot API aceita parâmetros na URL também em multipart); objetos (reply_markup etc.) vão como JSON.
+ * Também passa pelo portão de dry-run: com dry-run, o binário nem sai do n8n.
+ * Formato dos parâmetros multipart do nó HTTP Request 4.2: NÃO VERIFICADO contra o n8n em execução (validar no e2e).
+ */
+function httpTelegramArquivo(name, intervalo) {
+  return comPortao('telegram', {
+    name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
+    notes: 'Bot API com arquivo (multipart). Cada item: { bot, metodo, payload, arquivo: { campo, binario } } e o binário no item.',
+    parameters: {
+      method: 'POST',
+      url: `={{ ${CFG}.telegram.api }}/bot{{ $json.bot === 'grupo' ? ${CFG}.telegram.bot_token_grupo : ${CFG}.telegram.bot_token }}/{{ $json.metodo }}`,
+      sendQuery: true,
+      specifyQuery: 'json',
+      jsonQuery: "={{ JSON.stringify(Object.fromEntries(Object.entries($json.payload || {}).filter(([k, v]) => v != null && k !== (($json.arquivo || {}).campo || 'photo')).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v)]))) }}",
+      sendBody: true,
+      contentType: 'multipart-form-data',
+      bodyParameters: {
+        parameters: [{
+          parameterType: 'formBinaryData',
+          name: "={{ ($json.arquivo || {}).campo || 'photo' }}",
+          inputDataFieldName: "={{ ($json.arquivo || {}).binario || 'data' }}",
+        }],
+      },
+      options: {
+        batching: { batch: { batchSize: 1, batchInterval: intervalo || 700 } },
+        response: { response: { neverError: true } },
+        timeout: 60000,
+      },
+    },
+  });
 }
 
 function httpShopee(name) {
@@ -217,7 +600,7 @@ function httpShopee(name) {
 }
 
 function httpWhatsAppAuto(name) {
-  return {
+  return comPortao('whatsapp', {
     name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
     notes: 'Opcional Zero-Toque: dispara HTTP POST para WhatsApp API (Evolution, WAHA ou Webhook) quando whatsapp.webhook_url estiver configurado.',
     parameters: {
@@ -236,7 +619,7 @@ function httpWhatsAppAuto(name) {
         timeout: 15000,
       },
     },
-  };
+  });
 }
 
 function switchExpr(name, expr, saidas) {
@@ -255,7 +638,7 @@ function configNodes(wf, x, y) {
 /* ---------- 00 · setup ---------- */
 
 function wfSetup() {
-  const wf = new WF('00 · Setup (rodar manualmente)');
+  const wf = new WF('00 · Setup (rodar manualmente)', { saveDataSuccessExecution: 'none' });
   wf.add({ name: 'Rodar setup', type: 'n8n-nodes-base.manualTrigger', typeVersion: 1, parameters: {} }, 0, 300);
   wf.add({
     name: 'Chamado por outro workflow', type: 'n8n-nodes-base.executeWorkflowTrigger', typeVersion: 1.1,
@@ -790,9 +1173,10 @@ return [{ json: LIB.responderVitrineMembro(${CLS}, pega('Vitrine ofertas 7d', 'o
 
 /* ---------- subfluxo reutilizável do radar multi-fonte ---------- */
 
-function httpRadarGet(name, follow) {
+function httpRadarGet(name, follow, batch) {
+  const b = batch || { batchSize: 2, batchInterval: 250 };
   const opts = {
-    batching: { batch: { batchSize: 1, batchInterval: 400 } },
+    batching: { batch: b },
     response: { response: { fullResponse: true, neverError: true, responseFormat: 'text', outputPropertyName: 'body' } },
     timeout: 15000,
   };
@@ -819,14 +1203,53 @@ function adicionarSubfluxoRadar(wf, cfgFluxo) {
   const x = cfgFluxo.x0;
   const y = cfgFluxo.y0;
 
-  wf.add(code(N('Planejar'), `
-const p = LIB.planejarFontesRadar(cfg, ${cfgFluxo.opcoesCode});
+  const lockPlan = cfgFluxo.lock
+    ? "const sd = typeof $getWorkflowStaticData === 'function' ? $getWorkflowStaticData('global') : null;\nif (sd && sd.radar_rodando_ate && Date.now() < sd.radar_rodando_ate) return [];\n"
+    : '';
+  const lockSet = cfgFluxo.lock ? "if (sd) sd.radar_rodando_ate = Date.now() + 240000;\n" : '';
+  const extraOpts = cfgFluxo.lock
+    ? `Object.assign({}, ${cfgFluxo.opcoesCode}, { pb_redir_bloqueado_ate: (sd && sd.pb_redir_bloqueado_ate) || 0 })`
+    : cfgFluxo.opcoesCode;
+  wf.add(code(N('Planejar'), `${lockPlan}const p = LIB.planejarFontesRadar(cfg, ${extraOpts});
 if (!p.ativo) return [];
-return [{ json: p }];`, { lib: true }), x, y);
+${lockSet}return [{ json: p }];`, { lib: true }), x, y);
 
   wf.add(switchExpr(N('Tem web?'), `$('${N('Planejar')}').first().json.fontesWeb.length > 0 ? 0 : 1`, 2), x + 220, y);
   wf.add(itens(N('Fontes web'), `$('${N('Planejar')}').first().json.fontesWeb`), x + 440, y - 120);
-  wf.add(httpRadarGet(N('Buscar fontes web'), true), x + 660, y - 120);
+  wf.add(httpRadarGet(N('Buscar fontes web'), true, { batchSize: 2, batchInterval: 350 }), x + 660, y - 120);
+  wf.add(code(N('Enxugar fontes web'), `
+const fontes = ($('${N('Planejar')}').first().json.fontesWeb) || [];
+const resps = $input.all().map((i) => i.json || {});
+return resps.map((r, idx) => {
+  const f = fontes[idx] || {};
+  const raw = typeof r.body === 'string' ? r.body : (typeof r.data === 'string' ? r.data : '');
+  let body = raw;
+  if (f.tipo === 'umusic_vtex') {
+    body = typeof r.body === 'string' ? r.body.slice(0, 400000) : (r.body != null ? r.body : r.data);
+  } else if (f.tipo === 'telegram_canal') {
+    const pos = raw.search(/<div[^>]+class="[^"]*tgme_widget_message_wrap/i);
+    const trecho = pos >= 0 ? raw.slice(pos) : raw;
+    body = trecho
+      .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+      .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+      .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+      .replace(/<!--[\\s\\S]*?-->/g, '')
+      .slice(0, 350000);
+  } else if (f.tipo === 'gatry_home' || f.tipo === 'nuvemshop_kpop') {
+    body = raw
+      .replace(/<head\\b[^>]*>[\\s\\S]*?<\\/head>/gi, '')
+      .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+      .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+      .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+      .replace(/<!--[\\s\\S]*?-->/g, '')
+      .replace(/[ \\t]{2,}/g, ' ')
+      .slice(0, 350000);
+  } else {
+    const m = raw.match(/<script[^>]*id\\s*=\\s*["']__NEXT_DATA__["'][^>]*>[\\s\\S]*?<\\/script>/i);
+    body = m ? m[0].slice(0, 500000) : raw.slice(0, 4000);
+  }
+  return { json: { statusCode: r.statusCode || 200, body } };
+});`, { cfg: false, nota: 'Filtra e trunca HTML pesado antes de Selecionar radar para evitar OOM e timeout no JS runner.' }), x + 770, y - 120);
 
   wf.add(switchExpr(N('Tem Shopee?'), `$('${N('Planejar')}').first().json.fontesShopee.length > 0 ? 0 : 1`, 2), x + 880, y);
   wf.add(itens(N('Fontes Shopee'), `$('${N('Planejar')}').first().json.fontesShopee`), x + 1100, y - 120);
@@ -837,7 +1260,7 @@ return [{ json: p }];`, { lib: true }), x, y);
   wf.add(dtGet(N('Alertas radar'), 'bfx_alertas', [['ativo', 'eq', true]]), x + 1870, y);
   wf.add(code(N('Selecionar radar'), `
 const base = $('${N('Planejar')}').first().json;
-const respWeb = base.fontesWeb.length && $('${N('Buscar fontes web')}').isExecuted ? $('${N('Buscar fontes web')}').all().map((i) => i.json) : [];
+const respWeb = base.fontesWeb.length && $('${N('Enxugar fontes web')}').isExecuted ? $('${N('Enxugar fontes web')}').all().map((i) => i.json) : [];
 const respSh = base.fontesShopee.length && $('${N('Shopee: radar')}').isExecuted ? $('${N('Shopee: radar')}').all().map((i) => i.json) : [];
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
@@ -854,7 +1277,7 @@ const resp1 = est.reqs1.length && $('${N('Abrir redir 1')}').isExecuted ? $('${N
 const res = LIB.aplicarRedirRadar1(est, resp1, cfg);
 if (typeof $getWorkflowStaticData === 'function') {
   const sd = $getWorkflowStaticData('global');
-  if (res.promobit_429) sd.pb_redir_bloqueado_ate = Date.now() + 20 * 60 * 1000;
+  if (res.promobit_429) sd.pb_redir_bloqueado_ate = Date.now() + 8 * 60 * 1000;
   else if (res.promobit_ok) sd.pb_redir_bloqueado_ate = 0;
 }
 return [{ json: res }];`, { lib: true }), x + 2860, y);
@@ -879,7 +1302,8 @@ return [{ json: LIB.prepararPaginasRadar(est, resp3, cfg) }];`, { lib: true }), 
   wf.add(httpRadarGet(N('Ler páginas radar'), true), x + 5280, y - 120);
   wf.add(switchExpr(N('Tem mercado radar?'), `($('${N('Preparar páginas radar')}').first().json.reqsMercado || []).length > 0 ? 0 : 1`, 2), x + 5390, y);
   wf.add(itens(N('Itens mercado radar'), `$('${N('Preparar páginas radar')}').first().json.reqsMercado`), x + 5440, y - 120);
-  wf.add(httpRadarGet(N('Checar mercado radar'), true), x + 5480, y - 120);
+  wf.add(httpRadarGet(N('Checar mercado radar'), true, { batchSize: 1, batchInterval: 450 }), x + 5480, y - 120);
+  const lockFinClear = cfgFluxo.lock ? '  if (!fin.autoPlanos || !fin.autoPlanos.length) sd.radar_rodando_ate = 0;\n' : '';
   wf.add(code(N('Finalizar radar'), `
 const est = $('${N('Preparar páginas radar')}').first().json;
 const respPag = est.reqsPag.length && $('${N('Ler páginas radar')}').isExecuted ? $('${N('Ler páginas radar')}').all().map((i) => i.json) : [];
@@ -890,7 +1314,7 @@ const fin = LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag, respMerc)
 if (typeof $getWorkflowStaticData === 'function') {
   const sd = $getWorkflowStaticData('global');
   sd.radar_descartes = LIB.atualizarDescartesRadar(sd.radar_descartes, fin.resumo.descartadas, (est.opcoes || {}).ts);
-}
+${lockFinClear}}
 return [{ json: fin }];`, { lib: true }), x + 5500, y);
 
   wf.add(itens(N('Preços radar'), '$json.precosNovos'), x + 5720, y - 180);
@@ -908,12 +1332,15 @@ return f.autoPlanos && f.autoPlanos.length ? [{ json: f }] : [];`, { cfg: false 
   wf.add(switchExpr(N('Tem Shopee auto?'), `$('${N('Finalizar radar')}').first().json.reqsShopeeLinks.length > 0 ? 0 : 1`, 2), x + 6380, y + 180);
   wf.add(itens(N('Itens Shopee auto'), `$('${N('Finalizar radar')}').first().json.reqsShopeeLinks`), x + 6600, y + 60);
   wf.add(httpShopee(N('Shopee: links radar')), x + 6820, y + 60);
+  const lockPubClear = cfgFluxo.lock
+    ? "const lote = LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt);\nif (!lote.chamadasPub || !lote.chamadasPub.length) { if (typeof $getWorkflowStaticData === 'function') $getWorkflowStaticData('global').radar_rodando_ate = 0; }\nreturn [{ json: lote }];"
+    : 'return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt) }];';
   wf.add(code(N('Publicar lote radar'), `
 const fin = $('${N('Finalizar radar')}').first().json;
 const respSh = fin.reqsShopeeLinks.length && $('${N('Shopee: links radar')}').isExecuted ? $('${N('Shopee: links radar')}').all().map((i) => i.json) : [];
 const respCards = fin.chamadas.length && $('${N('Telegram (cards radar)')}').isExecuted ? $('${N('Telegram (cards radar)')}').all().map((i) => i.json) : [];
 const postsAnt = $('${N('Posts recentes radar')}').isExecuted ? $('${N('Posts recentes radar')}').all().map((i) => i.json).filter((r) => r.oferta_id) : [];
-return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt) }];`, { lib: true }), x + 7040, y + 180);
+${lockPubClear}`, { lib: true }), x + 7040, y + 180);
 
   wf.add(itens(N('Updates lote'), '$json.updates'), x + 7260, y + 40);
   wf.add(dtUpdate(N('Atualizar lote radar'), 'bfx_ofertas', 'oferta_id'), x + 7480, y + 40);
@@ -925,7 +1352,9 @@ return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt) }];
   // 429 (limite) ou foto recusada: espera e reenvia só o que falhou (foto recusada vai como texto com prévia).
   wf.add(code(N('Checar envio radar'), `
 const chamadas = $('${N('Mensagens lote')}').all().map((i) => i.json);
-return [{ json: LIB.limiteTelegram(chamadas, $input.all().map((i) => i.json)) }];`, { lib: true, cfg: false }), x + 7590, y + 320);
+const lim = LIB.limiteTelegram(chamadas, $input.all().map((i) => i.json), { tentarBinario: true });
+lim.reenviar = (lim.reenviar || []).map((r, k) => Object.assign({}, r, { _reenvio_pos: k }));
+return [{ json: lim }];`, { lib: true, cfg: false }), x + 7590, y + 320);
   wf.add({
     name: N('Reenviar radar?'), type: 'n8n-nodes-base.if', typeVersion: 2.2,
     parameters: {
@@ -938,13 +1367,146 @@ return [{ json: LIB.limiteTelegram(chamadas, $input.all().map((i) => i.json)) }]
     },
   }, x + 7640, y + 320);
   wf.add({ name: N('Esperar Telegram radar'), type: 'n8n-nodes-base.wait', typeVersion: 1.1, webhookId: uuid('wait-radar-' + P), parameters: { resume: 'timeInterval', amount: '={{ $json.espera }}', unit: 'seconds' } }, x + 7660, y + 260);
-  wf.add(itens(N('Reenviar lote radar'), '$json.reenviar'), x + 7670, y + 260);
-  wf.add(httpTelegram(N('Telegram (reenvio radar)'), 700), x + 7680, y + 260);
+  wf.add({
+    name: N('Tem foto binária?'), type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'binr', leftValue: '={{ ($json.reenviar || []).some(function(x){ return !!x._tentar_binario; }) }}', rightValue: true, operator: { type: 'boolean', operation: 'true', singleValue: true } }],
+        combinator: 'and',
+      },
+      options: {},
+    },
+  }, x + 7670, y + 210);
+  wf.add(itens(N('Itens foto binária'), `$('${N('Checar envio radar')}').first().json.reenviar.filter(function(x){ return !!x._tentar_binario; })`), x + 7674, y + 140);
+  wf.add({
+    name: N('Baixar foto radar'),
+    type: 'n8n-nodes-base.httpRequest',
+    typeVersion: 4.2,
+    onError: 'continueRegularOutput',
+    parameters: {
+      method: 'GET',
+      url: '={{ $json.download_url }}',
+      sendHeaders: true,
+      specifyHeaders: 'json',
+      jsonHeaders: JSON.stringify({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'image/jpeg,image/png,*/*;q=0.8',
+      }),
+      options: {
+        batching: { batch: { batchSize: 1, batchInterval: 300 } },
+        response: { response: { neverError: true, responseFormat: 'file', outputPropertyName: 'data' } },
+        timeout: 15000,
+      },
+    },
+  }, x + 7678, y + 120);
+  wf.add(code(N('Resumir foto radar'), `
+const fontes = $('${N('Itens foto binária')}').all().map((i) => i.json);
+const resp = $input.all();
+const fallbacks = [];
+let okCount = 0;
+fontes.forEach((src, i) => {
+  const it = resp[i] || {};
+  const b = it.binary && it.binary.data;
+  const mime = String((b && b.mimeType) || '');
+  if (b && b.data && /^image\\//i.test(mime) && src.payload && src.bot) {
+    okCount++;
+  } else {
+    const fb = src.fallback || src;
+    fallbacks.push(Object.assign({}, fb, { _reenvio_pos: src._reenvio_pos, _enviar_arquivo: false }));
+  }
+});
+return [{ json: { tem_foto: okCount > 0, ok_count: okCount, fallbacks } }];`, { cfg: false }), x + 7680, y + 120);
+  wf.add({
+    name: N('Tem foto baixada?'), type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'baixr', leftValue: '={{ $json.tem_foto }}', rightValue: true, operator: { type: 'boolean', operation: 'true', singleValue: true } }],
+        combinator: 'and',
+      },
+      options: {},
+    },
+  }, x + 7682, y + 120);
+  wf.add(code(N('Preparar foto radar'), `
+const fontes = $('${N('Itens foto binária')}').all().map((i) => i.json);
+const resp = $('${N('Baixar foto radar')}').all();
+const out = [];
+fontes.forEach((src, i) => {
+  const it = resp[i] || {};
+  const b = it.binary && it.binary.data;
+  const mime = String((b && b.mimeType) || '');
+  if (b && b.data && /^image\\//i.test(mime) && src.payload && src.bot) {
+    out.push({
+      json: {
+        bot: src.bot,
+        metodo: 'sendPhoto',
+        payload: src.payload,
+        ref: src.ref,
+        _reenvio_pos: src._reenvio_pos,
+        _enviar_arquivo: true,
+        arquivo: { campo: 'photo', binario: 'data' },
+      },
+      binary: { data: b },
+      pairedItem: { item: 0 },
+    });
+  }
+});
+return out;`, { cfg: false }), x + 7684, y + 60);
+  wf.add(httpTelegramArquivo(N('Telegram (reenvio foto)'), 700), x + 7686, y + 60);
+  wf.add(code(N('Montar reenvio texto'), `
+const lim = $('${N('Checar envio radar')}').first().json;
+const norm = (lim.reenviar || []).filter((x) => !x._tentar_binario);
+const fbs = $('${N('Resumir foto radar')}').isExecuted ? ($('${N('Resumir foto radar')}').first().json.fallbacks || []) : [];
+const binFb = [];
+if ($('${N('Preparar foto radar')}').isExecuted && $('${N('Telegram (reenvio foto)')}').isExecuted) {
+  const prepBins = $('${N('Preparar foto radar')}').all().map((i) => i.json);
+  const resBins = $('${N('Telegram (reenvio foto)')}').all().map((i) => i.json);
+  const origBins = $('${N('Itens foto binária')}').isExecuted ? $('${N('Itens foto binária')}').all().map((i) => i.json) : [];
+  prepBins.forEach((pb, k) => {
+    const r = resBins[k] || {};
+    const d = String(r.description || (r.error && r.error.message) || '');
+    const st = Number(r.error_code || (r.error && (r.error.httpCode || r.error.status)) || 0);
+    const ambiguo = /timeout\\b.*\\bexceeded|ETIMEDOUT|ESOCKETTIMEDOUT|ECONNRESET|ECONNABORTED|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(d) || st >= 500;
+    if ((r.ok === false || r.error) && !ambiguo) {
+      const orig = origBins.find((o) => o._reenvio_pos === pb._reenvio_pos);
+      if (orig && orig.fallback) binFb.push(Object.assign({}, orig.fallback, { _reenvio_pos: pb._reenvio_pos, _enviar_arquivo: false }));
+    }
+  });
+}
+return [{ json: { textos: norm.concat(fbs, binFb) } }];`, { cfg: false }), x + 7688, y + 220);
+  wf.add({
+    name: N('Tem reenvio texto?'), type: 'n8n-nodes-base.if', typeVersion: 2.2,
+    parameters: {
+      conditions: {
+        options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+        conditions: [{ id: 'txtr', leftValue: '={{ $json.textos.length }}', rightValue: 0, operator: { type: 'number', operation: 'gt' } }],
+        combinator: 'and',
+      },
+      options: {},
+    },
+  }, x + 7690, y + 220);
+  wf.add(itens(N('Reenviar lote radar'), '$json.textos'), x + 7692, y + 260);
+  wf.add(httpTelegram(N('Telegram (reenvio radar)'), 700), x + 7694, y + 260);
+  const lockResClear = cfgFluxo.lock ? "\nif (typeof $getWorkflowStaticData === 'function') $getWorkflowStaticData('global').radar_rodando_ate = 0;" : '';
   wf.add(code(N('Resultado lote radar'), `
 const chamadas = $('${N('Mensagens lote')}').all().map((i) => i.json);
 let resp = $('${N('Telegram (pub radar)')}').all().map((i) => i.json);
 const lim = $('${N('Checar envio radar')}').first().json;
-if (lim.indices.length && $('${N('Telegram (reenvio radar)')}').isExecuted) resp = LIB.juntarReenvio(resp, lim, $('${N('Telegram (reenvio radar)')}').all().map((i) => i.json));
+if (lim.indices.length) {
+  const rr = new Array(lim.indices.length);
+  if ($('${N('Preparar foto radar')}').isExecuted && $('${N('Telegram (reenvio foto)')}').isExecuted) {
+    const bins = $('${N('Preparar foto radar')}').all().map((i) => i.json);
+    const resBin = $('${N('Telegram (reenvio foto)')}').all().map((i) => i.json);
+    bins.forEach((it, k) => { if (resBin[k]) rr[it._reenvio_pos] = resBin[k]; });
+  }
+  if ($('${N('Montar reenvio texto')}').isExecuted && $('${N('Telegram (reenvio radar)')}').isExecuted) {
+    const textos = $('${N('Montar reenvio texto')}').first().json.textos || [];
+    const resTxt = $('${N('Telegram (reenvio radar)')}').all().map((i) => i.json);
+    textos.forEach((it, k) => { if (resTxt[k]) rr[it._reenvio_pos] = resTxt[k]; });
+  }
+  resp = LIB.juntarReenvio(resp, lim, rr);
+}${lockResClear}
 return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), x + 7700, y + 320);
   wf.add(itens(N('Status falha radar'), '$json.update'), x + 7920, y + 160);
   wf.add(dtUpdate(N('Gravar falha radar'), 'bfx_ofertas', 'oferta_id'), x + 8140, y + 160);
@@ -973,7 +1535,7 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
   wf.link(cfgFluxo.entradaNode, N('Planejar'), cfgFluxo.entradaSaida || 0);
   wf.chain(N('Planejar'), N('Tem web?'));
   wf.link(N('Tem web?'), N('Fontes web'), 0);
-  wf.chain(N('Fontes web'), N('Buscar fontes web'), N('Tem Shopee?'));
+  wf.chain(N('Fontes web'), N('Buscar fontes web'), N('Enxugar fontes web'), N('Tem Shopee?'));
   wf.link(N('Tem web?'), N('Tem Shopee?'), 1);
 
   wf.link(N('Tem Shopee?'), N('Fontes Shopee'), 0);
@@ -1016,7 +1578,17 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
   wf.chain(N('Publicar lote radar'), N('Links lote'), N('Gravar links radar'));
   wf.chain(N('Publicar lote radar'), N('Mensagens lote'), N('Telegram (pub radar)'), N('Checar envio radar'), N('Reenviar radar?'));
   wf.link(N('Reenviar radar?'), N('Esperar Telegram radar'), 0);
-  wf.chain(N('Esperar Telegram radar'), N('Reenviar lote radar'), N('Telegram (reenvio radar)'), N('Resultado lote radar'));
+  wf.chain(N('Esperar Telegram radar'), N('Tem foto binária?'));
+  wf.link(N('Tem foto binária?'), N('Itens foto binária'), 0);
+  wf.chain(N('Itens foto binária'), N('Baixar foto radar'), N('Resumir foto radar'), N('Tem foto baixada?'));
+  wf.link(N('Tem foto baixada?'), N('Preparar foto radar'), 0);
+  wf.chain(N('Preparar foto radar'), N('Telegram (reenvio foto)'), N('Montar reenvio texto'));
+  wf.link(N('Tem foto baixada?'), N('Montar reenvio texto'), 1);
+  wf.link(N('Tem foto binária?'), N('Montar reenvio texto'), 1);
+  wf.chain(N('Montar reenvio texto'), N('Tem reenvio texto?'));
+  wf.link(N('Tem reenvio texto?'), N('Reenviar lote radar'), 0);
+  wf.chain(N('Reenviar lote radar'), N('Telegram (reenvio radar)'), N('Resultado lote radar'));
+  wf.link(N('Tem reenvio texto?'), N('Resultado lote radar'), 1);
   wf.link(N('Reenviar radar?'), N('Resultado lote radar'), 1);
   wf.chain(N('Resultado lote radar'), N('Status falha radar'), N('Gravar falha radar'));
   wf.chain(N('Resultado lote radar'), N('Posts lote'), N('Gravar posts radar'));
@@ -1030,7 +1602,8 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
 /* ---------- 04 · radar multi-fonte ---------- */
 
 function wfRadar() {
-  const wf = new WF('04 · Radar Multi-Fonte (a cada 2 min)');
+  // Roda a cada 2 min: sucesso não fica no histórico para evitar acúmulo de HTML (~8 MB/exec) no SQLite.
+  const wf = new WF('04 · Radar Multi-Fonte (a cada 2 min)', { saveDataSuccessExecution: 'none' });
   wf.add({
     name: 'A cada 2 minutos (radar)',
     type: 'n8n-nodes-base.scheduleTrigger',
@@ -1051,6 +1624,7 @@ function wfRadar() {
     entradaNode: 'Config',
     entradaSaida: 0,
     opcoesCode: "{ modo: 'agendado', ts: Date.now() }",
+    lock: true,
   });
   return wf;
 }
@@ -1058,7 +1632,7 @@ function wfRadar() {
 /* ---------- 02 · coleta Shopee ---------- */
 
 function wfShopee() {
-  const wf = new WF('02 · Coleta Shopee (a cada 2 h)');
+  const wf = new WF('02 · Coleta Shopee (a cada 2 h)', { saveDataSuccessExecution: 'none' });
   wf.add({
     name: 'A cada 2 horas', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2,
     parameters: { rule: { interval: [{ field: 'cronExpression', expression: '0 8-22/2 * * *' }] } },
@@ -1120,7 +1694,7 @@ return LIB.relatorioDiario({ posts: pega('Posts'), links: pega('Links'), ofertas
 /* ---------- 05 · guardião de ofertas e vitrine 21h ---------- */
 
 function wfGuardiao() {
-  const wf = new WF('05 · Guardião 30min, Quedas Extras e Esquenta/Top 5');
+  const wf = new WF('05 · Guardião 30min, Quedas Extras e Esquenta/Top 5', { saveDataSuccessExecution: 'none' });
   wf.add({
     name: 'A cada 30 minutos (guardião)',
     type: 'n8n-nodes-base.scheduleTrigger',
@@ -1164,7 +1738,7 @@ return [{ json: LIB.executarGuardiao(plano, resp, pega('Ofertas 36h'), pega('Pos
 /* ---------- 90 · túnel (só no servidor local) ---------- */
 
 function wfTunel() {
-  const wf = new WF('90 · Túnel: atualizar o webhook (servidor local)');
+  const wf = new WF('90 · Túnel: atualizar o webhook (servidor local)', { saveDataSuccessExecution: 'none' });
   wf.add({
     name: 'Novo endereço do túnel', type: 'n8n-nodes-base.webhook', typeVersion: 2, webhookId: uuid('webhook-oferto-tunel'),
     parameters: { httpMethod: 'POST', path: 'oferto-tunel', responseMode: 'onReceived', options: {} },
@@ -1234,8 +1808,8 @@ return [{ json: LIB.avaliarSaude(chamadas, resp, cfg, Date.now()) }];`, { lib: t
 
 /* ---------- main ---------- */
 
-function main() {
-  fs.mkdirSync(SAIDA, { recursive: true });
+/** Gera os workflows em memória. cloud: os 6 de n8n/workflows/ (sem id); local: os 8 do servidor local (com id fixo). */
+function gerar() {
   const wfs = {
     '00-setup.json': wfSetup(),
     '01-telegram-router.json': wfRouter(),
@@ -1244,14 +1818,60 @@ function main() {
     '04-radar-ofertas.json': wfRadar(),
     '05-guardiao-ofertas.json': wfGuardiao(),
   };
-  fs.mkdirSync(SAIDA_LOCAL, { recursive: true });
+  const cloud = {};
+  const local = {};
   for (const [arq, wf] of Object.entries(Object.assign({}, wfs, { '90-tunel.json': wfTunel(), '91-saude.json': wfSaude() }))) {
     const j = wf.json();
-    if (wfs[arq]) fs.writeFileSync(path.join(SAIDA, arq), JSON.stringify(j, null, 2) + '\n');
-    fs.writeFileSync(path.join(SAIDA_LOCAL, arq), JSON.stringify(Object.assign({ id: IDS_LOCAL[arq] }, j), null, 2) + '\n');
-    console.log(`${arq}: ${j.nodes.length} nós${wfs[arq] ? '' : ' (só servidor local)'}`);
+    if (wfs[arq]) cloud[arq] = j;
+    local[arq] = Object.assign({ id: IDS_LOCAL[arq] }, j);
   }
-  escreverDocConfig();
+  return { cloud, local };
+}
+
+/** Lê os argumentos da linha de comando. Lança erro em argumento desconhecido. */
+function lerArgs(argv) {
+  const a = { out: SAIDA, localOut: '', release: false, docConfig: false };
+  for (let i = 0; i < argv.length; i++) {
+    const x = argv[i];
+    if (x === '--out' || x === '--local-out') {
+      const v = argv[++i];
+      if (!v || v.startsWith('--')) throw new Error(`${x} precisa de um diretório`);
+      if (x === '--out') a.out = path.resolve(v); else a.localOut = path.resolve(v);
+    } else if (x === '--release') a.release = true;
+    else if (x === '--doc-config') a.docConfig = true;
+    else throw new Error('argumento desconhecido: ' + x);
+  }
+  if (a.release) a.localOut = SAIDA_LOCAL;
+  return a;
+}
+
+/** true se dir é servidor-local/ ou está dentro dele (o que o preparar.sh importa para a produção). */
+function dentroDoServidorLocal(dir) {
+  const rel = path.relative(SERVIDOR_LOCAL, path.resolve(dir));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function escrever(dir, arquivos) {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [arq, j] of Object.entries(arquivos)) fs.writeFileSync(path.join(dir, arq), JSON.stringify(j, null, 2) + '\n');
+}
+
+function main(argv) {
+  const a = lerArgs(argv || process.argv.slice(2));
+  // P1-03: só o --release escreve em servidor-local/ (é o que vai para a produção no próximo "up").
+  if (dentroDoServidorLocal(a.out)) throw new Error('--out não pode apontar para servidor-local/ (use npm run release)');
+  if (a.localOut && !a.release && dentroDoServidorLocal(a.localOut)) throw new Error('--local-out não pode apontar para servidor-local/ (use npm run release)');
+  const { cloud, local } = gerar();
+  if (!a.release) {
+    escrever(a.out, cloud);
+    for (const [arq, j] of Object.entries(cloud)) console.log(`${arq}: ${j.nodes.length} nós → ${path.relative(RAIZ, a.out) || '.'}`);
+  }
+  if (a.localOut) {
+    escrever(a.localOut, local);
+    for (const [arq, j] of Object.entries(local)) console.log(`${arq}: ${j.nodes.length} nós → ${a.localOut}${cloud[arq] ? '' : ' (só servidor local)'}`);
+    if (a.release) console.log('RELEASE: servidor-local/workflows/ atualizado. O preparar.sh só importa e publica com PUBLICAR_WORKFLOWS=sim.');
+  }
+  if (a.docConfig) escreverDocConfig();
 }
 
 /** docs/CONFIG.md: todas as chaves da tabela bfx_config. */
@@ -1272,5 +1892,7 @@ function escreverDocConfig() {
   fs.writeFileSync(path.join(RAIZ, 'docs', 'CONFIG.md'), linhas.join('\n'));
 }
 
-if (require.main === module) main();
-module.exports = { bundle, LIB_SRC };
+if (require.main === module) {
+  try { main(); } catch (e) { console.error('build: ' + e.message); process.exit(1); }
+}
+module.exports = { bundle, bundlePara, minificarJs, LIB_SRC, gerar, lerArgs, dentroDoServidorLocal, simularResposta, PORTAO_REAL, httpTelegramArquivo };
