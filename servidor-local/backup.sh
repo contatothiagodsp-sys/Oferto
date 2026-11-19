@@ -27,7 +27,8 @@ fazer_backup() {
   fi
   TMP=$(mktemp -d)
   OK=""
-  if sqlite3 -cmd ".timeout 30000" "$DB" ".backup '$TMP/database.sqlite'" \
+  if (sqlite3 -cmd ".timeout 30000" "$DB" "VACUUM INTO '$TMP/database.sqlite';" 2>/dev/null \
+    || sqlite3 -cmd ".timeout 30000" "$DB" ".backup '$TMP/database.sqlite'") \
     && [ "$(sqlite3 "$TMP/database.sqlite" 'PRAGMA quick_check;')" = "ok" ]; then
     if [ -f "$DADOS/config" ]; then cp "$DADOS/config" "$TMP/config"; fi
     if tar czf "$ARQ.tmp" -C "$TMP" . && mv "$ARQ.tmp" "$ARQ"; then OK=1; fi

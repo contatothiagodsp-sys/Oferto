@@ -1,6 +1,6 @@
 # Servidor local: n8n Community no seu computador
 
-O n8n Community é gratuito e roda no seu computador dentro do Docker. Os workflows, as Data Tables e o bot são os mesmos do n8n Cloud, e aqui não existe limite de execuções.
+O n8n Community é gratuito e roda no seu computador dentro do Docker. Este é o alvo ativo do projeto; aqui não existe limite de execuções. (Se houver também uma instância n8n Cloud com os mesmos workflows, ela fica fora da pausa e do dry-run deste servidor: confira e desligue-a. Situação **não verificada**, ver Q-01b em `docs/questions.md`.)
 
 ## Como funciona
 
@@ -15,8 +15,9 @@ Telegram ──https──▶ túnel Cloudflare ──▶ filtro ──▶ n8n (
 
 | Contêiner | O que faz |
 |---|---|
-| `preparar` | Importa e publica os 6 workflows desta pasta e depois termina. Só repete quando os arquivos mudam. |
-| `n8n` | O n8n. O painel abre **só neste computador**: http://localhost:5678 |
+| `preparar` | Importa e publica os workflows desta pasta e depois termina. Só repete quando os arquivos mudam **e** o `.env` tem `PUBLICAR_WORKFLOWS=sim` (padrão seguro: não importa nada; veja [Atualizar o sistema](#dia-a-dia)). |
+| `n8n` | O n8n. O painel abre **só neste computador**: http://localhost:5678. Tem healthcheck (`/healthz`): `filtro`, `vigia` e `backup` só sobem depois que ele fica **healthy**. |
+| `render` | Gera a imagem 1080x1080 dos posts (`POST /render`). Fica só na rede interna do compose: sem porta no computador e fora do túnel. Código e Dockerfile em [`../render`](../render). Healthcheck em `/health`. **Opcional:** só sobe com `COMPOSE_PROFILES=render` no `.env` (fora do perfil, as ofertas vão para revisão). Só baixa fotos por HTTPS de hosts de CDN das lojas (allowlist em `render/baixar.js`). |
 | `filtro` | Só deixa a internet chegar ao `POST /webhook/telegram-ofertas`. O resto responde 404. |
 | `tunel` | Túnel rápido da Cloudflare: gera um endereço `https://…trycloudflare.com` sem conta e sem abrir portas no roteador. |
 | `vigia` | A cada 15 s lê o endereço do túnel. Quando o endereço muda, chama o workflow **90 · Túnel**, que grava `n8n_webhook_url` e roda o **00 · Setup**. A cada 5 min chama o **91 · Saúde** e, se configurado, faz o ping no healthchecks.io (veja [Alertas](#alertas-saúde-do-bot)). |
@@ -56,7 +57,7 @@ Com o git instalado:
 git clone https://github.com/contatothiagodsp-sys/Oferto.git
 ```
 
-O repositório é seu e privado, então o git vai pedir login no GitHub. Se preferir não usar o git, baixe pelo site do GitHub: **Code → Download ZIP**, e descompacte.
+**Atenção: o repositório é PÚBLICO.** Qualquer pessoa pode ler o código e todo o histórico de commits. Nunca faça commit de `.env`, backups, tokens, IDs reais de grupo ou chaves (o `.gitignore` já bloqueia `.env`, `backups/`, `*.tar.gz` e `*.sqlite`). Tornar o repositório privado é decisão do dono. Se preferir não usar o git, baixe pelo site do GitHub: **Code → Download ZIP**, e descompacte.
 
 ✋ Deve existir a pasta `Oferto/servidor-local` com o arquivo `docker-compose.yml`.
 
@@ -80,7 +81,18 @@ Na primeira vez, o Docker baixa cerca de 1 GB de imagens, o que leva alguns minu
 docker compose ps -a
 ```
 
-✋ Deve aparecer `n8n`, `filtro`, `tunel`, `vigia` e `backup` como **Up**, e `preparar` como **Exited (0)**.
+✋ Deve aparecer `n8n` e `filtro` (e `render`, se o perfil `render` estiver ligado) como **Up (healthy)** (o n8n leva até ~1,5 min para ficar healthy), `tunel`, `vigia` e `backup` como **Up**, e `preparar` como **Exited (0)**.
+
+Na **primeira** instalação, o volume ainda está vazio: para o `preparar` importar os workflows, crie o `.env` a partir do modelo e ligue a importação só desta vez (PowerShell, dentro de `servidor-local`):
+
+```powershell
+Copy-Item .env.example .env
+notepad .env   # troque a linha PUBLICAR_WORKFLOWS= por PUBLICAR_WORKFLOWS=sim, salve
+docker compose up -d
+docker compose restart n8n   # o n8n já estava rodando: reinicie para ele ativar os gatilhos importados
+```
+
+Depois que os workflows aparecerem no painel, volte a linha para `PUBLICAR_WORKFLOWS=` (vazio).
 
 ### 4. Criar sua conta no painel
 
@@ -143,7 +155,7 @@ git pull
 docker compose up -d
 ```
 
-O `preparar` percebe que os arquivos mudaram e reimporta os workflows. **Atenção:** mudanças que você fizer nos workflows pelo painel são substituídas nessa hora. A configuração e os dados ficam nas Data Tables e não são afetados.
+**Atenção:** os JSON de `servidor-local/workflows/` são versionados no git, então o `git pull` **altera** esses arquivos (localmente, `npm run release` também os reescreve; o `npm run build` escreve só em `n8n/workflows/`). O que impede que o `docker compose up -d` importe e publique essa versão nova é **só** a trava do `preparar.sh`: sem `PUBLICAR_WORKFLOWS=sim` no `.env`, ele termina sem importar nada. Confira o `.env` antes de cada `up` (`docker compose logs preparar` mostra "workflows NÃO importados"). Para aplicar uma versão nova de propósito: `PUBLICAR_WORKFLOWS=sim` no `.env`, `docker compose up -d`, `docker compose restart n8n` (para ativar os gatilhos novos), e depois volte a linha para vazio. **Atenção:** mudanças que você fizer nos workflows pelo painel são substituídas nessa hora. A configuração e os dados ficam nas Data Tables e não são afetados.
 
 ### Backup
 
@@ -206,7 +218,7 @@ Se o computador dormir ou o n8n cair, ninguém sobra para mandar o alerta. Para 
 
 1. Crie uma conta em healthchecks.io e um *check* com **Period 5 minutes** e **Grace 10 minutes**. Ligue o aviso por e-mail ou pelo Telegram (*Integrations*).
 2. Copie a URL de ping (`https://hc-ping.com/…`).
-3. Na pasta `servidor-local`, crie o arquivo `.env` com a linha (troque pela sua URL):
+3. Na pasta `servidor-local`, crie o arquivo `.env` a partir do modelo (`Copy-Item .env.example .env` no PowerShell, `cp .env.example .env` no Linux/macOS) e preencha a linha (troque pela sua URL):
 
    ```
    HC_URL=https://hc-ping.com/sua-url
@@ -231,6 +243,8 @@ O vigia só faz o ping quando o 91 responde `ok`. Se o token do bot de aprovaç�
 | Alerta "🚨 problema no bot" | Leia o motivo na mensagem. Erro de entrega ou fila: `docker compose ps -a` e `docker compose logs tunel filtro n8n --tail 50`. Endereço diferente: `docker compose restart vigia`. |
 | `90 · Túnel` com erro "Endereço do túnel não permitido" | O túnel deu um endereço fora de trycloudflare.com e ngrok. Se for o seu domínio, preencha `tunel.dominio` na `bfx_config`. |
 | `backup` reiniciando | `docker compose logs backup`. Na primeira vez ele baixa o sqlite da internet. |
+| `n8n` fica **unhealthy** e `filtro`/`vigia`/`backup` não sobem | `docker compose logs n8n --tail 50`. Na primeira subida (ou depois de atualizar a imagem) as migrações podem passar de 1,5 min: espere e rode `docker compose up -d` de novo. |
+| `render` **unhealthy** ou erro de build | `docker compose logs render --tail 50` e `docker compose build render`. **Um erro de build do render faz o `docker compose up -d` inteiro falhar** (nenhum serviço sobe). Para manter o bot no ar: tire `render` do `COMPOSE_PROFILES` no `.env` e rode `docker compose up -d` de novo (ou `docker compose up -d --no-build`). Sem render, as ofertas vão para revisão (sem imagem não publica). |
 | A porta 5678 está em uso | Outro programa usa a porta. No `docker-compose.yml`, troque `127.0.0.1:5678:5678` por `127.0.0.1:5679:5678` e abra http://localhost:5679. |
 
 ---

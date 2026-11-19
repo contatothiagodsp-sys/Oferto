@@ -1,11 +1,19 @@
-# Só o webhook do Telegram passa pelo túnel. Todo o resto responde 404.
+# Só o webhook do Telegram (com X-Telegram-Bot-Api-Secret-Token válido) passa pelo túnel. Todo o resto responde 403/404.
 :80 {
-	@telegram {
+	@telegram_ok {
+		method POST
+		path /webhook/telegram-ofertas
+		header X-Telegram-Bot-Api-Secret-Token {$TELEGRAM_WEBHOOK_SECRET}
+	}
+	handle @telegram_ok {
+		reverse_proxy n8n:5678
+	}
+	@telegram_sem_secret {
 		method POST
 		path /webhook/telegram-ofertas
 	}
-	handle @telegram {
-		reverse_proxy n8n:5678
+	handle @telegram_sem_secret {
+		respond "Forbidden" 403
 	}
 	handle {
 		respond "Not found" 404

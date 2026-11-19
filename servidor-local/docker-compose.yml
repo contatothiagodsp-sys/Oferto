@@ -1,8 +1,9 @@
 # Ofertô: n8n Community no seu computador, com túnel público só para o webhook do Telegram.
 # Uso (nesta pasta):  docker compose up -d      Parar:  docker compose down
 # Guia completo: servidor-local/README.md
-# Opcional: arquivo .env nesta pasta (veja o README): HC_URL (healthchecks.io), TUNEL/COMPOSE_PROFILES/NGROK_* (endereço fixo).
-# Nunca coloque tokens de bot no .env: eles ficam só na Data Table bfx_config.
+# Opcional: arquivo .env nesta pasta (modelo em .env.example): HC_URL (healthchecks.io), TUNEL/COMPOSE_PROFILES/NGROK_*
+# (endereço fixo; COMPOSE_PROFILES=render liga o render) e PUBLICAR_WORKFLOWS (importar workflows novos no próximo "up").
+# Nunca coloque tokens de bot no .env: eles ficam só na Data Table bfx_config. O repositório é PÚBLICO.
 name: oferto
 
 x-n8n-env: &n8n-env
@@ -13,21 +14,38 @@ x-n8n-env: &n8n-env
   N8N_DIAGNOSTICS_ENABLED: "false"
   N8N_PERSONALIZATION_ENABLED: "false"
   N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
-  # Apaga execuções com mais de 7 dias ou além das 20 000 mais recentes (o disco não enche).
+  # Apaga execuções com mais de 3 dias ou além das 3 000 mais recentes (mantém o SQLite leve em RAM/disco).
   EXECUTIONS_DATA_PRUNE: "true"
-  EXECUTIONS_DATA_MAX_AGE: "168"
-  EXECUTIONS_DATA_PRUNE_MAX_COUNT: "20000"
-  # No máximo 5 execuções de produção ao mesmo tempo; as outras esperam na fila (pico da BF).
-  N8N_CONCURRENCY_PRODUCTION_LIMIT: "5"
+  EXECUTIONS_DATA_MAX_AGE: "72"
+  EXECUTIONS_DATA_PRUNE_MAX_COUNT: "3000"
+  # No máximo 3 execuções de produção ao mesmo tempo; evita picos de RAM quando o radar baixa HTML pesado.
+  N8N_CONCURRENCY_PRODUCTION_LIMIT: "3"
+  # Limite explícito de heap Node e timeout de tarefa do JS runner (evita OOM e TaskRequestTimeoutError).
+  NODE_OPTIONS: "--max-old-space-size=1536"
+  N8N_RUNNERS_TASK_TIMEOUT: "120"
+  # Hardening do SQLite e poda de histórico de workflows (reduz RAM/disco e evita DB inchado).
+  DB_SQLITE_POOL_SIZE: "4"
+  DB_SQLITE_VACUUM_ON_STARTUP: "true"
+  N8N_WORKFLOW_HISTORY_PRUNE_TIME: "24"
+  # Variáveis explícitas para eliminar avisos de deprecação do n8n 2.47.7.
+  N8N_RUNNERS_MODE: "internal"
+  N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
+  N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456"
+  N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
   # Limite total das Data Tables: 500 MB (o padrão do n8n 2.47.7 é 200 MB).
   N8N_DATA_TABLES_MAX_SIZE_BYTES: "524288000"
 
 services:
   # Importa e publica os workflows desta pasta quando eles mudam (roda e termina antes do n8n subir).
+  # Seguro por padrão: o preparar.sh só importa com PUBLICAR_WORKFLOWS=sim no .env (veja .env.example e o README).
+  # Os JSON de ./workflows são versionados: "git pull" os altera; quem barra a importação é só essa trava.
+  # Depois de importar, reinicie o n8n ("docker compose restart n8n") para ele ativar os gatilhos novos.
   preparar:
     image: n8nio/n8n:2.47.7
     entrypoint: ["/bin/sh", "/oferto/preparar.sh"]
-    environment: *n8n-env
+    environment:
+      <<: *n8n-env
+      PUBLICAR_WORKFLOWS: ${PUBLICAR_WORKFLOWS:-nao}
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/oferto/workflows:ro
@@ -45,21 +63,74 @@ services:
       - "127.0.0.1:5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
+    # /healthz responde 200 quando o n8n terminou de subir (migrações incluídas).
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
 
-  # Filtro: do túnel, só passa o POST do webhook do Telegram. O painel do n8n não fica exposto.
+  # Render: gera a imagem 1080x1080 dos posts (POST /render, JPEG em memória). O código e o Dockerfile ficam em ../render.
+  # Sem "ports": não abre porta no computador nem passa pelo túnel; só os contêineres deste compose chegam nele
+  # (o n8n chama http://render:3000/render). O túnel/filtro nunca encaminham para cá (veja o Caddyfile).
+  # Só sobe com o perfil "render" (COMPOSE_PROFILES=render no .env). Motivo: um build que falha (ex.: sharp)
+  # aborta o "docker compose up" inteiro; fora do perfil, o bot sobe sem render e as ofertas vão para revisão.
+  render:
+    profiles: [render]
+    build:
+      context: ../render
+      # O Dockerfile copia lib/imagem.js de um contexto nomeado "lib" (COPY --from=lib).
+      additional_contexts:
+        lib: ../lib
+    environment:
+      TZ: America/Sao_Paulo
+      PORT: "3000"
+    expose: ["3000"]
+    # A imagem do render é Node: o healthcheck usa o fetch do próprio Node (node:*-slim não traz wget nem curl).
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # Filtro: do túnel, só passa o POST do webhook do Telegram com secret válido. O painel do n8n não fica exposto.
   filtro:
     image: caddy:2.8.4-alpine
+    environment:
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-    depends_on: [n8n]
+    depends_on:
+      n8n:
+        condition: service_healthy
+    # A porta 80 responde 404 a quase tudo (de propósito); a saúde é lida na API de administração local do Caddy.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:2019/config/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   # Túnel rápido da Cloudflare (sem conta). O endereço muda a cada reinício; o vigia cuida disso.
+  # Sem healthcheck: a imagem do cloudflared não tem shell nem wget. O vigia já confere o endereço a cada 15 s.
   tunel:
     image: cloudflare/cloudflared:2025.8.1
     command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 --url http://filtro:80
-    depends_on: [filtro]
+    # service_started (e não healthy): se a checagem do Caddy falhar por algum detalhe da imagem, o túnel sobe mesmo assim.
+    depends_on:
+      filtro:
+        condition: service_started
     restart: unless-stopped
 
   # Alternativa com endereço fixo: ngrok com domínio estático. Só sobe com o perfil "ngrok"
@@ -70,11 +141,21 @@ services:
     command: ["http", "filtro:80", "--url=${NGROK_DOMAIN:-}", "--log=stdout"]
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
-    depends_on: [filtro]
+    # service_started (e não healthy): se a checagem do Caddy falhar por algum detalhe da imagem, o túnel sobe mesmo assim.
+    depends_on:
+      filtro:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:4040/api/tunnels || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
   # Vigia: quando o endereço do túnel muda, avisa o n8n (workflow 90), que refaz o webhook no Telegram.
   # A cada 5 min confere a saúde (workflow 91) e, se HC_URL estiver no .env, faz o ping no healthchecks.io.
+  # Sem healthcheck próprio: ele é o processo que confere a saúde dos outros (e avisa o healthchecks.io).
   vigia:
     image: curlimages/curl:8.11.1
     entrypoint: ["/bin/sh", "/oferto/vigia.sh"]
@@ -83,10 +164,15 @@ services:
       HC_URL: ${HC_URL:-}
     volumes:
       - ./vigia.sh:/oferto/vigia.sh:ro
-    depends_on: [n8n, tunel]
+    depends_on:
+      n8n:
+        condition: service_healthy
+      tunel:
+        condition: service_started
     restart: unless-stopped
 
   # Backup: 1 vez por dia gera ./backups/oferto-AAAA-MM-DD.tar.gz (banco + chave de criptografia) e guarda 7 dias.
+  # Sem healthcheck: o processo dorme entre um backup e outro; falhas aparecem em "docker compose logs backup".
   backup:
     image: alpine:3.24.3
     entrypoint: ["/bin/sh", "/oferto/backup.sh"]
@@ -97,7 +183,9 @@ services:
       - n8n_data:/dados
       - ./backups:/backups
       - ./backup.sh:/oferto/backup.sh:ro
-    depends_on: [n8n]
+    depends_on:
+      n8n:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
