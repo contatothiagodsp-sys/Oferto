@@ -59,9 +59,10 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `natura.consultoria` |  | Opcional: código do seu Espaço Digital Natura (?consultoria=...) |
 | `radar.ativo` | `sim` | sim/nao: ativa o Radar Multi-Fonte automático a cada 2 min sem custo extra (workflow 04) |
 | `radar.publicar_direto` | `sim` | sim/nao: publica as promoções do radar automaticamente no Telegram e entrega o botão WhatsApp (desative com /modo aprovar) |
-| `radar.auto_top` | `sim` | sim/nao: manda automaticamente promoções muito fortes (>=40% OFF ou >=30% + cupom) para o Top do Dia (até 5/dia) |
-| `radar.lojas` | `amazon,ml,shopee,shein,tiktok,kabum,terabyte,pichau,drogaraia,drogasil,pacheco,panvel,araujo,belezanaweb,epocacosmeticos,boticario,natura,sephora,centauro,netshoes,nike,adidas,renner,cea,riachuelo,dafiti,zattini,hering` | Lojas monitoradas pelo radar automático (Amazon, ML, Shopee, Shein, TikTok, KaBuM!, Terabyte, Pichau, farmácias, beleza e moda) |
-| `radar.categorias` | `moda,beleza,perfumes,saude,casa,tech,bebe` | Categorias monitoradas pelo radar (moda, beleza, perfumes, saude, casa, tech, bebe) |
+| `radar.auto_top` | `sim` | sim/nao: manda automaticamente promoções muito fortes (>=35% OFF ou >=28% + cupom) para o Top do Dia |
+| `radar.top_max_dia` | `5` | Máximo de ofertas por dia no Top do Dia (ex.: 5 a 30) |
+| `radar.lojas` | `amazon,ml,shopee,shein,tiktok,kabum,terabyte,pichau,drogaraia,drogasil,pacheco,panvel,araujo,belezanaweb,epocacosmeticos,boticario,natura,sephora,centauro,netshoes,nike,adidas,renner,cea,riachuelo,dafiti,zattini,hering,magalu,umusic,klinestore` | Lojas monitoradas pelo radar automático (Amazon, ML, Shopee, Shein, TikTok, KaBuM!, Terabyte, Pichau, farmácias, beleza e moda) |
+| `radar.categorias` | `moda,beleza,perfumes,saude,casa,tech,bebe,kpop` | Categorias monitoradas pelo radar (moda, beleza, perfumes, saude, casa, tech, bebe, kpop) |
 | `radar.palavras` |  | Filtro opcional de palavras no radar separadas por ; (vazio = aceita todas as boas ofertas das lojas/categorias; ajuste com /buscas) |
 | `radar.min_desconto_pct` | `15` | Desconto mínimo (%) para entrar no radar (ofertas com cupom ou destaque da comunidade também entram) |
 | `radar.preco_min` | `15` | Preço mínimo em R$ no radar (ignora banners de R$ 0,01 e itens isca) |
@@ -93,9 +94,15 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `whatsapp.api_key` |  | Opcional: chave/token (apikey / Bearer) da API de WhatsApp configurada em whatsapp.webhook_url |
 | `whatsapp.grupo_destino` |  | Opcional: JID/ID do grupo de WhatsApp para envio automático via whatsapp.webhook_url |
 | `whatsapp.canal_destino` |  | Opcional: JID/ID do canal de WhatsApp para envio automático via whatsapp.webhook_url |
+| `whatsapp.enviar_imagem` | `nao` | sim/nao: envia foto junto no disparo automático de WhatsApp (/message/sendMedia ou /api/sendImage) |
+| `publicacao.dry_run` | `sim` | sim/nao: portão de segurança de envio (nao = publica de verdade no Telegram/WhatsApp; sim = simula sem chamar API) |
+| `ritmo.max_dia` | `5` | Teto diário opcional por canal de categoria (Fase 2) |
+| `ritmo.min_dia` | `3` | Mínimo diário opcional por canal de categoria (Fase 2) |
+| `imagem.usar_foto_produto` | `sim` | sim/nao: usa a foto oficial do produto na arte do sidecar render (nao = ícone da categoria) |
+| `render.url` | `http://render:3000` | URL interna do sidecar render 1080x1080 |
 | `tunel.dominio` |  | Servidor local: domínio próprio aceito pelo workflow 90 · Túnel além de trycloudflare.com e ngrok (ex.: bot.seudominio.com.br). Vazio = só esses |
 | `saude.ultimo_alerta` |  | Servidor local: gerado pelo workflow 91 · Saúde (anti-spam dos alertas). Não precisa mexer |
-| `amazon.mostrar_preco` | `sim` | sim/nao: os posts da Amazon mostram o preço e o %. Com nao, dizem só "no menor preço dos últimos 90 dias" e "Veja o preço atual na Amazon" (use se os termos exigirem preço vindo da API oficial) |
+| `amazon.mostrar_preco` | `sim` | sim/nao: os posts da Amazon mostram o preço e o %. Com nao, dizem só "no menor preço dos últimos 90 dias" e "Veja o preço atual na Amazon" (recomendado para compliance do Amazon Associates ao ativar amazon.tag_padrao sem PA-API oficial) |
 | `keepa.chave` |  | Chave da API da Keepa (plano pago). Com ela, o /oferta da Amazon aceita só o link: título, preço e ref90 vêm da Keepa. Vazio = desligado |
 | `keepa.api` | `https://api.keepa.com` | Endereço da API da Keepa (não altere; usado em testes) |
 | `keepa.buybox` | `nao` | sim/nao: usar o preço da Buy Box (com frete) em vez do preço da Amazon/novo. Pode custar tokens extras (VERIFICAR) |
@@ -115,54 +122,78 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `afiliado.dafiti` |  | Opcional: parâmetro/template de afiliado para Dafiti (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.zattini` |  | Opcional: parâmetro/template de afiliado para Zattini (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.hering` |  | Opcional: parâmetro/template de afiliado para Hering (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.magalu` |  | Opcional: parâmetro/template de afiliado para Magalu (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.umusic` |  | Opcional: parâmetro/template de afiliado para UMusic Store (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.klinestore` |  | Opcional: parâmetro/template de afiliado para K-Line Store (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.hopescolor` |  | Opcional: parâmetro/template de afiliado para Hopescolor (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.asiaticstore` |  | Opcional: parâmetro/template de afiliado para Asiatic Store (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.kpopandyoushop` |  | Opcional: parâmetro/template de afiliado para Kpop and You Shop (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.kpopmerch` |  | Opcional: parâmetro/template de afiliado para Kpopmerch (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.ktown4u` |  | Opcional: parâmetro/template de afiliado para Ktown4u (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.weverse` |  | Opcional: parâmetro/template de afiliado para Weverse Shop (ex.: utm_source=meu_id ou URL com {url}) |
 | `categoria_nome.top` |  | Nome exibido para Top do Dia (ex.: Top Ofertas & Bugs) |
 | `topico.top` |  | message_thread_id do tópico Top do Dia (preenchido pelo setup) |
 | `canal.top` |  | Canal só de Top do Dia (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.top` |  | Link de entrada do canal Top do Dia (automático se público @usuario; informe se for privado) |
 | `canal_logo.top` |  | Logo do canal Top do Dia (URL https:// ou file_id via comando /logo) |
 | `canal_desc.top` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Top do Dia |
+| `whatsapp.grupo.top` |  | Opcional: JID do grupo de WhatsApp específico de Top do Dia |
 | `categoria_nome.casa` |  | Nome exibido para Casa & Eletro (ex.: Casa & Eletro) |
 | `topico.casa` |  | message_thread_id do tópico Casa & Eletro (preenchido pelo setup) |
 | `canal.casa` |  | Canal só de Casa & Eletro (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.casa` |  | Link de entrada do canal Casa & Eletro (automático se público @usuario; informe se for privado) |
 | `canal_logo.casa` |  | Logo do canal Casa & Eletro (URL https:// ou file_id via comando /logo) |
 | `canal_desc.casa` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Casa & Eletro |
+| `whatsapp.grupo.casa` |  | Opcional: JID do grupo de WhatsApp específico de Casa & Eletro |
 | `categoria_nome.moda` |  | Nome exibido para Moda, Roupas & Tênis (ex.: Moda, Roupas & Tênis) |
 | `topico.moda` |  | message_thread_id do tópico Moda, Roupas & Tênis (preenchido pelo setup) |
 | `canal.moda` |  | Canal só de Moda, Roupas & Tênis (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.moda` |  | Link de entrada do canal Moda, Roupas & Tênis (automático se público @usuario; informe se for privado) |
 | `canal_logo.moda` |  | Logo do canal Moda, Roupas & Tênis (URL https:// ou file_id via comando /logo) |
 | `canal_desc.moda` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Moda, Roupas & Tênis |
+| `whatsapp.grupo.moda` |  | Opcional: JID do grupo de WhatsApp específico de Moda, Roupas & Tênis |
 | `categoria_nome.beleza` |  | Nome exibido para Beleza & Skincare (ex.: Beleza & Skincare) |
 | `topico.beleza` |  | message_thread_id do tópico Beleza & Skincare (preenchido pelo setup) |
 | `canal.beleza` |  | Canal só de Beleza & Skincare (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.beleza` |  | Link de entrada do canal Beleza & Skincare (automático se público @usuario; informe se for privado) |
 | `canal_logo.beleza` |  | Logo do canal Beleza & Skincare (URL https:// ou file_id via comando /logo) |
 | `canal_desc.beleza` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Beleza & Skincare |
+| `whatsapp.grupo.beleza` |  | Opcional: JID do grupo de WhatsApp específico de Beleza & Skincare |
 | `categoria_nome.perfumes` |  | Nome exibido para Perfumes & Fragrâncias (ex.: Perfumes & Fragrâncias) |
 | `topico.perfumes` |  | message_thread_id do tópico Perfumes & Fragrâncias (preenchido pelo setup) |
 | `canal.perfumes` |  | Canal só de Perfumes & Fragrâncias (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.perfumes` |  | Link de entrada do canal Perfumes & Fragrâncias (automático se público @usuario; informe se for privado) |
 | `canal_logo.perfumes` |  | Logo do canal Perfumes & Fragrâncias (URL https:// ou file_id via comando /logo) |
 | `canal_desc.perfumes` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Perfumes & Fragrâncias |
+| `whatsapp.grupo.perfumes` |  | Opcional: JID do grupo de WhatsApp específico de Perfumes & Fragrâncias |
 | `categoria_nome.saude` |  | Nome exibido para Saúde, Suplementos & Farmácia (ex.: Saúde, Suplementos & Farmácia) |
 | `topico.saude` |  | message_thread_id do tópico Saúde, Suplementos & Farmácia (preenchido pelo setup) |
 | `canal.saude` |  | Canal só de Saúde, Suplementos & Farmácia (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.saude` |  | Link de entrada do canal Saúde, Suplementos & Farmácia (automático se público @usuario; informe se for privado) |
 | `canal_logo.saude` |  | Logo do canal Saúde, Suplementos & Farmácia (URL https:// ou file_id via comando /logo) |
 | `canal_desc.saude` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Saúde, Suplementos & Farmácia |
+| `whatsapp.grupo.saude` |  | Opcional: JID do grupo de WhatsApp específico de Saúde, Suplementos & Farmácia |
 | `categoria_nome.bebe` |  | Nome exibido para Bebê & Família (ex.: Bebê & Família) |
 | `topico.bebe` |  | message_thread_id do tópico Bebê & Família (preenchido pelo setup) |
 | `canal.bebe` |  | Canal só de Bebê & Família (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.bebe` |  | Link de entrada do canal Bebê & Família (automático se público @usuario; informe se for privado) |
 | `canal_logo.bebe` |  | Logo do canal Bebê & Família (URL https:// ou file_id via comando /logo) |
 | `canal_desc.bebe` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Bebê & Família |
+| `whatsapp.grupo.bebe` |  | Opcional: JID do grupo de WhatsApp específico de Bebê & Família |
 | `categoria_nome.tech` |  | Nome exibido para Tech & Games (ex.: Tech & Games) |
 | `topico.tech` |  | message_thread_id do tópico Tech & Games (preenchido pelo setup) |
 | `canal.tech` |  | Canal só de Tech & Games (@usuario do canal ou ID -100…). Configure rápido via /canais |
 | `canal_link.tech` |  | Link de entrada do canal Tech & Games (automático se público @usuario; informe se for privado) |
 | `canal_logo.tech` |  | Logo do canal Tech & Games (URL https:// ou file_id via comando /logo) |
 | `canal_desc.tech` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Tech & Games |
+| `whatsapp.grupo.tech` |  | Opcional: JID do grupo de WhatsApp específico de Tech & Games |
+| `categoria_nome.kpop` |  | Nome exibido para K-Pop & Álbuns Oficiais (ex.: K-Pop & Álbuns Oficiais) |
+| `topico.kpop` |  | message_thread_id do tópico K-Pop & Álbuns Oficiais (preenchido pelo setup) |
+| `canal.kpop` |  | Canal só de K-Pop & Álbuns Oficiais (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.kpop` |  | Link de entrada do canal K-Pop & Álbuns Oficiais (automático se público @usuario; informe se for privado) |
+| `canal_logo.kpop` |  | Logo do canal K-Pop & Álbuns Oficiais (URL https:// ou file_id via comando /logo) |
+| `canal_desc.kpop` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal K-Pop & Álbuns Oficiais |
+| `whatsapp.grupo.kpop` |  | Opcional: JID do grupo de WhatsApp específico de K-Pop & Álbuns Oficiais |
 | `shopee.busca.casa` | `air fryer; robo aspirador; cafeteira; ventilador; liquidificador; lava loucas` | Palavras-chave da coleta Shopee para Casa & Eletro (separe com ;) |
 | `shopee.busca.moda` | `tenis nike; tenis adidas; conjunto shein; vestido feminino; jaqueta puffer; camiseta oversized; calca cargo; legging academia` | Palavras-chave da coleta Shopee para Moda, Roupas & Tênis (separe com ;) |
 | `shopee.busca.beleza` | `protetor solar; serum principia; cerave; la roche posay; wella; mascara capilar; secador de cabelo; maquiagem` | Palavras-chave da coleta Shopee para Beleza & Skincare (separe com ;) |
@@ -170,6 +201,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `shopee.busca.saude` | `creatina; whey protein; omega 3; multivitaminico; colageno verisol; escova eletrica oral b; irrigador oral` | Palavras-chave da coleta Shopee para Saúde, Suplementos & Farmácia (separe com ;) |
 | `shopee.busca.bebe` | `fralda pampers; fralda huggies; lenco umedecido; formula infantil; brinquedo educativo` | Palavras-chave da coleta Shopee para Bebê & Família (separe com ;) |
 | `shopee.busca.tech` | `ps5; xbox series; placa de video; ssd nvme; headset gamer; fone bluetooth; smartwatch; monitor gamer` | Palavras-chave da coleta Shopee para Tech & Games (separe com ;) |
+| `shopee.busca.kpop` | `album kpop oficial; lightstick kpop oficial; photocard kpop oficial; fichario photocard kpop; toploader sleeves photocard; bt21 oficial; skzoo pelucia kpop; funko pop bts blackpink; chaveiro kpop oficial; bts album; stray kids album; blackpink album; twice album; txt album; enhypen album; seventeen album; aespa album; newjeans album; ive album; ateez album; le sserafim album; nct album; exo album; moletom kpop; revista dicon kpop` | Palavras-chave da coleta Shopee para K-Pop & Álbuns Oficiais (separe com ;) |
 | `amazon.tag.casa_tg` |  | Tag da Amazon para Casa & Eletro no tg |
 | `amazon.tag.casa_wac` |  | Tag da Amazon para Casa & Eletro no wac |
 | `amazon.tag.casa_wag` |  | Tag da Amazon para Casa & Eletro no wag |
@@ -198,3 +230,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `amazon.tag.tech_wac` |  | Tag da Amazon para Tech & Games no wac |
 | `amazon.tag.tech_wag` |  | Tag da Amazon para Tech & Games no wag |
 | `amazon.tag.tech_x` |  | Tag da Amazon para Tech & Games no x |
+| `amazon.tag.kpop_tg` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no tg |
+| `amazon.tag.kpop_wac` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no wac |
+| `amazon.tag.kpop_wag` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no wag |
+| `amazon.tag.kpop_x` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no x |

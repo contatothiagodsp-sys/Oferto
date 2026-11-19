@@ -1889,3 +1889,182 @@ test('rodada 2: br.shp.ee (kpopfever.br, pigeekv.br), Withmuu, Soundwave, Amazon
   assert.equal(selShGeral.candidatos.length, 1);
   assert.equal(selShGeral.candidatos[0].produto_id, 'shp_20_2');
 });
+
+test('boost de frequência: catálogos VTEX + Amazon oficial, anti-fome 6h, radar.top_max_dia e PALAVRAS_CAT bebe/saude', () => {
+  const radar = require('../lib/radar');
+  const config = require('../lib/config');
+  const extrator = require('../lib/extrator');
+  const fluxos = require('../lib/fluxos');
+  const cfg = config.montarConfig([
+    { chave: 'radar.top_max_dia', valor: '25' },
+    { chave: 'admins', valor: '111' },
+    { chave: 'grupo_id', valor: '-100123' },
+    { chave: 'topico.bebe', valor: '6' },
+    { chave: 'topico.saude', valor: '102' },
+    { chave: 'topico.tech', valor: '7' },
+    { chave: 'topico.top', valor: '3' },
+  ]);
+
+  // 1) lerCatalogoVtex: Pacheco (bebe/saude) e Época (perfumes), ignora esgotado/duplicado/JSON inválido
+  assert.deepEqual(radar.lerCatalogoVtex('nao-json', { loja: 'pacheco' }), []);
+  assert.deepEqual(radar.lerCatalogoVtex([], { loja: 'pacheco' }), []);
+  const vtexPacheco = radar.lerCatalogoVtex([
+    {
+      productId: '501',
+      productName: 'Fralda Pampers Confort Sec G 60 Unidades',
+      link: 'https://www.drogariaspacheco.com.br/fralda-pampers-confort-sec-g-60/p',
+      categories: ['/Bebe/Fraldas/'],
+      items: [{
+        images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/100/pampers.jpg' }],
+        sellers: [{ commertialOffer: { Price: 69.9, ListPrice: 119.9, AvailableQuantity: 15 } }],
+      }],
+    },
+    {
+      productId: '501',
+      productName: 'Fralda Pampers Confort Sec G 60 Unidades',
+      link: 'https://www.drogariaspacheco.com.br/fralda-pampers-confort-sec-g-60/p',
+      items: [{
+        images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/100/pampers.jpg' }],
+        sellers: [{ commertialOffer: { Price: 69.9, ListPrice: 119.9, AvailableQuantity: 15 } }],
+      }],
+    },
+    {
+      productId: '502',
+      productName: 'Fralda Esgotada',
+      link: 'https://www.drogariaspacheco.com.br/fralda-esgotada/p',
+      items: [{
+        images: [],
+        sellers: [{ commertialOffer: { Price: 50, ListPrice: 100, AvailableQuantity: 0 } }],
+      }],
+    },
+  ], { loja: 'pacheco', categoria_hint: 'bebe' });
+  assert.equal(vtexPacheco.length, 1);
+  assert.equal(vtexPacheco[0].loja, 'pacheco');
+  assert.equal(vtexPacheco[0].categoria_hint, 'bebe');
+  assert.equal(vtexPacheco[0].desconto_pct, 42);
+  assert.equal(vtexPacheco[0].loja_oficial, true);
+  assert.equal(vtexPacheco[0].resolved, true);
+  assert.equal(vtexPacheco[0].fonte_radar, 'vtex_catalogo');
+
+  // 2) planejarFontesRadar inclui vtex_catalogo e amazon_busca mesmo com Promobit em cooldown 429, e separa buscas Amazon
+  const planBloq = radar.planejarFontesRadar(cfg, {
+    modo: 'agendado',
+    ts: AGORA,
+    pb_redir_bloqueado_ate: AGORA + 600000,
+  });
+  const tipos = planBloq.fontesWeb.map((f) => f.tipo);
+  assert.ok(tipos.includes('vtex_catalogo'), 'Deve incluir vtex_catalogo mesmo com Promobit bloqueado');
+  assert.ok(tipos.filter((t) => t === 'amazon_busca').length >= 2, 'Deve incluir amazon_busca de kpop e de nicho');
+  for (let i = 1; i < tipos.length; i++) {
+    assert.ok(!(tipos[i] === 'amazon_busca' && tipos[i - 1] === 'amazon_busca'), 'Buscas Amazon não devem ficar adjacentes');
+  }
+  assert.ok(!tipos.some((t) => t === 'promobit_loja' || t === 'promobit_cat'), 'Não deve chamar Promobit loja/cat durante cooldown');
+
+  // 3) Boost de fome (6h): categoria parada (bebe/saude com 0 posts em 6h) vence empate/desvantagem moderada contra tech já saturada
+  const ofertas6h = Array.from({ length: 6 }, (_, i) => ({
+    oferta_id: 'ot' + i,
+    produto_id: 'amz_TECH00000' + i,
+    loja: 'amazon',
+    categoria: 'tech',
+    titulo: 'Mouse Gamer ' + i,
+    preco: 150,
+    status: 'aprovada',
+    ts: AGORA - (i + 1) * 20 * 60000,
+  }));
+  const planFome = {
+    ativo: true,
+    opcoes: { modo: 'comando', limite: 2, limite_explicito: true, categorias: ['tech', 'bebe', 'saude'], lojas: ['pacheco', 'amazon'], ts: AGORA },
+    fontesWeb: [
+      { tipo: 'vtex_catalogo', loja_hint: 'pacheco', categoria_hint: 'bebe' },
+      { tipo: 'vtex_catalogo', loja_hint: 'pacheco', categoria_hint: 'saude' },
+      { tipo: 'promobit_loja', loja_hint: 'amazon' },
+    ],
+    fontesShopee: [],
+  };
+  const respBebe = {
+    body: JSON.stringify([{
+      productId: 'b1',
+      productName: 'Fralda Pampers Pants M 72 Unidades',
+      link: 'https://www.drogariaspacheco.com.br/fralda-pampers-pants-m-72/p',
+      items: [{ images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/1/f.jpg' }], sellers: [{ commertialOffer: { Price: 79.9, ListPrice: 110, AvailableQuantity: 10 } }] }],
+    }]),
+  };
+  const respSaude = {
+    body: JSON.stringify([{
+      productId: 's1',
+      productName: 'Creatina Monohidratada 300g Integralmedica',
+      link: 'https://www.drogariaspacheco.com.br/creatina-300g-integralmedica/p',
+      items: [{ images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/2/c.jpg' }], sellers: [{ commertialOffer: { Price: 59.9, ListPrice: 89.9, AvailableQuantity: 10 } }] }],
+    }]),
+  };
+  const respTech = {
+    body: '<script id="__NEXT_DATA__">' + JSON.stringify({
+      props: {
+        pageProps: {
+          serverOffers: {
+            offers: [{
+              offerId: 9001,
+              offerTitle: 'Teclado Mecânico Gamer RGB Switch Blue',
+              offerPrice: 199,
+              offerOldPrice: 280,
+              offerLikes: 12,
+              offerClicks: 150,
+              storeDomain: 'amazon.com.br',
+            }],
+          },
+        },
+      },
+    }) + '</script>',
+  };
+  const selFome = radar.selecionarCandidatosRadar(planFome, [respBebe, respSaude, respTech], [], ofertas6h, [], cfg, []);
+  const catsSel = selFome.candidatos.map((c) => c.categoria);
+  assert.ok(catsSel.includes('bebe') || catsSel.includes('saude'), 'Categoria com 0 posts em 6h deve furar a fila contra tech saturada');
+
+  // 4) radar.top_max_dia=25 permite ir ao Top mesmo com 5 posts já feitos hoje (enquanto padrão sem config continua 5)
+  assert.equal(fluxos.limiteTopDia(config.padrao()), 5);
+  assert.equal(fluxos.limiteTopDia(cfg), 25);
+  const top5Hoje = Array.from({ length: 5 }, (_, i) => ({
+    oferta_id: 'top' + i,
+    produto_id: 'amz_TOP000000' + i,
+    top: true,
+    ts: AGORA - (i + 1) * 600000,
+  }));
+  const finTop = radar.finalizarRadar(
+    {
+      opcoes: { modo: 'agendado', ts: AGORA, categorias: ['bebe'], lojas: ['pacheco'], limite_alvo: 4 },
+      candidatos: [{
+        radar_key: 'pacheco_501',
+        produto_id: 'dpa_501',
+        loja: 'pacheco',
+        categoria: 'bebe',
+        categoria_confianca: 1,
+        categoria_indefinida: false,
+        titulo: 'Fralda Pampers Confort Sec G 60 Unidades',
+        preco: 69.9,
+        preco_de: 119.9,
+        desconto_pct: 42,
+        imagem: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/100/pampers.jpg',
+        url: 'https://www.drogariaspacheco.com.br/fralda-pampers-confort-sec-g-60/p',
+        resolved: true,
+        fonte_radar: 'vtex_catalogo',
+      }],
+      reqs3: [],
+      reqsPag: [],
+      reqsMercado: [],
+    },
+    [],
+    top5Hoje,
+    [],
+    cfg,
+    [],
+    [],
+  );
+  assert.equal(finTop.ofertasNovas.length, 1);
+  assert.equal(finTop.ofertasNovas[0].top, true, 'Com radar.top_max_dia=25, a 6ª oferta forte do dia deve ir ao Top');
+
+  // 5) PALAVRAS_CAT enriquecido para bebe e saude
+  assert.equal(extrator.classificarCategoria('Toalhas Umedecidas Huggies Natural Care 48un', cfg, '').categoria, 'bebe');
+  assert.equal(extrator.classificarCategoria('Fórmula Infantil Nestogeno 1 800g', cfg, '').categoria, 'bebe');
+  assert.equal(extrator.classificarCategoria('Vitamina D3 2000UI Lavitan 30 Cápsulas', cfg, '').categoria, 'saude');
+  assert.equal(extrator.classificarCategoria('Whey Concentrado 900g Black Skull', cfg, '').categoria, 'saude');
+});

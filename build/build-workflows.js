@@ -1245,7 +1245,7 @@ return resps.map((r, idx) => {
   const f = fontes[idx] || {};
   const raw = typeof r.body === 'string' ? r.body : (typeof r.data === 'string' ? r.data : '');
   let body = raw;
-  if (f.tipo === 'umusic_vtex') {
+  if (f.tipo === 'umusic_vtex' || f.tipo === 'vtex_catalogo') {
     const val = r.body != null ? r.body : r.data;
     if (typeof val === 'string' && val.length > 400000) {
       try {
