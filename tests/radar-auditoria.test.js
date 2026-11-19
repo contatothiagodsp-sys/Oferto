@@ -2340,3 +2340,125 @@ test('regressão Amazon 19/11: sem falso 3x sem juros (accordion oculto / NuPay)
   assert.equal(pbItems.length, 1);
   assert.equal(pbItems[0].parcelamento, '');
 });
+
+test('Regressões 2ª rodada: installmentsAccordionRow ativo, divs aninhadas ocultas, NuPay prefixado, texto negado, radar/Guardião autoritativos e Mais por Menos 5+ itens', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const { executarGuardiao } = require('../lib/comunidade');
+
+  // 1) Amazon: newAccordionRow oculto e installmentsAccordionRow visível não pode se auto-truncar
+  const htmlInstAtivo = [
+    '<html><body><span id="productTitle">Fone Bluetooth Teste</span>',
+    '<span class="priceToPay"><span class="a-offscreen">R$ 300,00</span></span>',
+    '<div id="installmentCalculatorCentral_feature_div">',
+    '<div id="reinvent_price_desktop_newAccordionRow" style="display:none;">Em até 12x de R$ 29,90 com juros</div>',
+    '<div id="reinvent_price_desktop_installmentsAccordionRow"><span>Em até 6x de R$ 50,00 sem juros</span></div>',
+    '<a id="InstallmentCalculatorTrigger">Ver parcelas</a></div></body></html>',
+  ].join('');
+  const rInstAtivo = extrator.lerPaginaProduto({ statusCode: 200, body: htmlInstAtivo }, 'https://www.amazon.com.br/dp/B0TESTBUG01');
+  assert.equal(rInstAtivo.preco, 300);
+  assert.equal(rInstAtivo.parcelamento, 'Em até 6x de R$ 50,00 sem juros');
+
+  // 2) Amazon fallback sem installmentCalculatorCentral_feature_div: div oculto com div aninhada não vaza parcelamento
+  const htmlNestedParc = [
+    '<html><body><span id="productTitle">Cueca Boxer Teste</span>',
+    '<span class="priceToPay"><span class="a-offscreen">R$ 92,87</span></span>',
+    '<div style="display:none;"><div class="inner">oculto</div><div>Em até 3x de R$ 31,51 sem juros</div></div>',
+    '</body></html>',
+  ].join('');
+  const rNestedParc = extrator.lerPaginaProduto({ statusCode: 200, body: htmlNestedParc }, 'https://www.amazon.com.br/dp/B0TESTBUG02');
+  assert.equal(rNestedParc.preco, 92.87);
+  assert.equal(rNestedParc.parcelamento, '');
+
+  // 3) Amazon SnS oculto com div aninhada interna não vaza recorrência
+  const htmlNestedSns = [
+    '<html><body><span id="productTitle">Cueca Boxer Teste</span>',
+    '<span class="priceToPay"><span class="a-offscreen">R$ 92,87</span></span>',
+    '<div id="snsAccordionRowMiddle" style="display:none;"><div class="header"></div><div class="snsPrice">Programe e Poupe economize 5% R$ 88,23</div></div>',
+    '</body></html>',
+  ].join('');
+  const rNestedSns = extrator.lerPaginaProduto({ statusCode: 200, body: htmlNestedSns }, 'https://www.amazon.com.br/dp/B0TESTBUG03');
+  assert.equal(rNestedSns.preco, 92.87);
+  assert.equal(rNestedSns.recorrencia, false);
+  assert.equal(rNestedSns.recorrencia_preco, null);
+
+  // 4) NuPay / Cartão Amazon ANTES do parcelamento no fallback e no texto livre, além de frases negadas
+  const htmlNupayAntes = '<html><body><span id="productTitle">Produto Teste</span><span class="priceToPay"><span class="a-offscreen">R$ 92,87</span></span><div>Pague com NuPay em até 3x de R$ 30,96 sem juros</div></body></html>';
+  assert.equal(extrator.lerPaginaProduto({ statusCode: 200, body: htmlNupayAntes }, 'https://www.amazon.com.br/dp/B0TESTBUG06').parcelamento, '');
+  assert.equal(extrator.extrairDoTexto('Kit Cuecas R$ 92,87 em até 3x de R$ 30,96 sem juros no Cartão Amazon').parcelamento, '');
+  const txtNeg = extrator.extrairDoTexto('Kit Cuecas R$ 92,87 não tem compra recorrente nem 3x sem juros');
+  assert.equal(txtNeg.parcelamento, '');
+  assert.equal(txtNeg.recorrencia, false);
+
+  // 5) Amazon "Mais por Menos: 5% off em 5+ itens" não pode virar cupom de unidade única
+  const htmlMaisPorMenos = [
+    '<html><body><span id="productTitle">Lavitan Ômega 3 120 Cápsulas</span>',
+    '<span class="priceToPay"><span class="a-offscreen">R$ 44,95</span></span>',
+    '<label id="greenBadge1">Mais por Menos: 5% off em 5+ itens Comprar itens elegíveis</label>',
+    '</body></html>',
+  ].join('');
+  const rMais = extrator.lerPaginaProduto({ statusCode: 200, body: htmlMaisPorMenos }, 'https://www.amazon.com.br/dp/B07P8V9PWH');
+  assert.equal(rMais.preco, 44.95);
+  assert.equal(rMais.cupom_auto, '');
+  assert.equal(rMais.cupom_pct, null);
+
+  // 6) Radar finalizarRadar: PDP Amazon ao vivo limpa parcelamento/recorrência falsos vindos de canal terceiro
+  const prepFalso = {
+    opcoes: { modo: 'agendado', ts: '2026-11-19T18:00:00.000Z' },
+    candidatos: [{
+      loja: 'amazon', categoria: 'moda', produto_id: 'amz_B0CW24291V',
+      url: 'https://www.amazon.com.br/dp/B0CW24291V', titulo: 'Kit 12 Cuecas Boxer Reebok',
+      preco: 92.87, preco_de: 184, parcelamento: 'Em até 3x de R$ 30,96 sem juros', preco_parcelado: 92.87,
+      recorrencia: true, recorrencia_preco: 88.23, recorrencia_pct: 5,
+      fonte_radar: 'telegram_xetdaspromocoes', radar_key: 'tg_xet_falso_1',
+      imagem: 'https://m.media-amazon.com/images/I/61reebok.jpg',
+      resolved: true,
+    }],
+    reqsPag: [{ idx: 0, url: 'https://www.amazon.com.br/dp/B0CW24291V' }],
+    reqsMercado: [],
+  };
+  const htmlAmzLimpo = '<html><body><span id="productTitle">Kit 12 Cuecas Boxer Reebok</span><span class="priceToPay"><span class="a-offscreen">R$ 92,87</span></span><div id="installmentCalculatorCentral_feature_div"><div id="reinvent_price_desktop_newAccordionRow">Em até 12x de R$ 8,94 com juros</div></div></body></html>';
+  const finLimpo = radar.finalizarRadar(
+    prepFalso, [], [], [],
+    { telegram: { bot_token: '1:TEST', grupo_id: '-1001' }, afiliados: { amazon_tag: 'ofert-20' }, publicacao: { dry_run: 'nao' }, radar: { max_por_rodada: 5, ativo: 'sim' } },
+    [{ statusCode: 200, body: htmlAmzLimpo }],
+    [],
+  );
+  assert.equal(finLimpo.ofertasNovas.length, 1);
+  const manFinLimpo = JSON.parse(finLimpo.ofertasNovas[0].links_manuais);
+  assert.equal(manFinLimpo.parcelamento || '', '');
+  assert.equal(manFinLimpo.preco_parcelado || null, null);
+  assert.equal(!!manFinLimpo.recorrencia, false);
+  assert.equal(manFinLimpo.recorrencia_preco || null, null);
+  assert.equal(manFinLimpo.recorrencia_pct || null, null);
+
+  // 7) Guardião: ao detectar queda de preço em oferta antiga contaminada, limpa parcelamento/recorrência ausentes na PDP atual
+  const cfgG = { telegram: { bot_token: '1:TEST', grupo_id: '-1001' }, afiliados: { amazon_tag: 'ofert-20' }, publicacao: { dry_run: 'nao' } };
+  const ofertaAntiga = {
+    oferta_id: 'of_reebok_old', loja: 'amazon', categoria: 'moda', status: 'aprovada',
+    titulo: 'Kit 12 Cuecas Boxer Reebok', preco: 92.87, url: 'https://www.amazon.com.br/dp/B0CW24291V',
+    links_manuais: JSON.stringify({
+      parcelamento: 'Em até 3x de R$ 27,45 sem juros',
+      preco_parcelado: 82.36,
+      recorrencia: true,
+      recorrencia_preco: 88.23,
+      recorrencia_pct: 5,
+    }),
+  };
+  const htmlAmzCaiu = '<html><body><span id="productTitle">Kit 12 Cuecas Boxer Reebok</span><span class="priceToPay"><span class="a-offscreen">R$ 79,90</span></span><div id="installmentCalculatorCentral_feature_div"><div id="reinvent_price_desktop_newAccordionRow">Em até 12x de R$ 7,90 com juros</div></div></body></html>';
+  const resG = executarGuardiao(
+    { checar: [ofertaAntiga], ts: Date.parse('2026-11-19T18:00:00.000Z'), hojeIso: '2026-11-19', hora: 15, minuto: 0 },
+    [{ statusCode: 200, body: htmlAmzCaiu }],
+    [ofertaAntiga],
+    [{ oferta_id: 'of_reebok_old', plataforma: 'tg', categoria: 'moda', message_id: '555' }],
+    [{ oferta_id: 'of_reebok_old', url_curta: 'https://www.amazon.com.br/dp/B0CW24291V?tag=ofert-20' }],
+    cfgG,
+  );
+  assert.equal(resG.updatesOfertas.length, 1);
+  const manLimpo = JSON.parse(resG.updatesOfertas[0].links_manuais);
+  assert.equal(manLimpo.parcelamento, undefined);
+  assert.equal(manLimpo.preco_parcelado, undefined);
+  assert.equal(manLimpo.recorrencia, undefined);
+  assert.equal(manLimpo.recorrencia_preco, undefined);
+  assert.equal(manLimpo.recorrencia_pct, undefined);
+});
