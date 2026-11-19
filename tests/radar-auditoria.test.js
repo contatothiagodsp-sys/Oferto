@@ -2185,3 +2185,158 @@ test('boost de frequência: catálogos VTEX + Amazon oficial, anti-fome 6h, rada
   assert.equal(extrator.classificarCategoria('Vitamina D3 2000UI Lavitan 30 Cápsulas', cfg, '').categoria, 'saude');
   assert.equal(extrator.classificarCategoria('Whey Concentrado 900g Black Skull', cfg, '').categoria, 'saude');
 });
+
+test('regressão Amazon 19/11: sem falso 3x sem juros (accordion oculto / NuPay) e sem falsa recorrência (dropdown Programe e Poupe)', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const textos = require('../lib/textos');
+  const cfg = cfgBase();
+
+  // 1) Caso real B0CW24291V (Kit 12 Cuecas Boxer Reebok):
+  //    - navbar global tem <option value="search-alias=specialty-aps-sns">Programe e Poupe</option>
+  //    - buybox ativo tem "12x de R$ 8,94 com juros (total parcelado R$ 107,36)"
+  //    - popover oculto tem NuPay "Parcele em até 12x sem juros com NuPay Crédito"
+  //    - accordion oculto (display:none) tem "3x de R$ 31,51 sem juros (total parcelado R$ 94,49)"
+  const htmlReebok = [
+    '<html><body>',
+    '<select id="searchDropdownBox"><option value="search-alias=specialty-aps-sns">Programe e Poupe</option></select>',
+    '<script>var x = {"SNS":"Programe e Poupe"};</script>',
+    '<span id="productTitle">Kit 12 Cuecas Boxer Reebok Masculinas Microfibra Adulto Box Sem Costura</span>',
+    '<span class="apex-pricetopay-value"><span class="a-offscreen">R$ 92,87</span></span>',
+    '<span class="basisPrice"><span class="a-offscreen">R$ 184,00</span></span>',
+    '<span>no Pix e NuPay</span>',
+    '<div id="installmentCalculatorCentral_feature_div" class="celwidget">',
+    '  <div class="offersConsistencyEnabled">',
+    '    <div id="reinvent_price_desktop_newAccordionRow" style="">',
+    '      <span class="a-size-base"> ou em até</span>',
+    '      <span class="a-size-base a-color-attainable a-text-bold"> 12x de R$ 8,94 com juros<br/></span>',
+    '      <span class="highlight-total-line-desktop">(total parcelado R$ 107,36)<br/></span>',
+    '      <span id="InstallmentCalculatorTrigger"><a href="#">Ver opções de pagamento</a></span>',
+    '      <div class="a-popover-preload" id="a-popover-preload-0">',
+    '        <div data-a-name="NubankCredit" class="a-box a-hidden"><p>Parcele em até 12x sem juros com NuPay Crédito.</p></div>',
+    '      </div>',
+    '    </div>',
+    '    <div id="reinvent_price_desktop_installmentsAccordionRow" style="display:none;">',
+    '      <span class="a-size-base"> Em até</span>',
+    '      <span class="a-size-base a-color-attainable a-text-bold"> 3x de R$ 31,51 sem juros<br/></span>',
+    '      <span class="highlight-total-line-desktop">(total parcelado R$ 94,49)<br/></span>',
+    '    </div>',
+    '  </div>',
+    '</div>',
+    '<label id="greenBadge1">Salve o cupom R$ 25</label><span id="promoMessageCXCW1"> : BLACKTAQUETA. Exclusivo Prime</span>',
+    '</body></html>',
+  ].join('');
+  const lidoReebok = extrator.lerPaginaProduto({ statusCode: 200, body: htmlReebok }, 'https://www.amazon.com.br/dp/B0CW24291V');
+  assert.equal(lidoReebok.preco, 92.87);
+  assert.equal(lidoReebok.pix, true);
+  assert.equal(lidoReebok.parcelamento, '', 'Não deve puxar 3x sem juros de accordion display:none nem 12x do NuPay');
+  assert.equal(lidoReebok.preco_parcelado, null, 'Não deve gravar total parcelado com juros quando não há sem juros');
+  assert.equal(lidoReebok.recorrencia, false, 'Dropdown global Programe e Poupe não pode ativar recorrência');
+  assert.equal(lidoReebok.recorrencia_preco, null);
+  assert.equal(lidoReebok.recorrencia_pct, null);
+
+  // Fluxo completo: finalizarRadar + textoTelegram não deve exibir 3x sem juros nem Compra com recorrência
+  const candReebok = {
+    radar_key: 'tg_xetdaspromocoes_94182',
+    produto_id: 'amz_B0CW24291V',
+    url: 'https://www.amazon.com.br/dp/B0CW24291V',
+    loja: 'amazon',
+    categoria: 'moda',
+    titulo: 'Kit 12 Cuecas Boxer Reebok Masculinas Microfibra',
+    preco: 74,
+    preco_de: 184,
+    cupom: 'BLACKTAQUETA',
+    pix: true,
+    resolved: true,
+  };
+  const finReebok = radar.finalizarRadar(
+    { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: [candReebok], reqsPag: [{ idx: 0, url: candReebok.url }], reqsMercado: [] },
+    [], [], [], cfg, [{ statusCode: 200, body: htmlReebok }], [],
+  );
+  assert.equal(finReebok.ofertasNovas.length, 1);
+  const manReebok = JSON.parse(finReebok.ofertasNovas[0].links_manuais);
+  assert.equal(manReebok.parcelamento || '', '');
+  assert.equal(manReebok.preco_parcelado || null, null);
+  assert.equal(!!manReebok.recorrencia, false);
+  const tgReebok = textos.textoTelegram(finReebok.ofertasNovas[0], 'https://www.amazon.com.br/dp/B0CW24291V?tag=oferto-20', cfg);
+  assert.doesNotMatch(tgReebok, /sem juros|3x de|recorr[êe]ncia/i);
+
+  // 2) Caso real B0HD2T6BZZ (Omo 4kg): 12x com juros + NuPay oculto + dropdown Programe e Poupe
+  const htmlOmo = [
+    '<html><body>',
+    '<select id="searchDropdownBox"><option value="search-alias=specialty-aps-sns">Programe e Poupe</option></select>',
+    '<span id="productTitle">Lava-Roupas em Pó Omo 4kg</span>',
+    '<span class="apex-pricetopay-value"><span class="a-offscreen">R$ 42,53</span></span>',
+    '<div id="installmentCalculatorCentral_feature_div">',
+    '  <span>ou em até</span><span>12x de R$ 4,05 com juros</span><span>(total parcelado R$ 48,63)</span>',
+    '  <span id="InstallmentCalculatorTrigger">Ver opções</span>',
+    '  <div class="a-popover-preload"><div data-a-name="NubankCredit">Parcele em até 12x sem juros com NuPay Crédito.</div></div>',
+    '</div></body></html>',
+  ].join('');
+  const lidoOmo = extrator.lerPaginaProduto({ statusCode: 200, body: htmlOmo }, 'https://www.amazon.com.br/dp/B0HD2T6BZZ');
+  assert.equal(lidoOmo.parcelamento, '');
+  assert.equal(lidoOmo.preco_parcelado, null);
+  assert.equal(lidoOmo.recorrencia, false);
+
+  // 3) Caso real B0H4N4L11K (Ar-condicionado Samsung): 12x sem juros legítimo no buybox visível, sem SnS
+  const htmlAr = [
+    '<html><body>',
+    '<select id="searchDropdownBox"><option value="search-alias=specialty-aps-sns">Programe e Poupe</option></select>',
+    '<span id="productTitle">Ar-condicionado Split Samsung 12000 BTUs</span>',
+    '<span class="apex-pricetopay-value"><span class="a-offscreen">R$ 2.124,15</span></span>',
+    '<div id="installmentCalculatorCentral_feature_div">',
+    '  <span>ou em até</span><span>12x de R$ 208,25 sem juros</span><span>(total parcelado R$ 2.499,00)</span>',
+    '  <span id="InstallmentCalculatorTrigger">Ver opções</span>',
+    '</div></body></html>',
+  ].join('');
+  const lidoAr = extrator.lerPaginaProduto({ statusCode: 200, body: htmlAr }, 'https://www.amazon.com.br/dp/B0H4N4L11K');
+  assert.equal(lidoAr.parcelamento, 'Em até 12x de R$ 208,25 sem juros');
+  assert.equal(lidoAr.preco_parcelado, 2499);
+  assert.equal(lidoAr.recorrencia, false);
+
+  // 4) Caso real B07C1S6YR4 (Protetor Sundown): SnS visível real funciona; placeholder ppd_sns oculto é ignorado
+  const htmlSundown = [
+    '<html><body>',
+    '<div id="ppd_snsAccordionRowMiddle" style="display:none;"><span id="snsPrice">R$ 10,00</span></div>',
+    '<span id="productTitle">Protetor Solar Sundown FPS 50 350ml</span>',
+    '<span class="apex-pricetopay-value"><span class="a-offscreen">R$ 70,68</span></span>',
+    '<div id="snsAccordionRowMiddle" data-buying-option-index="1"><span>Programe e Poupe</span><span>R$ 67,15</span><span>Poupe 5% agora</span></div>',
+    '</body></html>',
+  ].join('');
+  const lidoSundown = extrator.lerPaginaProduto({ statusCode: 200, body: htmlSundown }, 'https://www.amazon.com.br/dp/B07C1S6YR4');
+  assert.equal(lidoSundown.recorrencia, true);
+  assert.equal(lidoSundown.recorrencia_preco, 67.15);
+  assert.equal(lidoSundown.recorrencia_pct, 5);
+
+  // 5) Container snsAccordionRow oculto (display:none) com snsPrice interno NÃO ativa recorrência
+  const htmlSnsOculto = '<html><body><span id="productTitle">Camiseta Básica</span><span class="priceToPay"><span class="a-offscreen">R$ 80,00</span></span><div id="snsAccordionRowMiddle" style="display:none;"><span id="snsPrice">R$ 60,00</span><span>Programe e Poupe 25%</span></div></body></html>';
+  const lidoSnsOculto = extrator.lerPaginaProduto({ statusCode: 200, body: htmlSnsOculto }, 'https://www.amazon.com.br/dp/B0CAMI0001');
+  assert.equal(lidoSnsOculto.recorrencia, false);
+
+  // 6) recalcularParcelamentoComCupom ignora preco_parcelado incoerente com qtd * parcela
+  const manRecalc = { parcelamento: 'Em até 3x de R$ 31,51 sem juros' };
+  extrator.recalcularParcelamentoComCupom({ parcelamento: 'Em até 3x de R$ 31,51 sem juros', preco_parcelado: 107.36, preco: 92.87 }, manRecalc, null, 25);
+  assert.equal(manRecalc.preco_parcelado, 69.53);
+  assert.equal(manRecalc.parcelamento, 'Em até 3x de R$ 23,18 sem juros');
+
+  // 7) Fallback universal rejeita parcelamento de produto relacionado com total incompatível com o preço
+  const htmlLojaRel = '<html><head><title>Caneca R$ 49,90</title></head><body><h1>Caneca Térmica</h1><meta property="product:price:amount" content="49.90"><div class="relacionados">Geladeira 12x de R$ 250,00 sem juros</div></body></html>';
+  const lidoLojaRel = extrator.lerPaginaProduto({ statusCode: 200, body: htmlLojaRel }, 'https://www.magazineluiza.com.br/caneca/p/123456/');
+  assert.equal(lidoLojaRel.parcelamento, '', 'Parcelamento incompatível de carrossel não deve vazar para o produto');
+
+  // 8) Promobit: tag genérica "Parcelado" sem "sem juros" não fabrica "Parcelamento sem juros disponível"
+  const pbHtml = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: {
+      pageProps: {
+        serverOffers: [{
+          offerId: 901, offerTitle: 'Camisa Polo Lacoste', offerPrice: 199.9, offerOldPrice: 349.9,
+          offerLikes: 20, offerClicks: 100, storeDomain: 'amazon.com.br', offerPhoto: '/901.jpg',
+          offerTags: [{ name: 'Parcelado' }],
+        }],
+      },
+    },
+  })}</script>`;
+  const pbItems = radar.lerPromobitHtml(pbHtml, 'amazon', 'moda');
+  assert.equal(pbItems.length, 1);
+  assert.equal(pbItems[0].parcelamento, '');
+});
