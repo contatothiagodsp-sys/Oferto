@@ -111,13 +111,16 @@ test('Motor Em Alta + Perfumes Árabes no ML & Perfumes de Nicho (/radar alta, /
     return { statusCode: 200, data: '<html></html>' };
   });
 
-  // No modo agendado: sabonete 10% sem estar em alta fica fora, mas Lattafa Asad 10% no ML e PS5 bombando entram!
+  // No modo agendado: sabonete 10% sem estar em alta fica fora, e maxPbRedirCiclo=2 limita rajada Promobit a 2/ciclo;
+  // Lattafa Asad 10% no ML e PS5 bombando entram (e o Perfume de Nicho entra quando há vaga ou no modo comando)!
   const planAg = Object.assign({}, plan, { opcoes: Object.assign({}, plan.opcoes, { modo: 'agendado', limite: 5 }) });
   const sel = L.selecionarCandidatosRadar(planAg, respWeb, [], [], [], cfg, [{ alerta_id: 'al1', termo: 'asad', ativo: true }]);
   const idsSel = sel.candidatos.map((c) => c.radar_key);
   assert.ok(idsSel.includes('pb_501'), 'PS5 explodindo entra');
   assert.ok(idsSel.includes('pb_502'), 'Perfume Árabe no ML entra mesmo com 10%');
-  assert.ok(idsSel.includes('pb_503'), 'Perfume de Nicho entra');
+  assert.equal(sel.candidatos.filter((c) => c.fonte_radar === 'promobit' && c.redir_url).length, 2, 'maxPbRedirCiclo=2 no agendado');
+  const selCmd = L.selecionarCandidatosRadar(Object.assign({}, plan, { opcoes: Object.assign({}, plan.opcoes, { modo: 'comando', limite: 5 }) }), respWeb, [], [], [], cfg, [{ alerta_id: 'al1', termo: 'asad', ativo: true }]);
+  assert.ok(selCmd.candidatos.some((c) => c.radar_key === 'pb_503'), 'Perfume de Nicho entra sem teto agendado');
   assert.ok(!idsSel.includes('pb_504'), 'Item comum 10% sem alta fica de fora');
 
   const ps5 = sel.candidatos.find((c) => c.radar_key === 'pb_501');
@@ -1009,11 +1012,13 @@ test('Agentes 1, 2, 3 e 5: link.amazon->amzlinks, R&#036;, Gatry, Prova Social, 
   assert.equal(extGatry[0].produto_id, 'amz_B0NESPRESS');
   assert.equal(extGatry[0].preco, 449);
 
-  // Planejar radar agendado inclui canais curados + Gatry sem afetar radar com api_url
+  // Planejar radar agendado inclui canais curados ativos (sem gatry_home morto e sem @promobit duplicado)
   const planAg = L.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA });
   assert.ok(planAg.fontesWeb.some((f) => f.canal === 'canaltechofertas'));
   assert.ok(planAg.fontesWeb.some((f) => f.canal === 'xetdaspromocoes'));
-  assert.ok(planAg.fontesWeb.some((f) => f.tipo === 'gatry_home'));
+  assert.ok(planAg.fontesWeb.some((f) => f.canal === 'nerdofertas'));
+  assert.ok(!planAg.fontesWeb.some((f) => f.canal === 'promobit'));
+  assert.ok(!planAg.fontesWeb.some((f) => f.tipo === 'gatry_home'));
 
   // Desempacotar 2 saltos (link.amazon -> amzlinks.in -> amazon.com.br removendo tag concorrente)
   const r1 = L.aplicarRedirRadar1({ opcoes: {}, candidatos: [Object.assign({}, extCanal[0], { resolved: false })], reqs1: [{ idx: 0 }] }, [{ statusCode: 302, headers: { location: 'https://amzlinks.in/B0eiQubl3' } }], cfg);

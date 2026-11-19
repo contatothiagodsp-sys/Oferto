@@ -30,8 +30,12 @@ const HOSTS_FOTO_PADRAO = [
   'pontofrio-imagens.com.br',
   'vteximg.com.br', // Lojas VTEX (Boticário, Natura, Droga Raia, Beleza na Web, UMusic Store, etc.)
   'vtexassets.com',
+  'oficialfarma.com.br', // Oficial Farma (Magento)
+  'alicdn.com', // AliExpress CDN
+  'aliexpress-media.com',
   'mitiendanube.com', // Nuvemshop (K-Line Store, Hopescolor, Asiatic Store, etc.)
-  'cdn.shopify.com', // Shopify (Kpopmerch)
+  'cdn.shopify.com', // Shopify (KpopAlbums, Kpopmerch)
+  'kpopalbums.com',
   'phinf.pstatic.net', // Weverse Shop CDN
   'ktown4u.com',
   'res.cloudinary.com',

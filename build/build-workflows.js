@@ -1229,7 +1229,7 @@ function adicionarSubfluxoRadar(wf, cfgFluxo) {
     : '';
   const lockSet = cfgFluxo.lock ? "if (sd) sd.radar_rodando_ate = Date.now() + 240000;\n" : '';
   const extraOpts = cfgFluxo.lock
-    ? `Object.assign({}, ${cfgFluxo.opcoesCode}, { pb_redir_bloqueado_ate: (sd && sd.pb_redir_bloqueado_ate) || 0 })`
+    ? `Object.assign({}, ${cfgFluxo.opcoesCode}, { pb_redir_bloqueado_ate: (sd && sd.pb_redir_bloqueado_ate) || 0, kpop_shop_ids: (sd && sd.kpop_shop_ids) || {} })`
     : cfgFluxo.opcoesCode;
   wf.add(code(N('Planejar'), `${lockPlan}const p = LIB.planejarFontesRadar(cfg, ${extraOpts});
 if (!p.ativo) return [];
@@ -1247,10 +1247,43 @@ return resps.map((r, idx) => {
   let body = raw;
   if (f.tipo === 'umusic_vtex' || f.tipo === 'vtex_catalogo') {
     const val = r.body != null ? r.body : r.data;
+    try {
+      const arr = typeof val === 'string' ? JSON.parse(val) : val;
+      if (Array.isArray(arr)) {
+        const enxArr = arr.slice(0, 60).map((p) => {
+          if (!p || typeof p !== 'object') return p;
+          const its = Array.isArray(p.items) ? p.items.slice(0, 12).map((it) => {
+            const imgs = Array.isArray(it && it.images) && it.images[0] ? [{ imageUrl: it.images[0].imageUrl }] : [];
+            const sels = Array.isArray(it && it.sellers) ? it.sellers.filter((s) => s && (s.sellerId == null || String(s.sellerId) === '1')).slice(0, 2).map((s) => ({
+              sellerId: s.sellerId,
+              commertialOffer: s.commertialOffer ? {
+                Price: s.commertialOffer.Price,
+                ListPrice: s.commertialOffer.ListPrice,
+                AvailableQuantity: s.commertialOffer.AvailableQuantity,
+              } : null,
+            })) : [];
+            return { images: imgs, sellers: sels };
+          }) : [];
+          return {
+            productId: p.productId,
+            productName: p.productName,
+            link: p.link,
+            linkText: p.linkText,
+            categories: Array.isArray(p.categories) ? p.categories.slice(0, 4) : [],
+            items: its,
+          };
+        });
+        body = JSON.stringify(enxArr);
+      } else {
+        body = val;
+      }
+    } catch (e) { body = val; }
+  } else if (f.tipo === 'shopify_catalogo') {
+    const val = r.body != null ? r.body : r.data;
     if (typeof val === 'string' && val.length > 400000) {
       try {
-        const arr = JSON.parse(val);
-        body = Array.isArray(arr) ? JSON.stringify(arr.slice(0, 60)) : val;
+        const obj = JSON.parse(val);
+        body = obj && Array.isArray(obj.products) ? JSON.stringify({ products: obj.products.slice(0, 40) }) : val;
       } catch (e) { body = val; }
     } else {
       body = val;
@@ -1278,7 +1311,34 @@ return resps.map((r, idx) => {
     } else {
       body = raw.slice(0, 8000);
     }
-  } else if (f.tipo === 'gatry_home' || f.tipo === 'nuvemshop_kpop') {
+  } else if (f.tipo === 'nuvemshop_kpop') {
+    const limpo = raw
+      .replace(/<head\\b[^>]*>[\\s\\S]*?<\\/head>/gi, '')
+      .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+      .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+      .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+      .replace(/<!--[\\s\\S]*?-->/g, '');
+    if (/data-component="product-list-item"/i.test(limpo)) {
+      const cards = limpo.split(/data-component="product-list-item"/i).slice(1);
+      const comDesc = cards.filter((c) => /compare_at_price_number(?:&quot;|")\\s*:\\s*[1-9]|discount_percentage_number(?:&quot;|")\\s*:\\s*[1-9]/i.test(c) || (/js-compare-price-display/i.test(c) && !/js-compare-price-display[^>]{0,120}display\\s*:\\s*none/i.test(c)));
+      const escolhidos = (comDesc.length ? comDesc : cards).map((c) => 'data-component="product-list-item"' + c.replace(/\\s(?:data-)?srcset="[^"]*"/gi, '').slice(0, 14000));
+      body = escolhidos.join('\\n').replace(/[ \\t]{2,}/g, ' ').slice(0, 350000);
+    } else {
+      const posCard = limpo.search(/data-variants=|js-item-product/i);
+      const inicio = posCard >= 0 ? Math.max(0, posCard - 200) : 0;
+      body = limpo.slice(inicio).replace(/[ \\t]{2,}/g, ' ').slice(0, 350000);
+    }
+  } else if (f.tipo === 'magento_catalogo') {
+    const limpo = raw
+      .replace(/<head\\b[^>]*>[\\s\\S]*?<\\/head>/gi, '')
+      .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+      .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+      .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+      .replace(/<!--[\\s\\S]*?-->/g, '');
+    const posCard = limpo.search(/class="product-item-info"/i);
+    const inicio = posCard >= 0 ? Math.max(0, posCard - 200) : 0;
+    body = limpo.slice(inicio).replace(/[ \\t]{2,}/g, ' ').slice(0, 350000);
+  } else if (f.tipo === 'gatry_home') {
     body = raw
       .replace(/<head\\b[^>]*>[\\s\\S]*?<\\/head>/gi, '')
       .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
@@ -1329,7 +1389,11 @@ const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
 const alertas = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
 const sd = typeof $getWorkflowStaticData === 'function' ? $getWorkflowStaticData('global') : {};
-return [{ json: LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas, sd.radar_descartes || {}, { pb_redir_bloqueado_ate: sd.pb_redir_bloqueado_ate || 0 }) }];`, { lib: true }), x + 1980, y);
+const sel = LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas, sd.radar_descartes || {}, { pb_redir_bloqueado_ate: sd.pb_redir_bloqueado_ate || 0 });
+if (sel && sel.shop_ids_descobertos && Object.keys(sel.shop_ids_descobertos).length) {
+  sd.kpop_shop_ids = Object.assign({}, sd.kpop_shop_ids || {}, sel.shop_ids_descobertos);
+}
+return [{ json: sel }];`, { lib: true }), x + 1980, y);
 
   wf.add(switchExpr(N('Tem redir 1?'), '$json.reqs1.length > 0 ? 0 : 1', 2), x + 2200, y);
   wf.add(itens(N('Itens redir 1'), `$('${N('Selecionar radar')}').first().json.reqs1`), x + 2420, y - 120);
@@ -1363,14 +1427,79 @@ return [{ json: LIB.prepararPaginasRadar(est, resp3, cfg) }];`, { lib: true }), 
   wf.add(switchExpr(N('Tem páginas radar?'), '$json.reqsPag.length > 0 ? 0 : 1', 2), x + 4840, y);
   wf.add(itens(N('Itens páginas radar'), `$('${N('Preparar páginas radar')}').first().json.reqsPag`), x + 5060, y - 120);
   wf.add(httpRadarGet(N('Ler páginas radar'), true), x + 5280, y - 120);
+  wf.add(code(N('Enxugar páginas radar'), `
+const resps = $input.all().map((i) => i.json || {});
+return resps.map((r) => {
+  const raw = typeof r.body === 'string' ? r.body : (typeof r.data === 'string' ? r.data : '');
+  if (!raw) return { json: { statusCode: r.statusCode || 200, body: '', error: r.error || undefined } };
+  const limpo = raw
+    .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+    .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+    .replace(/<!--[\\s\\S]*?-->/g, '')
+    .replace(/<script\\b([^>]*)>([\\s\\S]*?)<\\/script>/gi, (all, attrs, inner) => {
+      if (/application\\/ld\\+json|__NEXT_DATA__|__PRELOADED_STATE__/i.test(attrs)) return all;
+      if (/hiRes|colorImages|ListPrice|priceSpecification/i.test(inner) && all.length < 40000) return all;
+      return '';
+    })
+    .replace(/[ \\t]{2,}/g, ' ');
+  const body = limpo.length > 350000 ? limpo.slice(0, 350000) : limpo;
+  return { json: { statusCode: r.statusCode || 200, body } };
+});`, { cfg: false, nota: 'Remove scripts/styles/SVGs pesados das PDPs antes de Finalizar radar preservando JSON-LD, preços, cupons e imagens.' }), x + 5340, y - 120);
   wf.add(switchExpr(N('Tem mercado radar?'), `($('${N('Preparar páginas radar')}').first().json.reqsMercado || []).length > 0 ? 0 : 1`, 2), x + 5390, y);
   wf.add(itens(N('Itens mercado radar'), `$('${N('Preparar páginas radar')}').first().json.reqsMercado`), x + 5440, y - 120);
-  wf.add(httpRadarGet(N('Checar mercado radar'), true, { batchSize: 1, batchInterval: 450 }), x + 5480, y - 120);
+  wf.add(httpRadarGet(N('Checar mercado radar'), true, { batchSize: 2, batchInterval: 250 }), x + 5460, y - 120);
+  wf.add(code(N('Enxugar mercado radar'), `
+const reqs = ($('${N('Preparar páginas radar')}').first().json.reqsMercado) || [];
+const resps = $input.all().map((i) => i.json || {});
+return resps.map((r, idx) => {
+  const req = reqs[idx] || {};
+  const raw = typeof r.body === 'string' ? r.body : (typeof r.data === 'string' ? r.data : '');
+  if (!raw || r.error) return { json: { statusCode: r.statusCode || 200, body: '', error: r.error || undefined } };
+  let body = '';
+  if (req.fonte === 'zoom') {
+    const m = raw.match(/<script[^>]*id\\s*=\\s*["']__NEXT_DATA__["'][^>]*>([\\s\\S]*?)<\\/script>/i);
+    if (m) {
+      if (m[0].length <= 250000) {
+        body = m[0];
+      } else {
+        try {
+          const j = JSON.parse(m[1]);
+          const props = (j && j.props) || {};
+          const st = props.initialReduxState || {};
+          const pp = props.pageProps || {};
+          body = '<script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({
+            props: {
+              initialReduxState: { hits: st.hits, search: st.search },
+              pageProps: { hits: pp.hits },
+            },
+          }) + '</script>';
+        } catch (e) { body = m[0].slice(0, 250000); }
+      }
+    } else {
+      body = raw.slice(0, 4000);
+    }
+  } else {
+    if (/(?:validateCaptcha|Robot Check|Attention Required! \\| Cloudflare)/i.test(raw.slice(0, 12000))) {
+      body = raw.slice(0, 4000);
+    } else {
+      const pos = raw.indexOf('data-asin="');
+      const trecho = pos >= 0 ? raw.slice(Math.max(0, pos - 40)) : raw;
+      body = trecho
+        .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+        .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+        .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+        .replace(/<!--[\\s\\S]*?-->/g, '')
+        .replace(/[ \\t]{2,}/g, ' ')
+        .slice(0, 220000);
+    }
+  }
+  return { json: { statusCode: r.statusCode || 200, body } };
+});`, { cfg: false, nota: 'Enxuga HTML de Zoom (__NEXT_DATA__) e busca Amazon antes de Finalizar radar (>90% menos payload).' }), x + 5485, y - 120);
   const lockFinClear = cfgFluxo.lock ? '  if (!fin.autoPlanos || !fin.autoPlanos.length) sd.radar_rodando_ate = 0;\n' : '';
   wf.add(code(N('Finalizar radar'), `
 const est = $('${N('Preparar páginas radar')}').first().json;
-const respPag = est.reqsPag.length && $('${N('Ler páginas radar')}').isExecuted ? $('${N('Ler páginas radar')}').all().map((i) => i.json) : [];
-const respMerc = (est.reqsMercado || []).length && $('${N('Checar mercado radar')}').isExecuted ? $('${N('Checar mercado radar')}').all().map((i) => i.json) : [];
+const respPag = est.reqsPag.length && $('${N('Enxugar páginas radar')}').isExecuted ? $('${N('Enxugar páginas radar')}').all().map((i) => i.json) : [];
+const respMerc = (est.reqsMercado || []).length && $('${N('Enxugar mercado radar')}').isExecuted ? $('${N('Enxugar mercado radar')}').all().map((i) => i.json) : [];
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
 const fin = LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag, respMerc);
@@ -1459,7 +1588,7 @@ return [{ json: lim }];`, { lib: true, cfg: false }), x + 7590, y + 320);
       options: {
         batching: { batch: { batchSize: 1, batchInterval: 300 } },
         response: { response: { neverError: true, responseFormat: 'file', outputPropertyName: 'data' } },
-        timeout: 15000,
+        timeout: 8000,
       },
     },
   }, x + 7678, y + 120);
@@ -1622,10 +1751,10 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
 
   wf.chain(N('Preparar páginas radar'), N('Tem páginas radar?'));
   wf.link(N('Tem páginas radar?'), N('Itens páginas radar'), 0);
-  wf.chain(N('Itens páginas radar'), N('Ler páginas radar'), N('Tem mercado radar?'));
+  wf.chain(N('Itens páginas radar'), N('Ler páginas radar'), N('Enxugar páginas radar'), N('Tem mercado radar?'));
   wf.link(N('Tem páginas radar?'), N('Tem mercado radar?'), 1);
   wf.link(N('Tem mercado radar?'), N('Itens mercado radar'), 0);
-  wf.chain(N('Itens mercado radar'), N('Checar mercado radar'), N('Finalizar radar'));
+  wf.chain(N('Itens mercado radar'), N('Checar mercado radar'), N('Enxugar mercado radar'), N('Finalizar radar'));
   wf.link(N('Tem mercado radar?'), N('Finalizar radar'), 1);
 
   wf.chain(N('Finalizar radar'), N('Preços radar'), N('Gravar preços radar'));
@@ -1732,7 +1861,7 @@ return [{ json: LIB.avaliarCandidatos(buscas, resp, precos, ofertas, cfg, Date.n
 /* ---------- 03 · relatório diário ---------- */
 
 function wfRelatorio() {
-  const wf = new WF('03 · Relatório diário (22h)');
+  const wf = new WF('03 · Relatório diário (22h)', { saveDataSuccessExecution: 'none' });
   wf.add({
     name: 'Todo dia 22h', type: 'n8n-nodes-base.scheduleTrigger', typeVersion: 1.2,
     parameters: { rule: { interval: [{ field: 'cronExpression', expression: '5 22 * * *' }] } },

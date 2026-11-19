@@ -32,6 +32,7 @@ fazer_backup() {
     && [ "$(sqlite3 "$TMP/database.sqlite" 'PRAGMA quick_check;')" = "ok" ]; then
     if [ -f "$DADOS/config" ]; then cp "$DADOS/config" "$TMP/config"; fi
     if tar czf "$ARQ.tmp" -C "$TMP" . && mv "$ARQ.tmp" "$ARQ"; then OK=1; fi
+    sqlite3 -cmd ".timeout 30000" "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
   fi
   rm -rf "$TMP" "$ARQ.tmp"
   # Se o sqlite criou os arquivos -wal/-shm, devolve ao dono do banco (o usuário do n8n).

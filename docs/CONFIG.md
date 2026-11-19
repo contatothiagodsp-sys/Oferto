@@ -60,8 +60,8 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `radar.ativo` | `sim` | sim/nao: ativa o Radar Multi-Fonte automático a cada 2 min sem custo extra (workflow 04) |
 | `radar.publicar_direto` | `sim` | sim/nao: publica as promoções do radar automaticamente no Telegram e entrega o botão WhatsApp (desative com /modo aprovar) |
 | `radar.auto_top` | `sim` | sim/nao: manda automaticamente promoções muito fortes (>=35% OFF ou >=28% + cupom) para o Top do Dia |
-| `radar.top_max_dia` | `5` | Máximo de ofertas por dia no Top do Dia (ex.: 5 a 30) |
-| `radar.lojas` | `amazon,ml,shopee,shein,tiktok,kabum,terabyte,pichau,drogaraia,drogasil,pacheco,panvel,araujo,belezanaweb,epocacosmeticos,boticario,natura,sephora,centauro,netshoes,nike,adidas,renner,cea,riachuelo,dafiti,zattini,hering,magalu,umusic,klinestore` | Lojas monitoradas pelo radar automático (Amazon, ML, Shopee, Shein, TikTok, KaBuM!, Terabyte, Pichau, farmácias, beleza e moda) |
+| `radar.top_max_dia` | `40` | Máximo de ofertas por dia no Top do Dia (ex.: 15 a 50; reserva 35% para o horário nobre 18h–23h) |
+| `radar.lojas` | `amazon,ml,shopee,shein,tiktok,aliexpress,kabum,terabyte,pichau,acer,motorola,samsung,drogaraia,drogasil,pacheco,panvel,araujo,paguemenos,venancio,oficialfarma,maxtitanium,rihappy,alobebe,belezanaweb,epocacosmeticos,boticario,natura,sephora,mahogany,creamy,ikesaki,centauro,netshoes,nike,adidas,olympikus,mizuno,underarmour,farmrio,renner,cea,riachuelo,dafiti,zattini,hering,polishop,electrolux,brastemp,consul,magalu,umusic,klinestore,hopescolor,asiaticstore,kpopandyoushop,kpopalbums` | Lojas monitoradas pelo radar automático (Amazon, ML, Shopee, Shein, TikTok, AliExpress, KaBuM!, Terabyte, Pichau, farmácias, suplementos, beleza, casa, tech, moda e K-pop) |
 | `radar.categorias` | `moda,beleza,perfumes,saude,casa,tech,bebe,kpop` | Categorias monitoradas pelo radar (moda, beleza, perfumes, saude, casa, tech, bebe, kpop) |
 | `radar.palavras` |  | Filtro opcional de palavras no radar separadas por ; (vazio = aceita todas as boas ofertas das lojas/categorias; ajuste com /buscas) |
 | `radar.min_desconto_pct` | `15` | Desconto mínimo (%) para entrar no radar (ofertas com cupom ou destaque da comunidade também entram) |
@@ -69,7 +69,7 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `radar.max_por_ciclo` | `4` | Máximo base de promoções publicadas por rodada de 2 min do radar (nos picos de oferta escala até 8 com cadencia_dinamica) |
 | `radar.cadencia_dinamica` | `sim` | sim/nao: ajusta o volume do radar conforme o horário (até 6–8 ofertas nos picos 11h–14h e 18h–23h quando há promoções fortes, e até 2 na madrugada) |
 | `radar.canais_telegram` |  | Opcional: @canais públicos de ofertas no Telegram (separados por ;) para o radar garimpar via t.me/s/ e trocar pelo seu afiliado |
-| `radar.canais_curados` | `sim` | sim/nao: inclui fontes públicas curadas gratuitas (@canaltechofertas, @xetdaspromocoes, Gatry) no radar agendado, trocando pelo seu afiliado |
+| `radar.canais_curados` | `sim` | sim/nao: inclui fontes públicas curadas gratuitas (@canaltechofertas, @xetdaspromocoes, @nerdofertas) no radar agendado, trocando pelo seu afiliado |
 | `radar.api_url` |  | Deixe vazio (usado só em testes para simular fontes do radar) |
 | `mercado.checar` | `sim` | sim/nao: compara automaticamente o preço em buscadores públicos (Zoom e busca Amazon) antes de publicar e bloqueia falsos descontos ou ofertas mais caras que a concorrência |
 | `cupons.radar_auto` | `sim` | sim/nao: publica alertas automáticos de cupons gerais e lotes de horário das lojas (ex.: 19h Mercado Livre, Shopee, Shein, Amazon) |
@@ -106,31 +106,60 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `keepa.chave` |  | Chave da API da Keepa (plano pago). Com ela, o /oferta da Amazon aceita só o link: título, preço e ref90 vêm da Keepa. Vazio = desligado |
 | `keepa.api` | `https://api.keepa.com` | Endereço da API da Keepa (não altere; usado em testes) |
 | `keepa.buybox` | `nao` | sim/nao: usar o preço da Buy Box (com frete) em vez do preço da Amazon/novo. Pode custar tokens extras (VERIFICAR) |
+| `afiliado.aliexpress` |  | Opcional: parâmetro/template de afiliado para AliExpress (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.boticario` |  | Opcional: parâmetro/template de afiliado para O Boticário (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.epocacosmeticos` |  | Opcional: parâmetro/template de afiliado para Época Cosméticos (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.sephora` |  | Opcional: parâmetro/template de afiliado para Sephora (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.mahogany` |  | Opcional: parâmetro/template de afiliado para Mahogany (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.creamy` |  | Opcional: parâmetro/template de afiliado para Creamy (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.ikesaki` |  | Opcional: parâmetro/template de afiliado para Ikesaki (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.drogaraia` |  | Opcional: parâmetro/template de afiliado para Droga Raia (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.drogasil` |  | Opcional: parâmetro/template de afiliado para Drogasil (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.panvel` |  | Opcional: parâmetro/template de afiliado para Panvel (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.araujo` |  | Opcional: parâmetro/template de afiliado para Drogaria Araujo (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.paguemenos` |  | Opcional: parâmetro/template de afiliado para Pague Menos (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.venancio` |  | Opcional: parâmetro/template de afiliado para Drogaria Venancio (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.oficialfarma` |  | Opcional: parâmetro/template de afiliado para Oficial Farma (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.maxtitanium` |  | Opcional: parâmetro/template de afiliado para Max Titanium (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.rihappy` |  | Opcional: parâmetro/template de afiliado para Ri Happy (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.alobebe` |  | Opcional: parâmetro/template de afiliado para Alô Bebê (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.pichau` |  | Opcional: parâmetro/template de afiliado para Pichau (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.acer` |  | Opcional: parâmetro/template de afiliado para Acer Store (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.motorola` |  | Opcional: parâmetro/template de afiliado para Motorola (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.samsung` |  | Opcional: parâmetro/template de afiliado para Samsung Shop (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.centauro` |  | Opcional: parâmetro/template de afiliado para Centauro (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.netshoes` |  | Opcional: parâmetro/template de afiliado para Netshoes (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.nike` |  | Opcional: parâmetro/template de afiliado para Nike (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.adidas` |  | Opcional: parâmetro/template de afiliado para Adidas (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.olympikus` |  | Opcional: parâmetro/template de afiliado para Olympikus (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.mizuno` |  | Opcional: parâmetro/template de afiliado para Mizuno (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.underarmour` |  | Opcional: parâmetro/template de afiliado para Under Armour (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.farmrio` |  | Opcional: parâmetro/template de afiliado para FARM Rio (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.renner` |  | Opcional: parâmetro/template de afiliado para Renner (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.cea` |  | Opcional: parâmetro/template de afiliado para C&A (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.riachuelo` |  | Opcional: parâmetro/template de afiliado para Riachuelo (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.dafiti` |  | Opcional: parâmetro/template de afiliado para Dafiti (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.zattini` |  | Opcional: parâmetro/template de afiliado para Zattini (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.hering` |  | Opcional: parâmetro/template de afiliado para Hering (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.polishop` |  | Opcional: parâmetro/template de afiliado para Polishop (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.electrolux` |  | Opcional: parâmetro/template de afiliado para Electrolux (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.brastemp` |  | Opcional: parâmetro/template de afiliado para Brastemp (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.consul` |  | Opcional: parâmetro/template de afiliado para Consul (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.magalu` |  | Opcional: parâmetro/template de afiliado para Magalu (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.umusic` |  | Opcional: parâmetro/template de afiliado para UMusic Store (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.klinestore` |  | Opcional: parâmetro/template de afiliado para K-Line Store (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.hopescolor` |  | Opcional: parâmetro/template de afiliado para Hopescolor (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.asiaticstore` |  | Opcional: parâmetro/template de afiliado para Asiatic Store (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.kpopandyoushop` |  | Opcional: parâmetro/template de afiliado para Kpop and You Shop (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.kpopalbums` |  | Opcional: parâmetro/template de afiliado para KpopAlbums (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.kpopmerch` |  | Opcional: parâmetro/template de afiliado para Kpopmerch (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.ktown4u` |  | Opcional: parâmetro/template de afiliado para Ktown4u (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.weverse` |  | Opcional: parâmetro/template de afiliado para Weverse Shop (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.cokodive` |  | Opcional: parâmetro/template de afiliado para Cokodive (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.daebak` |  | Opcional: parâmetro/template de afiliado para Daebak (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.cdjapan` |  | Opcional: parâmetro/template de afiliado para CDJapan (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.yesasia` |  | Opcional: parâmetro/template de afiliado para YesAsia (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.kpop1004` |  | Opcional: parâmetro/template de afiliado para KPOP1004 (ex.: utm_source=meu_id ou URL com {url}) |
 | `categoria_nome.top` |  | Nome exibido para Top do Dia (ex.: Top Ofertas & Bugs) |
 | `topico.top` |  | message_thread_id do tópico Top do Dia (preenchido pelo setup) |
 | `canal.top` |  | Canal só de Top do Dia (@usuario do canal ou ID -100…). Configure rápido via /canais |

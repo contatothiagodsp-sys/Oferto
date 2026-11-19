@@ -761,7 +761,7 @@ test('posts silenciosos: 22h–8h e cópia do Top; relâmpago sempre notifica', 
 });
 
 test('card publicado: ⭐ Mandar ao Top (limite 5/dia) e ⛔ Encerrar', () => {
-  const cfg = cfgTeste();
+  const cfg = cfgTeste([{ chave: 'radar.top_max_dia', valor: '5' }]);
   const { av, pub } = publicada(cfg);
   const id = av.oferta.oferta_id;
   const final = pub.chamadas[pub.chamadas.length - 1];

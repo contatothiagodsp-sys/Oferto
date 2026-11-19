@@ -1021,7 +1021,7 @@ test('seção dedicada K-Pop: categoria, lojas legítimas com entrega no BR, par
   assert.ok(planKpop.fontesWeb.some((f) => f.tipo === 'umusic_vtex'));
   assert.ok(planKpop.fontesWeb.some((f) => f.tipo === 'nuvemshop_kpop' && f.loja_hint === 'klinestore'));
   assert.ok(planKpop.fontesWeb.some((f) => f.tipo === 'amazon_busca' && f.categoria_hint === 'kpop'));
-  assert.ok(!planKpop.fontesWeb.some((f) => f.loja_hint === 'hopescolor' || f.loja_hint === 'kpopandyoushop'));
+  assert.ok(planKpop.fontesWeb.some((f) => f.loja_hint === 'hopescolor') && planKpop.fontesWeb.some((f) => f.loja_hint === 'kpopandyoushop'));
 
   const planKpopExtra = radar.planejarFontesRadar(cfg, { modo: 'comando', categorias: ['kpop'], lojas: ['klinestore', 'hopescolor'], ts: AGORA });
   assert.ok(planKpopExtra.fontesWeb.some((f) => f.tipo === 'nuvemshop_kpop' && f.loja_hint === 'hopescolor'));
@@ -2022,7 +2022,7 @@ test('boost de frequência: catálogos VTEX + Amazon oficial, anti-fome 6h, rada
 
   // 4) radar.top_max_dia=25 + qualidade do Top: vtex_catalogo sem prova de mercado NÃO vai pro Top (vai só pro tópico);
   //    com ref_mercado comprovada (ou fonte comunitária), vai pro Top mesmo após 5 posts no dia, respeitando teto de 2/ciclo.
-  assert.equal(fluxos.limiteTopDia(config.padrao()), 5);
+  assert.equal(fluxos.limiteTopDia(config.padrao()), 40);
   assert.equal(fluxos.limiteTopDia(cfg), 25);
   const top5Hoje = Array.from({ length: 5 }, (_, i) => ({
     oferta_id: 'top' + i,
