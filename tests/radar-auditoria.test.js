@@ -2020,7 +2020,8 @@ test('boost de frequência: catálogos VTEX + Amazon oficial, anti-fome 6h, rada
   const catsSel = selFome.candidatos.map((c) => c.categoria);
   assert.ok(catsSel.includes('bebe') || catsSel.includes('saude'), 'Categoria com 0 posts em 6h deve furar a fila contra tech saturada');
 
-  // 4) radar.top_max_dia=25 permite ir ao Top mesmo com 5 posts já feitos hoje (enquanto padrão sem config continua 5)
+  // 4) radar.top_max_dia=25 + qualidade do Top: vtex_catalogo sem prova de mercado NÃO vai pro Top (vai só pro tópico);
+  //    com ref_mercado comprovada (ou fonte comunitária), vai pro Top mesmo após 5 posts no dia, respeitando teto de 2/ciclo.
   assert.equal(fluxos.limiteTopDia(config.padrao()), 5);
   assert.equal(fluxos.limiteTopDia(cfg), 25);
   const top5Hoje = Array.from({ length: 5 }, (_, i) => ({
@@ -2031,23 +2032,74 @@ test('boost de frequência: catálogos VTEX + Amazon oficial, anti-fome 6h, rada
   }));
   const finTop = radar.finalizarRadar(
     {
-      opcoes: { modo: 'agendado', ts: AGORA, categorias: ['bebe'], lojas: ['pacheco'], limite_alvo: 4 },
-      candidatos: [{
-        radar_key: 'pacheco_501',
-        produto_id: 'dpa_501',
-        loja: 'pacheco',
-        categoria: 'bebe',
-        categoria_confianca: 1,
-        categoria_indefinida: false,
-        titulo: 'Fralda Pampers Confort Sec G 60 Unidades',
-        preco: 69.9,
-        preco_de: 119.9,
-        desconto_pct: 42,
-        imagem: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/100/pampers.jpg',
-        url: 'https://www.drogariaspacheco.com.br/fralda-pampers-confort-sec-g-60/p',
-        resolved: true,
-        fonte_radar: 'vtex_catalogo',
-      }],
+      opcoes: { modo: 'agendado', ts: AGORA, categorias: ['bebe', 'saude'], lojas: ['pacheco', 'amazon'], limite_alvo: 4 },
+      candidatos: [
+        {
+          radar_key: 'pacheco_501',
+          produto_id: 'dpa_501',
+          loja: 'pacheco',
+          categoria: 'bebe',
+          categoria_confianca: 1,
+          categoria_indefinida: false,
+          titulo: 'Fralda Pampers Confort Sec G 60 Unidades',
+          preco: 69.9,
+          preco_de: 119.9,
+          desconto_pct: 42,
+          imagem: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/100/pampers.jpg',
+          url: 'https://www.drogariaspacheco.com.br/fralda-pampers-confort-sec-g-60/p',
+          resolved: true,
+          fonte_radar: 'vtex_catalogo',
+        },
+        {
+          radar_key: 'pacheco_502',
+          produto_id: 'dpa_502',
+          loja: 'pacheco',
+          categoria: 'bebe',
+          categoria_confianca: 1,
+          categoria_indefinida: false,
+          titulo: 'Fralda Huggies Supreme Care M 80 Unidades',
+          preco: 69.9,
+          preco_de: 119.9,
+          ref_mercado: 110,
+          desconto_pct: 42,
+          imagem: 'https://drogariaspacheco.vteximg.com.br/arquivos/ids/101/huggies.jpg',
+          url: 'https://www.drogariaspacheco.com.br/fralda-huggies-supreme-m-80/p',
+          resolved: true,
+          fonte_radar: 'vtex_catalogo',
+        },
+        {
+          radar_key: 'pb_503',
+          produto_id: 'amz_B0TOP00003',
+          loja: 'amazon',
+          categoria: 'saude',
+          categoria_confianca: 1,
+          categoria_indefinida: false,
+          titulo: 'Creatina Soldiers 500g',
+          preco: 59.9,
+          preco_de: 109.9,
+          desconto_pct: 45,
+          imagem: 'https://m.media-amazon.com/images/I/51a.jpg',
+          url: 'https://www.amazon.com.br/dp/B0TOP00003',
+          resolved: true,
+          fonte_radar: 'promobit',
+        },
+        {
+          radar_key: 'pb_504',
+          produto_id: 'amz_B0TOP00004',
+          loja: 'amazon',
+          categoria: 'saude',
+          categoria_confianca: 1,
+          categoria_indefinida: false,
+          titulo: 'Whey Growth 1kg Chocolate',
+          preco: 99.9,
+          preco_de: 169.9,
+          desconto_pct: 41,
+          imagem: 'https://m.media-amazon.com/images/I/51b.jpg',
+          url: 'https://www.amazon.com.br/dp/B0TOP00004',
+          resolved: true,
+          fonte_radar: 'promobit',
+        },
+      ],
       reqs3: [],
       reqsPag: [],
       reqsMercado: [],
@@ -2059,10 +2111,75 @@ test('boost de frequência: catálogos VTEX + Amazon oficial, anti-fome 6h, rada
     [],
     [],
   );
-  assert.equal(finTop.ofertasNovas.length, 1);
-  assert.equal(finTop.ofertasNovas[0].top, true, 'Com radar.top_max_dia=25, a 6ª oferta forte do dia deve ir ao Top');
+  assert.equal(finTop.ofertasNovas.length, 4);
+  assert.equal(finTop.ofertasNovas[0].top, false, 'vtex_catalogo sem ref_mercado não deve inundar o Top');
+  assert.equal(finTop.ofertasNovas[1].top, true, 'vtex_catalogo com ref_mercado e radar.top_max_dia=25 vai ao Top mesmo após 5/dia');
+  assert.equal(finTop.ofertasNovas[2].top, true, '2ª oferta forte do ciclo vai ao Top');
+  assert.equal(finTop.ofertasNovas[3].top, false, 'Teto de 2 posts no Top por ciclo agendado evita queimar cota em rajada');
 
-  // 5) PALAVRAS_CAT enriquecido para bebe e saude
+  // 5) Proteções VTEX 1P: rejeita seller 3P de marketplace, medicamento tarjado/genérico, ListPrice absurdo (>85%) e variantes de cor no mesmo ciclo
+  const vtexFiltro = radar.lerCatalogoVtex([
+    {
+      productId: '601',
+      productName: 'Perfume Lattafa Mohra 100ml',
+      link: 'https://www.epocacosmeticos.com.br/perfume-lattafa-mohra/p',
+      items: [{
+        images: [{ imageUrl: 'https://epocacosmeticos.vteximg.com.br/1.jpg' }],
+        sellers: [{ sellerId: 'epc176', sellerName: 'Grifes e Estilo', commertialOffer: { Price: 209.69, ListPrice: 774.89, AvailableQuantity: 5 } }],
+      }],
+    },
+    {
+      productId: '602',
+      productName: 'Prednisona 20mg 10 Comprimidos Genérico',
+      link: 'https://www.drogariaspacheco.com.br/prednisona-20mg/p',
+      items: [{
+        images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/2.jpg' }],
+        sellers: [{ sellerId: '1', sellerName: 'Drogarias Pacheco', commertialOffer: { Price: 12.99, ListPrice: 22.18, AvailableQuantity: 10 } }],
+      }],
+    },
+    {
+      productId: '603',
+      productName: 'Suplemento D-Valle 10000 UI',
+      link: 'https://www.drogariaspacheco.com.br/d-valle/p',
+      items: [{
+        images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/3.jpg' }],
+        sellers: [{ sellerId: '1', sellerName: 'Drogarias Pacheco', commertialOffer: { Price: 69.9, ListPrice: 8298, AvailableQuantity: 10 } }],
+      }],
+    },
+  ], { loja: 'pacheco', categoria_hint: 'saude' });
+  assert.equal(vtexFiltro.length, 1, 'Deve rejeitar seller 3P e medicamento genérico');
+  assert.equal(vtexFiltro[0].desconto_pct, 0, 'ListPrice absurdo (>85% OFF) deve zerar desconto_pct');
+  assert.equal(vtexFiltro[0].destaque, false, 'vtex_catalogo não deve inflar destaque artificial');
+  assert.ok(planBloq.fontesWeb.filter((f) => f.tipo === 'vtex_catalogo').every((f) => /fq=sellerId:1/.test(f.url_real)), 'Todos os feeds vtex_catalogo devem filtrar fq=sellerId:1');
+
+  const selVar = radar.selecionarCandidatosRadar(
+    {
+      ativo: true,
+      opcoes: { modo: 'comando', limite: 4, limite_explicito: true, categorias: ['bebe'], lojas: ['pacheco'], ts: AGORA },
+      fontesWeb: [{ tipo: 'vtex_catalogo', loja_hint: 'pacheco', categoria_hint: 'bebe' }],
+      fontesShopee: [],
+    },
+    [{
+      body: JSON.stringify([
+        {
+          productId: '701',
+          productName: 'Fralda Huggies Little Swimmers Praia e Piscina M',
+          link: 'https://www.drogariaspacheco.com.br/fralda-huggies-m/p',
+          items: [{ images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/m.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 37.47, ListPrice: 57.99, AvailableQuantity: 5 } }] }],
+        },
+        {
+          productId: '702',
+          productName: 'Fralda Huggies Little Swimmers Praia e Piscina G/XG',
+          link: 'https://www.drogariaspacheco.com.br/fralda-huggies-gxg/p',
+          items: [{ images: [{ imageUrl: 'https://drogariaspacheco.vteximg.com.br/g.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 37.86, ListPrice: 57.99, AvailableQuantity: 5 } }] }],
+        },
+      ]),
+    }],
+    [], [], [], cfg, [],
+  );
+  assert.equal(selVar.candidatos.length, 1, 'Variantes de tamanho/cor do mesmo produto não devem duplicar no mesmo ciclo');
+
+  // 6) PALAVRAS_CAT enriquecido para bebe e saude
   assert.equal(extrator.classificarCategoria('Toalhas Umedecidas Huggies Natural Care 48un', cfg, '').categoria, 'bebe');
   assert.equal(extrator.classificarCategoria('Fórmula Infantil Nestogeno 1 800g', cfg, '').categoria, 'bebe');
   assert.equal(extrator.classificarCategoria('Vitamina D3 2000UI Lavitan 30 Cápsulas', cfg, '').categoria, 'saude');
