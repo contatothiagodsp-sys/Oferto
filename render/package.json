@@ -1,0 +1,15 @@
+{
+  "name": "oferto-render",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sidecar interno: POST /render -> JPEG 1080x1080 (SVG de lib/imagem.js rasterizado com sharp)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20.9" },
+  "dependencies": {
+    "sharp": "0.34.5"
+  }
+}

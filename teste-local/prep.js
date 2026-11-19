@@ -1,7 +1,13 @@
 // Prepara cópias de teste dos workflows: ids fixos, gatilhos agendados → manuais, e um workflow que grava a config de teste.
 const fs = require('fs');
 const path = require('path');
-const SRC = path.join(__dirname, '..', 'n8n', 'workflows');
+// Lê o build feito pelo rodar.sh em tmp/build (P1-03: o e2e não usa n8n/workflows/ nem servidor-local/workflows/).
+const BUILD = process.env.TESTE_BUILD_DIR || path.join(__dirname, 'tmp', 'build');
+const SRC = path.join(BUILD, 'cloud');
+const SRC_LOCAL = path.join(BUILD, 'local');
+// Porta do n8n de teste (P1-04). A 5678 é a da produção.
+const PORTA = process.env.N8N_TESTE_PORTA || '5690';
+if (PORTA === '5678') { console.error('ABORTADO: a porta 5678 é a do n8n de produção.'); process.exit(1); }
 const OUT = path.join(__dirname, 'tmp', 'wf');
 fs.mkdirSync(OUT, { recursive: true });
 const ids = { '00-setup.json': 'wfSetup000000001', '01-telegram-router.json': 'wfRouter00000001', '02-coleta-shopee.json': 'wfShopee00000001', '03-relatorio-diario.json': 'wfRelat000000001', '04-radar-ofertas.json': 'wfRadar000000001', '05-guardiao-ofertas.json': 'wfGuard000000001' };
@@ -18,7 +24,9 @@ for (const [arq, id] of Object.entries(ids)) {
 }
 const cfg = {
   marca: 'Marca Teste', admins: '111,222', bot_token: 'TOKADMIN', bot_token_grupo: 'TOKGRUPO', grupo_id: '-1001234567890',
-  n8n_webhook_url: 'http://localhost:5678/webhook/telegram-ofertas', telegram_api: 'http://127.0.0.1:8787',
+  n8n_webhook_url: `http://localhost:${PORTA}/webhook/telegram-ofertas`, telegram_api: 'http://127.0.0.1:8787',
+  // O e2e precisa do envio "real" para o Telegram falso (mock.js em 127.0.0.1:8787). Fora do teste, o padrão é sim.
+  'publicacao.dry_run': 'nao',
   'shopee.app_id': '123456', 'shopee.secret': 'segredo-shopee', 'shopee.endpoint': 'http://127.0.0.1:8787/graphql',
   'shopee.busca.casa': 'air fryer', 'shopee.busca.beleza': 'perfume', 'shopee.busca.bebe': '', 'shopee.busca.tech': '',
   'keepa.chave': 'teste', 'keepa.api': 'http://127.0.0.1:8787',
@@ -44,6 +52,6 @@ const wf = {
 fs.writeFileSync(path.join(OUT, '99-config-teste.json'), JSON.stringify(wf));
 // Workflows só do servidor local, como vão para o Docker (o vigia chama /webhook/oferto-tunel e /webhook/oferto-saude).
 for (const arq of ['90-tunel.json', '91-saude.json']) {
-  fs.copyFileSync(path.join(__dirname, '..', 'servidor-local', 'workflows', arq), path.join(OUT, arq));
+  fs.copyFileSync(path.join(SRC_LOCAL, arq), path.join(OUT, arq));
 }
 console.log('workflows de teste em', OUT);

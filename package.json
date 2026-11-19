@@ -5,7 +5,9 @@
   "description": "Bot do Telegram + workflows do n8n Cloud para ofertas com selo de desconto real",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "build": "node build/build-workflows.js"
+    "build": "node build/build-workflows.js",
+    "release": "node build/build-workflows.js --release",
+    "build:doc-config": "node build/build-workflows.js --doc-config"
   },
   "engines": { "node": ">=20" }
 }

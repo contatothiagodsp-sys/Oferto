@@ -3,3 +3,13 @@ teste-local/tmp/
 .claude/
 backups/
 __pycache__/
+
+# Segredos e configuração local (o repositório é PÚBLICO: nunca versione .env)
+.env
+.env.*
+!.env.example
+
+# Saídas locais e artefatos pesados
+graphify-out/
+*.tar.gz
+*.sqlite

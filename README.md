@@ -36,6 +36,101 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem c
 
 Os workflows são os mesmos nas duas opções. No servidor local, os passos 2 e 4 abaixo são automáticos.
 
+> **Repositório PÚBLICO.** Este repositório no GitHub é público: qualquer pessoa lê o código e todo o histórico de commits. Trate cada commit como publicado. Nunca versione `.env`, backups (`*.tar.gz`, `*.sqlite`), tokens de bot, chaves de API ou IDs reais de grupo/canal (os testes usam IDs fictícios). Tokens e chaves ficam só na Data Table `bfx_config`. Tornar o repositório privado é decisão do dono.
+
+## Windows (Docker Desktop + PowerShell): operação segura
+
+Esta seção resume como operar no Windows durante a Fase 2, com o padrão **seguro**: na dúvida, não publica.
+
+### Pré-requisitos
+
+- **Docker Desktop** com WSL 2, aberto e mostrando *Engine running*. Confira no PowerShell: `docker compose version`.
+- **Node.js ≥ 20** (só para testes e build): `node --version`.
+- **Git for Windows**. Todos os comandos abaixo são para o **PowerShell**, a partir da pasta do projeto (`cd $HOME\Documents\Oferto`, por exemplo).
+
+### Pausar a produção que já está no ar (ação do dono)
+
+Os agentes **não leem nem alteram** a produção. Se o servidor já roda com uma configuração antiga, quem pausa é você, pelo chat privado com o **bot de aprovação**:
+
+1. Mande `/config` e anote o valor atual destas chaves (só leitura):
+   `radar.ativo`, `radar.publicar_direto`, `auto.publicar_direto`, `selo.exigir_ref90`, `radar.auto_top`, `cupons.radar_auto`, `cupons.esquenta_19h`, `vitrine.auto_noite`, `divulgar.auto_diario`, `guardiao.ativo`, `publicar.plataformas` e `whatsapp.webhook_url`.
+2. Para pausar **todos** os publicadores automáticos, mande um `/config <chave> <valor>` por linha:
+
+   ```
+   /config radar.publicar_direto nao
+   /config auto.publicar_direto nao
+   /config radar.auto_top nao
+   /config cupons.radar_auto nao
+   /config cupons.esquenta_19h nao
+   /config vitrine.auto_noite nao
+   /config divulgar.auto_diario nao
+   /config guardiao.ativo nao
+   /config selo.exigir_ref90 sim
+   ```
+
+   Se quiser parar também a coleta do radar: `/config radar.ativo nao` (ou `/radar off`). Se `whatsapp.webhook_url` estiver preenchida, apague o valor dela na `bfx_config` pelo painel (http://localhost:5678 → *Overview* → *Data tables*). Depois que a versão nova estiver no ar, ligue também `/config publicacao.dry_run sim`.
+3. **Atenção:** `/modo aprovar` desliga só `radar.publicar_direto` e `auto.publicar_direto`. Ele **não** pausa vitrine, esquenta, divulgação, guardião nem Top automático; use a lista acima.
+4. Se houver uma instância **n8n Cloud** com os mesmos workflows, ela fica fora desta pausa: desative os workflows lá também (situação não verificada pelos agentes).
+
+Parar os contêineres de vez (`docker compose down` dentro de `servidor-local`) também pausa tudo, mas tira o bot do ar.
+
+### Dry-run é o padrão
+
+- A chave `publicacao.dry_run` vem com padrão `sim`: nenhum envio vai ao Telegram nem ao WhatsApp. O bot grava o que faria (log/tabela) e devolve uma resposta simulada.
+- Todos os publicadores automáticos vêm com padrão `nao`. Ofertas sem histórico suficiente, sem imagem, de loja fora da whitelist, com frete desconhecido ou de categoria sensível vão para **revisão humana**.
+- Publicar de verdade é uma decisão explícita do dono: `/config publicacao.dry_run nao` e, por publicador, a chave correspondente em `sim`.
+
+### Build x release
+
+| Comando | O que faz | Afeta a produção? |
+|---|---|---|
+| `npm run build` | Gera `n8n/workflows/*.json` a partir de `lib/` (embute o código nos Code nodes). | **Não.** Não escreve em `servidor-local/workflows/`. |
+| `npm run release` | Copia a versão gerada para `servidor-local/workflows/`. | Só no próximo `docker compose up` **com** `PUBLICAR_WORKFLOWS=sim` no `servidor-local/.env`. |
+| `git pull` | Também altera `servidor-local/workflows/` (os JSON são versionados). | Mesma regra: só com `PUBLICAR_WORKFLOWS=sim`. |
+
+Deploy consciente, em PowerShell:
+
+```powershell
+npm test
+npm run release
+cd servidor-local
+Copy-Item .env.example .env   # só se ainda não existir .env
+notepad .env                  # PUBLICAR_WORKFLOWS=sim
+docker compose up -d
+docker compose restart n8n    # ativa os gatilhos dos workflows importados
+notepad .env                  # volte para PUBLICAR_WORKFLOWS= (vazio)
+```
+
+Sem `PUBLICAR_WORKFLOWS=sim`, o `servidor-local/preparar.sh` termina sem importar nada e o n8n segue com os workflows que já tinha. Essa checagem é a **única** trava: o `git pull` muda os arquivos de `servidor-local/workflows/`, então confira o `.env` antes de qualquer `docker compose up`.
+
+### Testes
+
+```powershell
+npm test
+```
+
+Roda `node --test tests/*.test.js`, sem rede e sem Docker. O teste de ponta a ponta (`teste-local/`) usa Telegram/Shopee falsos, mas sobe um n8n: **não** rode com a produção na mesma porta.
+
+### Render (imagem 1080x1080)
+
+O serviço `render` do `servidor-local/docker-compose.yml` gera a imagem dos posts (`POST /render`) a partir de [`render/`](render). Ele fica **só na rede interna** do compose: sem porta publicada no computador e fora do túnel. O n8n chama `http://render:3000/render`. Saúde: `docker compose ps render` deve mostrar **healthy** (`GET /health`). Sem imagem, a oferta não é publicada: vai para revisão.
+
+O render é **opcional** e fica no perfil `render`: ligue com `COMPOSE_PROFILES=render` (ou `render,ngrok`) no `servidor-local/.env`. Fora do perfil, o `docker compose up -d` nem tenta montar a imagem. Com o perfil ligado, **um erro de build do render faz o `up` inteiro falhar**; para manter o bot no ar, tire `render` do `COMPOSE_PROFILES` e suba de novo. O download de fotos só aceita HTTPS em hosts de CDN das lojas (allowlist em `render/baixar.js`).
+
+```powershell
+cd servidor-local
+docker compose build render
+docker compose logs render --tail 50
+```
+
+### `/setup` de canal
+
+No privado com o bot de aprovação, `/setup <@canal>` confere as permissões do bot publicador no canal (mudar informações, publicar, editar/fixar, convidar) e explica como liberar cada uma que faltar. O título só é trocado quando você passa o título no comando ou quando o canal tem categoria configurada. O `/setup` **nunca** é chamado pelo vigia e, com o dry-run ligado, não faz nenhuma alteração real no Telegram.
+
+### Arquivo `.env` do servidor local
+
+O modelo é `servidor-local/.env.example` (só chaves vazias e comentadas). Copie para `servidor-local/.env` com `Copy-Item`. O `.env` está no `.gitignore` e guarda só infraestrutura (healthchecks.io, ngrok, `PUBLICAR_WORKFLOWS`); tokens de bot nunca vão para ele.
+
 ## Arquitetura em 1 minuto
 
 - **Dois bots** no Telegram:
@@ -340,7 +435,7 @@ npm run build
 ```
 
 - `npm test` roda os testes da lógica (`node --test`).
-- `npm run build` regenera `n8n/workflows/*.json` e `docs/CONFIG.md`.
+- `npm run build` regenera `n8n/workflows/*.json` e `docs/CONFIG.md`. Ele **não** toca em `servidor-local/workflows/`: para isso existe o `npm run release` (veja [Build x release](#build-x-release)).
 - **Não edite** o código dentro dos Code nodes no n8n: ele é gerado a partir de `lib/`. Edite `lib/`, rode o build e reimporte.
 - Teste de ponta a ponta local (precisa de Node ≥ 24 e de `npm i n8n@2.47.7` numa pasta à parte):
 

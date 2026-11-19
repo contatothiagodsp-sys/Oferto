@@ -7,6 +7,11 @@ TMP = os.path.join(AQUI, 'tmp')
 LOG = os.path.join(TMP, 'mock-log.jsonl')
 SEGREDO = open(os.path.join(TMP, 'segredo')).read().strip()
 DB = os.path.join(TMP, 'home', '.n8n', 'database.sqlite')
+# Porta do n8n de teste (P1-04): N8N_TESTE_PORTA, ou a gravada pelo rodar.sh, ou 5690. Nunca a 5678 (produção).
+PORTA = os.environ.get('N8N_TESTE_PORTA') or (open(os.path.join(TMP, 'porta')).read().strip() if os.path.exists(os.path.join(TMP, 'porta')) else '5690')
+if PORTA == '5678':
+    sys.exit('ABORTADO: a porta 5678 é a do n8n de produção. Use N8N_TESTE_PORTA.')
+N8N = f'http://127.0.0.1:{PORTA}'
 falhas = []
 
 
@@ -18,12 +23,12 @@ def post(url, corpo, segredo=SEGREDO):
 
 def update(u, segredo=SEGREDO, espera=7, bot=None):
     # bot='grupo': update recebido pelo bot publicador (webhook registrado com ?bot=grupo)
-    post('http://127.0.0.1:5678/webhook/telegram-ofertas' + ('?bot=' + bot if bot else ''), u, segredo)
+    post(N8N + '/webhook/telegram-ofertas' + ('?bot=' + bot if bot else ''), u, segredo)
     time.sleep(espera)
 
 
 def hook(wf, espera=10):
-    post(f'http://127.0.0.1:5678/webhook/teste-{wf}', {})
+    post(f'{N8N}/webhook/teste-{wf}', {})
     time.sleep(espera)
 
 
@@ -159,7 +164,7 @@ update(msg('/oferta casa\nhttps://www.amazon.com.br/Liquidificador/dp/B0LIQUID01
 oid4 = id_do_card(chamadas())
 limpar_log()
 import threading
-ts_ = [threading.Thread(target=post, args=('http://127.0.0.1:5678/webhook/telegram-ofertas', clique('a', oid4, de=d))) for d in (111, 222)]
+ts_ = [threading.Thread(target=post, args=(N8N + '/webhook/telegram-ofertas', clique('a', oid4, de=d))) for d in (111, 222)]
 for t in ts_: t.start()
 for t in ts_: t.join()
 time.sleep(14)
@@ -214,7 +219,7 @@ checar('relatório para os 2 admins', len(rel) == 2 and 'meta_casa_v1' in rel[0]
 
 print('7) Servidor local: túnel novo → URL gravada e webhook refeito')
 limpar_log()
-post('http://127.0.0.1:5678/webhook/oferto-tunel', {'url': 'https://exemplo-novo.trycloudflare.com/'})
+post(N8N + '/webhook/oferto-tunel', {'url': 'https://exemplo-novo.trycloudflare.com/'})
 time.sleep(12)
 cs = chamadas()
 sw = [c for c in cs if c['metodo'] == 'setWebhook']
@@ -227,7 +232,7 @@ checar('arrumação do grupo não repetida', not any(c['metodo'] == 'setChatDesc
 
 print('7b) Túnel com domínio não permitido é recusado')
 limpar_log()
-post('http://127.0.0.1:5678/webhook/oferto-tunel', {'url': 'https://atacante.example.com'})
+post(N8N + '/webhook/oferto-tunel', {'url': 'https://atacante.example.com'})
 time.sleep(6)
 checar('nenhum setWebhook', not any(c['metodo'] == 'setWebhook' for c in chamadas()))
 checar('n8n_webhook_url mantida', linhas('bfx_config', "where chave = 'n8n_webhook_url'")[0]['valor'] == 'https://exemplo-novo.trycloudflare.com/webhook/telegram-ofertas')
@@ -243,7 +248,7 @@ checar('apaga "entrou" com o bot publicador', len(dl) == 1 and dl[0]['payload'][
 
 print('9s) Servidor local: saúde do webhook (workflow 91)')
 def saude():
-    req = urllib.request.Request('http://127.0.0.1:5678/webhook/oferto-saude', data=b'{}', method='POST', headers={'content-type': 'application/json'})
+    req = urllib.request.Request(N8N + '/webhook/oferto-saude', data=b'{}', method='POST', headers={'content-type': 'application/json'})
     r = json.loads(urllib.request.urlopen(req, timeout=60).read())
     time.sleep(2)
     return r
