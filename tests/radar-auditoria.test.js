@@ -38,7 +38,7 @@ test('radar reenvia o que o Telegram barrou (429) ou a foto recusada, antes de g
   assert.equal(c['Reenviar radar?'].main[0][0].node, 'Esperar Telegram radar');
   assert.equal(c['Reenviar radar?'].main[1][0].node, 'Resultado lote radar');
   assert.equal(c['Telegram (reenvio radar)'].main[0][0].node, 'Resultado lote radar');
-  const pub = radar.nodes.find((n) => n.name === 'Telegram (pub radar)');
+  const pub = radar.nodes.find((n) => n.name === 'Telegram (pub radar) · envio real') || radar.nodes.find((n) => n.name === 'Telegram (pub radar)');
   assert.ok(pub.parameters.options.batching.batch.batchInterval >= 500, 'ritmo abaixo do limite do Telegram');
   const router = lerWf('01-telegram-router.json');
   assert.equal(router.connections['Telegram (publicada)'].main[0][0].node, 'Checar envio (publicada)');
@@ -165,7 +165,7 @@ test('Code nodes novos do radar rodam no sandbox (sem $getWorkflowStaticData nos
   }
 });
 
-test('imagem: telesco.pe é substituída pela foto real da Amazon/ML; postGrupo não usa telesco.pe na prévia fallback', () => {
+test('imagem: telesco.pe é bloqueada na raiz e substituída pela foto real da Amazon/ML; postGrupo bloqueia telesco.pe também no sendPhoto', () => {
   const radar = require('../lib/radar');
   const fluxos = require('../lib/fluxos');
   const cfg = cfgBase();
@@ -196,10 +196,11 @@ test('imagem: telesco.pe é substituída pela foto real da Amazon/ML; postGrupo 
   };
   const itensPub = L.planejarLinks(ofPub, cfgPub, AGORA);
   const pub = L.prepararPublicacao(ofPub, itensPub, cfgPub, { ts: AGORA, chat_id: 111, message_id: 1 });
-  const ch = pub.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'sendPhoto');
-  assert.ok(ch, 'deve tentar sendPhoto');
-  assert.equal(ch.fallback.metodo, 'sendMessage');
-  assert.equal(ch.fallback.payload.link_preview_options.url, 'https://www.amazon.com.br/dp/B000000001');
+  const chPhoto = pub.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'sendPhoto');
+  assert.equal(chPhoto, undefined, 'nunca deve enviar sendPhoto com telesco.pe');
+  const chMsg = pub.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'sendMessage');
+  assert.ok(chMsg, 'deve enviar sendMessage limpo com preview do link da loja');
+  assert.equal(chMsg.payload.link_preview_options.url, 'https://www.amazon.com.br/dp/B000000001');
 });
 
 test('promobit 429 ativa cooldown e não desperdiça vagas; ML /social/ no redir 1 vai para vitrine 3', () => {
@@ -653,4 +654,1238 @@ test('campanha sazonal: reconhece Black Friday, 11.11, 12.12, 01.01, Fim de Ano 
     [], [], [], cfg, [], [],
   );
   assert.equal(JSON.parse(finBf.ofertasNovas[0].links_manuais).campanha, 'BLACK FRIDAY');
+});
+
+test('destravamento radar: descarta nao-produto (sem deadlock), prioriza link do produto sobre resgate de cupons, pula chamada xet e suporta Magalu + frete + Zap por categoria', () => {
+  const radar = require('../lib/radar');
+  const extrator = require('../lib/extrator');
+  const cfg = cfgBase([
+    { chave: 'radar.canais_curados', valor: 'nao' },
+    { chave: 'radar.canais_telegram', valor: '@CanaltechOfertas;@xetdaspromocoes' },
+    { chave: 'whatsapp.webhook_url', valor: 'https://evo.local/message/sendText/oferto' },
+    { chave: 'whatsapp.grupo_destino', valor: '120363000@g.us' },
+    { chave: 'whatsapp.grupo.tech', valor: '120363999@g.us' },
+    { chave: 'whatsapp.enviar_imagem', valor: 'sim' },
+  ]);
+
+  // 1) CanaltechOfertas com link de "Resgate todos os cupons" ANTES do link do produto + Xet com linha 1 de chamada 📢
+  const htmlCt = '<div class="tgme_widget_message_wrap"><div data-post="CanaltechOfertas/13864"><div class="tgme_widget_message_text">' +
+    'Quer jogar com mais conforto?<br>Cadeira Gamer TGT Heron Preta<br>R&#036; 324 no PIX<br>' +
+    'Resgate todos os cupons Shopee! <a href="https://s.shopee.com.br/cupomHub1">s.shopee.com.br/cupomHub1</a><br>' +
+    'Compre pelo link: <a href="https://s.shopee.com.br/produtoReal2">s.shopee.com.br/produtoReal2</a>' +
+    '</div></div></div>' +
+    '<div class="tgme_widget_message_wrap"><div data-post="xetdaspromocoes/93782"><div class="tgme_widget_message_text">' +
+    '📢 BORA ORGANIZAR SUA DESPENSA<br>Kit com 15 Potes Herméticos Com Tampa<br>De R&#036; 149 por R&#036; 77<br>' +
+    '<a href="https://meli.la/pote15">https://meli.la/pote15</a>' +
+    '</div></div></div>';
+
+  const ctItens = radar.lerCanalTelegramPublico(htmlCt, 'CanaltechOfertas');
+  assert.equal(ctItens.length, 2);
+  assert.equal(ctItens[0].redir_url, 'https://s.shopee.com.br/produtoReal2');
+  assert.deepEqual(ctItens[0].redir_url_alts, ['https://s.shopee.com.br/cupomHub1']);
+  assert.equal(ctItens[1].titulo, 'Kit com 15 Potes Herméticos Com Tampa');
+
+  // 2) Fallback quando link primário cai em /m/cupom-de-desconto e deadlock prevention no finalizarRadar
+  const est = {
+    opcoes: { modo: 'agendado', ts: AGORA },
+    candidatos: [
+      { radar_key: 'tg_ct_dead', loja: '', titulo: 'Cadeira Gamer TGT Heron', preco: 324, preco_de: 599, desconto_pct: 45, redir_url: 'https://s.shopee.com.br/onlyHub', redir_url_alts: [] },
+      { radar_key: 'tg_ct_alt', loja: '', titulo: 'Kit Ventoinha Gamer ARGB', preco: 59, preco_de: 99, desconto_pct: 40, redir_url: 'https://s.shopee.com.br/firstHub', redir_url_alts: ['https://s.shopee.com.br/secondProd'] },
+      { radar_key: 'pb_429', fonte_radar: 'promobit', loja: 'amazon', titulo: 'SSD 1TB NVMe', preco: 399, preco_de: 599, desconto_pct: 33, redir_url: 'https://www.promobit.com.br/Redirect/to/429/' },
+    ],
+    reqs1: [
+      { idx: 0, url: 'https://s.shopee.com.br/onlyHub' },
+      { idx: 1, url: 'https://s.shopee.com.br/firstHub' },
+      { idx: 2, url: 'https://www.promobit.com.br/Redirect/to/429/' },
+    ],
+  };
+  const r1 = radar.aplicarRedirRadar1(est, [
+    { statusCode: 301, headers: { location: 'https://shopee.com.br/m/cupom-de-desconto?utm_source=x' } },
+    { statusCode: 301, headers: { location: 'https://shopee.com.br/m/cupom-de-desconto?utm_source=y' } },
+    { statusCode: 429, body: '<title>Acesso Bloqueado</title>' },
+  ], cfg);
+  assert.equal(r1.promobit_429, true);
+  assert.equal(r1.reqs2.length, 1);
+  assert.equal(r1.reqs2[0].url, 'https://s.shopee.com.br/secondProd');
+  const finDead = radar.finalizarRadar(Object.assign({}, r1, { reqs3: [], reqsPag: [], reqsMercado: [] }), [], [], [], cfg, [], []);
+  // Deadlink não-429 vai para descartadas (não trava próximas rodadas); promobit 429 não suja radar_descartes por 6h
+  assert.ok(finDead.resumo.descartadas.some((d) => d.radar_key === 'tg_ct_dead' && d.motivo === 'nao_produto'));
+  assert.ok(!finDead.resumo.descartadas.some((d) => d.radar_key === 'pb_429'));
+
+  // 3) Magalu + frete grátis + Zap por categoria + imagem
+  const idMgl = L.identificar('https://www.magazineluiza.com.br/air-fryer-mondial/p/123456/');
+  assert.equal(idMgl.loja, 'magalu');
+  assert.ok(idMgl.produto_id.startsWith('mgl_'));
+  const pagFrete = extrator.lerPaginaProduto({ statusCode: 200, body: '<html><body><h1 id="productTitle">Mouse Gamer Logitech</h1><span>Entrega GRÁTIS quinta-feira</span></body></html>' }, 'https://www.amazon.com.br/dp/B099999999');
+  assert.equal(pagFrete.frete_gratis, true);
+  assert.equal(pagFrete.frete, 0);
+
+  const waCalls = L.montarChamadasWhatsAppAuto(
+    { oferta_id: 'ow1', categoria: 'tech', titulo: 'Mouse Gamer', imagem: 'https://m.media-amazon.com/images/I/mouse.jpg' },
+    'Texto Zap',
+    '',
+    cfg,
+  );
+  assert.equal(waCalls.length, 1);
+  assert.match(waCalls[0].url, /\/message\/sendMedia\//);
+  assert.equal(waCalls[0].body.number, '120363999@g.us');
+
+  // 4) Perfume com chamada "VOLTOU O QUASAR..." usa Linha 2 real + fallback foto de mercado + Tamanhos + Reenvio binário
+  const htmlXetQuasar = '<div class="tgme_widget_message_wrap"><div data-post="xetdaspromocoes/93795"><div class="tgme_widget_message_text">' +
+    'VOLTOU O QUASAR 63 CONTO, aproveita antes que esgote<br><br>Perfume Boticário Quasar Blue 100ml<br><br>' +
+    'De R&#036; 164 por R&#036; 63 no Pix<br>Tamanhos: P, M, G<br><a href="https://meli.la/2U7fPvg">link</a>' +
+    '</div></div></div>';
+  const quasarItens = radar.lerCanalTelegramPublico(htmlXetQuasar, 'xetdaspromocoes');
+  assert.equal(quasarItens[0].titulo, 'Perfume Boticário Quasar Blue 100ml');
+  assert.equal(quasarItens[0].tamanhos, 'P, M, G');
+
+  const pagAmzTam = extrator.lerPaginaProduto({
+    statusCode: 200,
+    body: '<html><head><script>"size_name":["39","40","41","42"]</script></head><body><h1 id="productTitle">Tênis Esportivo</h1></body></html>',
+  }, 'https://www.amazon.com.br/dp/B0MODA1234');
+  assert.equal(pagAmzTam.tamanhos, '39, 40, 41, 42');
+  const tgModa = L.textoTelegram({
+    oferta_id: 'om1', loja: 'amazon', categoria: 'moda', titulo: 'Tênis Esportivo', preco: 199,
+    links_manuais: { preco_de: 399, tamanhos: pagAmzTam.tamanhos },
+  }, 'https://www.amazon.com.br/dp/B0MODA1234', cfg);
+  assert.match(tgModa, /📏 <b>Tamanhos:<\/b> 39, 40, 41, 42/);
+
+  const candSemImg = [{
+    radar_key: 'q1', loja: 'ml', produto_id: 'ml_MLBQUASAR1', url: 'https://produto.mercadolivre.com.br/MLB-123',
+    titulo: 'Perfume Boticário Quasar Deep Blue 100ml', preco: 74, preco_de: 164, desconto_pct: 55, resolved: true,
+    imagem: 'https://cdn1.telesco.pe/file/broken',
+  }];
+  const finMercImg = radar.finalizarRadar(
+    { opcoes: { modo: 'agendado', ts: AGORA }, candidatos: candSemImg, reqsPag: [], reqsMercado: [{ idx: 0, fonte: 'zoom' }] },
+    [],
+    [],
+    [],
+    cfg,
+    [],
+    [{ statusCode: 200, body: `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { hits: [{ name: 'Perfume Quasar Deep Blue 100ml O Boticario', price: 151.05, image: 'https://image.zst.com.br/quasar.jpg' }] } } })}</script>` }],
+  );
+  assert.equal(finMercImg.ofertasNovas[0].imagem, 'https://image.zst.com.br/quasar.jpg');
+
+  const chFoto = {
+    bot: 'grupo', metodo: 'sendPhoto',
+    payload: { chat_id: -100, photo: 'https://image.zst.com.br/quasar.jpg', caption: 'oi' },
+    fallback: { bot: 'grupo', metodo: 'sendMessage', payload: { chat_id: -100, text: 'oi' } },
+  };
+  const limBin = L.limiteTelegram([chFoto], [{ ok: false, error_code: 400, description: 'Bad Request: failed to get HTTP URL content' }], { tentarBinario: true });
+  assert.equal(limBin.indices.length, 1);
+  assert.equal(limBin.reenviar[0]._tentar_binario, true);
+  assert.equal(limBin.reenviar[0].download_url, 'https://image.zst.com.br/quasar.jpg');
+
+  // Reenvio binário NUNCA deve baixar telesco.pe ou imagem proibida: cai direto no fallback texto
+  const chFotoProibida = {
+    bot: 'grupo', metodo: 'sendPhoto',
+    payload: { chat_id: -100, photo: 'https://cdn1.telesco.pe/file/watermark_xet.jpg', caption: 'oi' },
+    fallback: { bot: 'grupo', metodo: 'sendMessage', payload: { chat_id: -100, text: 'oi' } },
+  };
+  const limProibido = L.limiteTelegram([chFotoProibida], [{ ok: false, error_code: 400, description: 'Bad Request: failed to get HTTP URL content' }], { tentarBinario: true });
+  assert.equal(limProibido.indices.length, 1);
+  assert.equal(limProibido.reenviar[0]._tentar_binario, undefined);
+  assert.equal(limProibido.reenviar[0].metodo, 'sendMessage');
+});
+
+test('blindagem definitiva anti-@/watermark, vitrine /social/ ML com foto .jpg oficial, limpeza de ganchos multi-parágrafo e ofertou.ai', () => {
+  const radar = require('../lib/radar');
+  const extrator = require('../lib/extrator');
+  const lojas = require('../lib/lojas');
+  const cfg = cfgBase();
+
+  // 1) ehImagemProibida e normalizarImagemOferta bloqueiam telesco.pe, t.me, pelando, gatry, redes sociais e watermarks
+  const proibidas = [
+    'https://cdn1.telesco.pe/file/wda3e2.jpg',
+    'https://cdn4.telesco.pe/file/xyz.jpg',
+    'https://t.me/i/userpic/320/xetdaspromocoes.jpg',
+    'https://www.pelando.com.br/img/123.jpg',
+    'https://gatry.com/uploads/img.jpg',
+    'https://nerdofertas.com/banner.jpg',
+    'https://ofertou.ai/logo.png',
+    'https://m.media-amazon.com/images/G/32/social_share/amazon_logo.png',
+    'https://wsrv.nl/?url=cdn1.telesco.pe%2Ffile%2Fabc.jpg',
+  ];
+  for (const u of proibidas) {
+    assert.equal(lojas.ehImagemProibida(u), true, `Deve bloquear: ${u}`);
+    assert.equal(lojas.normalizarImagemOferta(u), '', `Deve limpar: ${u}`);
+  }
+
+  // 2) normalizarImagemOferta converte .webp do Mercado Livre (mlstatic.com) para .jpg e limpa sufixo _AC_UL320_ da Amazon
+  assert.equal(
+    lojas.normalizarImagemOferta('https://http2.mlstatic.com/D_NQ_NP_2X_608256-MLA99864310153_112025-F-{sanitized_title}.webp'),
+    'https://http2.mlstatic.com/D_NQ_NP_2X_608256-MLA99864310153_112025-F-.jpg',
+  );
+  assert.equal(
+    lojas.normalizarImagemOferta('https://m.media-amazon.com/images/I/51H7bcV-cEL._AC_UL320_.jpg'),
+    'https://m.media-amazon.com/images/I/51H7bcV-cEL.jpg',
+  );
+  assert.equal(lojas.ehImagemLojaOficial('https://http2.mlstatic.com/D_NQ_NP_2X_608256-MLA99864310153_112025-F.jpg'), true);
+
+  // 3) Caso real do print do usuário: GTA VI com @xetdaspromocoes no cdn1.telesco.pe + chamada multi-parágrafo
+  const htmlXetGta = [
+    '<div class="tgme_widget_message_wrap" data-post="xetdaspromocoes/93888">',
+    '<div class="tgme_widget_message_photo_wrap" style="background-image:url(\'https://cdn1.telesco.pe/file/gta6_watermark_xet.jpg\')"></div>',
+    '<div class="tgme_widget_message_text">',
+    'BAIXOU GTA VI NA PRÉ-VENDA PARCELADO, somente pagamento com cartão mercado pago<br/><br/>',
+    'Grand Theft Auto VI PlayStation 5<br/><br/>',
+    'De R$ 499,00 por R$ 359,00 em 10x sem juros<br/>',
+    'Use o cupom: <code>MP100GAMES</code><br/>',
+    '<a href="https://meli.la/1gta6ps5">https://meli.la/1gta6ps5</a>',
+    '</div></div>',
+  ].join('');
+  const itensGta = radar.lerCanalTelegramPublico(htmlXetGta, 'xetdaspromocoes');
+  assert.equal(itensGta.length, 1);
+  assert.equal(itensGta[0].imagem, '', 'Nunca deve capturar imagem do tgme_widget_message_photo_wrap');
+  assert.equal(itensGta[0].titulo, 'Grand Theft Auto VI PlayStation 5');
+  assert.equal(itensGta[0].cupom, 'MP100GAMES');
+  assert.equal(itensGta[0].preco, 359);
+
+  // 4) Vitrine /social/ do Mercado Livre extrai título oficial e foto oficial .jpg da http2.mlstatic.com
+  const htmlSocialMl = [
+    '<div class="poly-card">',
+    '<div class="poly-card__portada"><img class="poly-component__picture" src="https://http2.mlstatic.com/D_Q_NP_2X_615987-MLA107960508252_032026-AB.webp" /></div>',
+    '<a class="poly-component__title" href="https://www.mercadolivre.com.br/grand-theft-auto-vi-edico-padro-fisico-playstation-5/p/MLB64747191">Grand Theft Auto VI Edição Padrão Físico PlayStation 5</a>',
+    '<s class="andes-money-amount--previous"><span class="andes-money-amount__fraction">499</span></s>',
+    '</div>',
+  ].join('');
+  const dadosSocial = radar.extrairDadosHtmlSocial(htmlSocialMl, itensGta[0].titulo);
+  assert.ok(dadosSocial);
+  assert.equal(dadosSocial.url, 'https://www.mercadolivre.com.br/grand-theft-auto-vi-edico-padro-fisico-playstation-5/p/MLB64747191');
+  assert.equal(dadosSocial.imagem, 'https://http2.mlstatic.com/D_Q_NP_2X_615987-MLA107960508252_032026-AB.jpg');
+  assert.equal(dadosSocial.titulo, 'Grand Theft Auto VI Edição Padrão Físico PlayStation 5');
+
+  // 5) Vitrine /lists expirada com produto nada a ver é rejeitada por incompatibilidade de título
+  const htmlListExpirada = [
+    '<div class="poly-card">',
+    '<a class="poly-component__title" href="https://www.mercadolivre.com.br/conjunto-panelas-antiaderente-10-pecas-teflon/p/MLB38252521">Conjunto Panelas Antiaderente 10 Peças Teflon</a>',
+    '</div>',
+  ].join('');
+  const socialMismatch = radar.extrairDadosHtmlSocial(htmlListExpirada, 'Fritadeira Elétrica Air Fryer Oven 12L');
+  assert.equal(socialMismatch, null);
+
+  // 6) Chamadas como "KIT PRO SOLTEIRO SAIR DE CASA" / "corre q o cupom tá esgotando" / "MENOR PREÇO HISTÓRICO? 🔥" são filtradas
+  assert.equal(extrator.pareceChamadaOuGancho('BAIXOU GTA VI NA PRÉ-VENDA PARCELADO, somente pagamento com cartão mercado pago'), true);
+  assert.equal(extrator.pareceChamadaOuGancho('KIT PRO SOLTEIRO SAIR DE CASA'), true);
+  assert.equal(extrator.pareceChamadaOuGancho('corre q o cupom tá esgotando'), true);
+  assert.equal(extrator.pareceChamadaOuGancho('MENOR PREÇO HISTÓRICO? 🔥'), true);
+  assert.equal(extrator.pareceChamadaOuGancho('Grand Theft Auto VI PlayStation 5'), false);
+
+  // 7) ofertou.ai é reconhecido como link curto e /up/MLBU reconstrói slug limpo sem prefixo da vitrine
+  assert.equal(L.ehCurto('https://ofertou.ai/v8F1k'), true);
+  assert.equal(
+    extrator.tituloDaUrl('https://www.mercadolivre.com.br/botdoafiliado/up/MLBU123456-conjunto-panelas-antiaderente-10-pecas-teflon'),
+    'Conjunto Panelas Antiaderente 10 Peças Teflon',
+  );
+
+  // 8) prepararPaginasRadar executa extrairDadosHtmlSocial na vitrine /social/ sem ser atropelado por lerLocation,
+  //    ignorando links de menu c_category_id=MLB1196 e extraindo foto .jpg, título, parcelamento recalculado e campanha
+  const htmlSocialCompleto = [
+    '<a href="https://www.mercadolivre.com.br/c/livros-revistas-e-comics#c_id=/home/categories&c_category_id=MLB1196">Menu</a>',
+    '<div class="poly-card"><div class="poly-card__portada">',
+    '<img class="poly-component__picture" src="https://http2.mlstatic.com/D_Q_NP_2X_709765-MLA105292090682_012026-V.webp" />',
+    '</div><div class="poly-card__content">',
+    '<span class="poly-component__highlight">BLACK FRIDAY</span>',
+    '<a class="poly-component__title" href="https://www.mercadolivre.com.br/cadeira-de-escritorio-ergonomica-giratoria-b100-boston/p/MLB55184610#c_id=/home/card-featured/element">Cadeira De Escritório Ergonômica Giratória B100 Boston Cinza</a>',
+    '<s class="andes-money-amount--previous"><span class="andes-money-amount__fraction">746</span><span class="andes-money-amount__cents">12</span></s>',
+    '<div class="poly-price__current"><span class="andes-money-amount__fraction">439</span><span class="andes-money-amount__cents">90</span></div>',
+    '<span class="poly-price__installments">8x <span class="andes-money-amount__currency-symbol">R$</span><span class="andes-money-amount__fraction">54</span>,<span class="andes-money-amount__cents">99</span> sem juros</span>',
+    '</div></div>',
+  ].join('');
+  const prepSoc = radar.prepararPaginasRadar(
+    {
+      candidatos: [{ titulo: 'Cadeira de Escritório Ergonômica Giratória B100 Boston', preco: 359, cupom: 'OFFHOJEML', loja: 'ml' }],
+      reqs3: [{ idx: 0, url: 'https://www.mercadolivre.com.br/social/xetdaspromocoes' }],
+    },
+    [{ body: htmlSocialCompleto, statusCode: 200 }],
+    {},
+  );
+  assert.equal(prepSoc.reqsPag.length, 0, 'Não deve agendar leitura redundante da PDP bloqueada do ML quando a vitrine /social/ já enriqueceu');
+  assert.equal(prepSoc.candidatos[0].imagem, 'https://http2.mlstatic.com/D_Q_NP_2X_709765-MLA105292090682_012026-V.jpg');
+  assert.equal(prepSoc.candidatos[0].preco_sem_cupom, 439.9);
+  assert.equal(prepSoc.candidatos[0].preco_de, 746.12);
+  assert.equal(prepSoc.candidatos[0].parcelamento, 'Em até 8x de R$ 44,88 sem juros');
+  assert.equal(prepSoc.candidatos[0].campanha, 'BLACK FRIDAY');
+
+  // 9) Vitrine /social/ com card-featured de produto diferente do candidato seleciona o card que casa os tokens ou descarta
+  const htmlSocialMulti = [
+    '<div class="poly-card"><div class="poly-card__portada">',
+    '<img class="poly-component__picture" src="https://http2.mlstatic.com/D_Q_NP_2X_111111-MLA111_012026-V.webp" />',
+    '</div><a class="poly-component__title" href="https://www.mercadolivre.com.br/smart-tv-50-polegadas-4k/p/MLB11111111#c_id=/home/card-featured/element">Smart TV 50 Polegadas 4K</a></div>',
+    '<div class="poly-card"><div class="poly-card__portada">',
+    '<img class="poly-component__picture" src="https://http2.mlstatic.com/D_Q_NP_2X_615987-MLA107960508252_032026-AB.webp" />',
+    '</div><a class="poly-component__title" href="https://www.mercadolivre.com.br/grand-theft-auto-vi-edico-padro-fisico-playstation-5/p/MLB64747191">Grand Theft Auto VI Edição Padrão Físico PlayStation 5</a></div>',
+  ].join('');
+  const multiMatch = radar.extrairDadosHtmlSocial(htmlSocialMulti, 'Grand Theft Auto VI PlayStation 5');
+  assert.ok(multiMatch);
+  assert.equal(multiMatch.url, 'https://www.mercadolivre.com.br/grand-theft-auto-vi-edico-padro-fisico-playstation-5/p/MLB64747191');
+  assert.equal(radar.extrairDadosHtmlSocial(htmlListExpirada, 'Airfryer'), null, 'Candidato de 1 token não deve aceitar card incompatível');
+
+  // 10) Entidades HTML tipográficas (&rdquo;, &ldquo;, &ndash;) e classificação de toalhas absorventes / relógios
+  const htmlEntidades = [
+    '<div class="tgme_widget_message_wrap" data-post="ofertasdecomputador/29590">',
+    '<div class="tgme_widget_message_text">',
+    'Tablet VAIO TL10 8GB 128GB Octa-Core, Tela 10.4&rdquo; 2K &ndash; Preto<br/>',
+    'Por R$ 1.249,00<br/>',
+    '<a href="https://www.amazon.com.br/dp/B0BZQKVC7J">https://www.amazon.com.br/dp/B0BZQKVC7J</a>',
+    '</div></div>',
+  ].join('');
+  const itensEnt = radar.lerCanalTelegramPublico(htmlEntidades, 'ofertasdecomputador');
+  assert.equal(itensEnt.length, 1);
+  assert.ok(!itensEnt[0].titulo.includes('&rdquo;'), 'Não deve manter &rdquo; literal no título');
+  assert.ok(itensEnt[0].titulo.includes('10.4" 2K – Preto'));
+  assert.equal(
+    extrator.classificarCategoria('Jogo Toalhas Banho Grossas Macias Algodão 4pc Absorventes', {}, 'MLB-4125132275-jogo-toalhas-banho-grossas-macias-algodo-4pc-absorventes').categoria,
+    'casa',
+  );
+  assert.equal(
+    extrator.classificarCategoria('Relógio Technos Masculino Racer Básico Prata 2115twv1k', {}, '').categoria,
+    'moda',
+  );
+});
+
+test('seção dedicada K-Pop: categoria, lojas legítimas com entrega no BR, parsers UMusic/Nuvemshop e comandos', () => {
+  const lojas = require('../lib/lojas');
+  const extrator = require('../lib/extrator');
+  const config = require('../lib/config');
+  const comunidade = require('../lib/comunidade');
+  const radar = require('../lib/radar');
+  const cfg = config.padrao();
+
+  // 1) Categoria kpop registrada e auto-classificada
+  assert.ok(cfg.categorias.kpop);
+  assert.equal(cfg.categorias.kpop.emoji, '💿');
+  assert.ok(config.esquema().some((e) => e.chave === 'shopee.busca.kpop' && /album kpop oficial/i.test(e.padrao)));
+  assert.equal(extrator.classificarCategoria('Álbum Stray Kids ATE Official Hanteo Photocard', cfg, '').categoria, 'kpop');
+  assert.equal(extrator.classificarCategoria('Lightstick Oficial BTS Army Bomb Ver.4', cfg, '').categoria, 'kpop');
+  assert.equal(comunidade.detectarCategoriaCanal('Ofertô K-Pop · Álbuns & Lightsticks', 'oferto_kpop'), 'kpop');
+
+  // 2) Identificação de lojas legítimas com entrega no Brasil + allowlist oficial de imagem
+  assert.equal(lojas.identificar('https://www.umusicstore.com/cd-stray-kids-ate-123/p').loja, 'umusic');
+  assert.equal(lojas.identificar('https://www.klinestore.com.br/produtos/bts-proof/').loja, 'klinestore');
+  assert.equal(lojas.identificar('https://www.hopescolor.com/produtos/twice-with-you-th/').loja, 'hopescolor');
+  assert.equal(lojas.identificar('https://www.asiaticstore.com.br/produtos/enhypen-romance/').loja, 'asiaticstore');
+  assert.equal(lojas.identificar('https://kpopmerch.com/products/aespa-armageddon').loja, 'kpopmerch');
+  assert.equal(lojas.identificar('https://www.ktown4u.com/iteminfo?goods_no=12345').loja, 'ktown4u');
+  assert.equal(lojas.identificar('https://shop.weverse.io/en/shop/GL_USD/artists/2/sales/123').loja, 'weverse');
+  assert.equal(lojas.ehImagemLojaOficial('https://acdn-us.mitiendanube.com/stores/987/955/products/img_1843.jpg'), true);
+  assert.equal(lojas.ehImagemLojaOficial('https://universalmusic.vteximg.com.br/arquivos/ids/203561/cd.jpg'), true);
+
+  // 3) Parser UMusic Store VTEX + Nuvemshop (K-Line / Hopescolor / Asiatic)
+  const vtexItems = radar.lerUmusicVtex([
+    {
+      productId: '7371',
+      productName: 'Vinil KPop Demon Hunters - Free (LP 7") - Importado',
+      link: 'https://www.umusicstore.com/vinil-kpop-7371/p',
+      items: [{
+        images: [{ imageUrl: 'https://universalmusic.vteximg.com.br/arquivos/ids/196012/vinil.jpg' }],
+        sellers: [{ commertialOffer: { Price: 139.93, ListPrice: 199.9, AvailableQuantity: 10 } }],
+      }],
+    },
+    {
+      productId: '9999',
+      productName: 'Item Esgotado',
+      link: 'https://www.umusicstore.com/esgotado/p',
+      items: [{
+        images: [{ imageUrl: 'https://universalmusic.vteximg.com.br/arquivos/ids/1/esg.jpg' }],
+        sellers: [{ commertialOffer: { Price: 99.9, ListPrice: 149.9, AvailableQuantity: 0 } }],
+      }],
+    },
+  ]);
+  assert.equal(vtexItems.length, 1);
+  assert.equal(vtexItems[0].loja, 'umusic');
+  assert.equal(vtexItems[0].produto_id, 'umu_7371');
+  assert.equal(vtexItems[0].desconto_pct, 30);
+  assert.equal(vtexItems[0].categoria_hint, 'kpop');
+
+  const htmlNuvem = `
+    <div class="js-item-product" data-product-id="119" data-variants="[{&quot;product_id&quot;:119,&quot;price_number&quot;:199,&quot;compare_at_price_number&quot;:279,&quot;stock&quot;:5,&quot;available&quot;:true,&quot;image_url&quot;:&quot;//acdn-us.mitiendanube.com/stores/987/955/products/bts.jpg&quot;}]">
+      <a href="https://www.klinestore.com.br/produtos/bts-proof-oficial/" title="BTS Proof Álbum Oficial">BTS Proof Álbum Oficial</a>
+    </div>
+  `;
+  const nuvemItems = radar.lerNuvemshopKpop(htmlNuvem, 'klinestore', 'https://www.klinestore.com.br/produtos/');
+  assert.equal(nuvemItems.length, 1);
+  assert.equal(nuvemItems[0].loja, 'klinestore');
+  assert.equal(nuvemItems[0].preco, 199);
+  assert.equal(nuvemItems[0].preco_de, 279);
+  assert.equal(nuvemItems[0].desconto_pct, 29);
+  assert.equal(nuvemItems[0].imagem, 'https://acdn-us.mitiendanube.com/stores/987/955/products/bts.jpg');
+
+  // 4) Comando /radar kpop e planejamento de fontes K-Pop
+  const cmdKpop = config.interpretarComandoRadar('/radar kpop', cfg);
+  assert.equal(cmdKpop.acao, 'buscar');
+  assert.deepEqual(cmdKpop.categorias, ['kpop']);
+  assert.ok(cmdKpop.lojas.includes('shopee') && cmdKpop.lojas.includes('amazon') && cmdKpop.lojas.includes('umusic'));
+
+  const planKpop = radar.planejarFontesRadar(cfg, { modo: 'comando', categorias: ['kpop'], ts: AGORA });
+  assert.ok(planKpop.fontesWeb.some((f) => f.tipo === 'umusic_vtex'));
+  assert.ok(planKpop.fontesWeb.some((f) => f.tipo === 'nuvemshop_kpop' && f.loja_hint === 'klinestore'));
+  assert.ok(planKpop.fontesWeb.some((f) => f.tipo === 'amazon_busca' && f.categoria_hint === 'kpop'));
+  assert.ok(!planKpop.fontesWeb.some((f) => f.loja_hint === 'hopescolor' || f.loja_hint === 'kpopandyoushop'));
+
+  const planKpopExtra = radar.planejarFontesRadar(cfg, { modo: 'comando', categorias: ['kpop'], lojas: ['klinestore', 'hopescolor'], ts: AGORA });
+  assert.ok(planKpopExtra.fontesWeb.some((f) => f.tipo === 'nuvemshop_kpop' && f.loja_hint === 'hopescolor'));
+
+  // 5) Regressão: título iniciado com "Pronta Entrega ..." não pode ser apagado deixando <a href="..."></a> sem link visível
+  const { enxugarTituloOferta } = require('../lib/copy');
+  const textos = require('../lib/textos');
+  const titLimpo = enxugarTituloOferta('Pronta Entrega Mini Photocard Membership Bts', 105);
+  assert.ok(titLimpo.length >= 10, 'não deve zerar título após Pronta Entrega');
+  assert.match(titLimpo, /Mini Photocard Membership Bts/i);
+  const msgKpop = textos.textoTelegram({
+    oferta_id: 'ok1', produto_id: 'kln_1', loja: 'klinestore', categoria: 'kpop',
+    titulo: 'Pronta Entrega Mini Photocard Membership Bts', preco: 49.9, selo: 'sem_ref',
+    links_manuais: '{"modo_link":true,"preco_de":79.9}',
+  }, 'https://www.klinestore.com.br/produtos/bts-mini-photocard/', cfg);
+  assert.match(msgKpop, /<a href="https:\/\/www\.klinestore\.com\.br\/produtos\/bts-mini-photocard\/">[^<]+<\/a>/);
+});
+
+test('regressões produção 19/11: relógio Tommy Hilfiger em moda, Johnson s Baby sem R$ 0,96, 2x Camiseta Insider, 25G523B e Shopee K-Pop confiável', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const mercado = require('../lib/mercado');
+  const cfg = cfgBase([
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+    { chave: 'shopee.app_id', valor: 'app1' },
+    { chave: 'shopee.secret', valor: 'sec1' },
+  ]);
+
+  // 1) Relógio Tommy Hilfiger / Cueca CK / Batom Dior / Smartwatch Amazfit / Johnson's Baby vs Perfumes reais
+  assert.equal(extrator.classificarCategoria('Relógio Tommy Hilfiger David Masculino Em Borracha Preta 171 Preto', cfg, '').categoria, 'moda');
+  assert.equal(extrator.classificarCategoria('Kit 3 Cuecas Boxer Calvin Klein Algodão', cfg, '').categoria, 'moda');
+  assert.equal(extrator.classificarCategoria('Batom Dior Rouge Matte 999', cfg, '').categoria, 'beleza');
+  assert.equal(extrator.classificarCategoria('Relógio Smartwatch Amazfit GTR 4', cfg, '').categoria, 'tech');
+  assert.equal(extrator.classificarCategoria("Sabonete Líquido Johnson's Baby Hora do Sono, Lavanda, 400ml", cfg, '').categoria, 'bebe');
+  assert.equal(extrator.classificarCategoria('Perfume Tommy Hilfiger Impact Masculino Eau de Toilette 100ml', cfg, '').categoria, 'perfumes');
+  assert.equal(extrator.classificarCategoria('Boss Bottled Tonic 100 Ml Eau De Toilette De Hugo Boss', cfg, '').categoria, 'perfumes');
+
+  // 2) Camiseta Tech Light Insider: "adicione 2 unidades" + "2x" preservado após enriquecimento da página e não reprovado pelo comparador de 1 unidade
+  const htmlXetInsider = '<div class="tgme_widget_message_wrap"><div data-post="xetdaspromocoes/94055"><div class="tgme_widget_message_text">' +
+    '48 CONTO CADA INSIDER<br/>adicione 2 unidades e aplique o cupom<br/><br/>' +
+    '2x Camiseta Tech Light Insider (3 cores)<br/><br/>' +
+    'De R$ 259 por R$ 96 no Pix<br/>Use o Cupom: <code>VOCE10</code> + Selecione Pix<br/>' +
+    '<a href="https://www.mercadolivre.com.br/camiseta-tech-light-insider/p/MLB4232914111">link</a>' +
+    '</div></div></div>';
+  const candsIns = radar.lerCanalTelegramPublico(htmlXetInsider, 'xetdaspromocoes');
+  assert.equal(candsIns.length, 1);
+  assert.equal(candsIns[0]._qtd_unidades, 2);
+  assert.match(candsIns[0].titulo, /^2x /);
+  assert.match(candsIns[0].campanha, /Adicione 2 unidades \(R\$ 48,00 cada\)/);
+
+  const finIns = radar.finalizarRadar(
+    {
+      opcoes: { modo: 'agendado', ts: AGORA },
+      candidatos: [Object.assign({}, candsIns[0], { resolved: true, produto_id: 'ml_MLB4232914111', url: 'https://www.mercadolivre.com.br/camiseta-tech-light-insider/p/MLB4232914111', categoria: 'moda' })],
+      reqsPag: [{ idx: 0, url: 'https://www.mercadolivre.com.br/camiseta-tech-light-insider/p/MLB4232914111' }],
+      reqsMercado: [{ idx: 0, fonte: 'zoom' }],
+    },
+    [], [], [], cfg,
+    [{ statusCode: 200, body: '<html><body><h1 class="ui-pdp-title">Camiseta Tech Light Insider Masculino</h1><meta property="price" content="69.00"/></body></html>' }],
+    [{ statusCode: 200, body: `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { hits: [{ name: 'Camiseta Tech Light Insider Masculino', price: 69, merchantName: 'Insider', image: 'https://i.zst.com.br/insider.jpg' }] } } })}</script>` }],
+  );
+  assert.equal(finIns.ofertasNovas.length, 1);
+  assert.equal(finIns.ofertasNovas[0].titulo, '2x Camiseta Tech Light Insider Masculino');
+  assert.equal(finIns.ofertasNovas[0].preco, 96);
+  assert.equal(mercado.casarProdutosMercado({ titulo: '2x Camiseta Tech Light Insider Masculino', preco: 96 }, [{ titulo: 'Camiseta Tech Light Insider Masculino', preco: 69 }]).length, 0);
+
+  // 3) Johnson's Baby com cupom Amazon R$ 25 sobre R$ 25,96 (que daria R$ 0,96) é ignorado e abaixo de preco_min (15) é bloqueado
+  const htmlAmzJB = '<html><body><span id="productTitle">Creme para Pentear Johnson&apos;s Baby Cachos dos Sonhos, 200ml</span><span class="priceToPay"><span class="a-offscreen">R$ 25,96</span></span><label id="greenBadge1">Salve o cupom R$ 25 em compras de R$ 100</label><span id="promoMessageCXCW1">: RELAMPAGO20</span></body></html>';
+  const lidoJB = extrator.lerPaginaProduto({ statusCode: 200, body: htmlAmzJB }, 'https://www.amazon.com.br/dp/B07MT9LCV1');
+  assert.equal(lidoJB.cupom_valor, null);
+
+  const finSubMin = radar.finalizarRadar(
+    {
+      opcoes: { modo: 'agendado', ts: AGORA },
+      candidatos: [{
+        radar_key: 'pb_jb', loja: 'amazon', produto_id: 'amz_B07MT9LCV1',
+        url: 'https://www.amazon.com.br/dp/B07MT9LCV1', titulo: "Johnson's Baby Creme Cachos 200ml",
+        preco: 19, preco_de: 49.99, desconto_pct: 62, categoria: 'bebe', resolved: true,
+      }],
+      reqsPag: [{ idx: 0, url: 'https://www.amazon.com.br/dp/B07MT9LCV1' }],
+      reqsMercado: [],
+    },
+    [], [], [], cfg,
+    [{ statusCode: 200, body: '<html><body><span id="productTitle">Creme</span><span class="priceToPay"><span class="a-offscreen">R$ 16,00</span></span><label id="greenBadge1">Salve o cupom R$ 10</label></body></html>' }],
+    [],
+  );
+  assert.equal(finSubMin.ofertasNovas.length, 0);
+  assert.ok(finSubMin.resumo.descartadas.some((d) => d.motivo === 'abaixo_preco_minimo' || d.motivo === 'sem_prova_de_desconto'));
+
+  // 2b) Preço irreal vindo de cupom R$ 50 OFF em produto de R$ 644,29 é descartado
+  const estBike = {
+    opcoes: { modo: 'agendado', ts: AGORA },
+    candidatos: [{
+      radar_key: 'tg_nerdofertas_153793', loja: 'amazon', produto_id: 'amz_B0GNN42NBM',
+      titulo: 'Bicicleta Ergométrica Spinning Profissional Wizo',
+      preco: 50, cupom: 'BLACKTAQUETA', categoria: 'saude', resolved: true,
+      url: 'https://www.amazon.com.br/dp/B0GNN42NBM',
+    }],
+    reqsPag: [{ idx: 0, url: 'https://www.amazon.com.br/dp/B0GNN42NBM' }],
+    reqsMercado: [],
+  };
+  const finBike = radar.finalizarRadar(
+    estBike, [], [], [], cfg,
+    [{ body: '<html><title>Bicicleta Ergométrica Spinning Wizo : Amazon.com.br</title><span id="apex_desktop_newAccordionRow"></span><span class="a-price aok-align-center"><span class="a-offscreen">R$ 644,29</span></span></html>' }],
+    [],
+  );
+  assert.equal(finBike.ofertasNovas.length, 0);
+  assert.ok(finBike.resumo.descartadas.some((d) => d.motivo === 'expirada_na_loja'));
+
+  // 4) Modelo/código: 25G523B não vira cupom e não repete monitor no mesmo preço com outro nome de cupom
+  const extMon = extrator.extrairDoTexto('Monitor LG UltraGear 25"\nModelo/código: 25G523B\n💵 R$ 551 no PIX com cupom: 20BLACKPRIME');
+  assert.equal(extMon.cupom, '20BLACKPRIME');
+  const repMon = extrator.avaliarRepeticao24h(
+    { produto_id: 'amz_B0HB7FQ67Y', preco: 551, links_manuais: { cupom: 'OUTRO' } },
+    [{ oferta_id: 'o1', produto_id: 'amz_B0HB7FQ67Y', preco: 551, status: 'aprovada', ts: AGORA - 120000, links_manuais: JSON.stringify({ cupom: '20BLACKPRIME' }) }],
+    AGORA,
+    { modo_radar: true, janela_radar_72h: true },
+  );
+  assert.equal(repMon.bloquear, true);
+
+  // 5) Shopee K-Pop no radar filtra lojas não confiáveis e prioriza oficiais/indicadas
+  const planK = radar.planejarFontesRadar(cfg, { modo: 'comando', categorias: ['kpop'], lojas: ['shopee'], ts: AGORA });
+  const respShK = planK.fontesShopee.map((_, idx) => (idx === 0 ? {
+    data: {
+      productOfferV2: {
+        nodes: [
+          { itemId: '1', shopId: '10', shopName: 'Aleatoria', shopType: [], productName: 'Photocard Stray Kids Barato', priceMin: '30', priceDiscountRate: '40', commissionRate: '0.10', sales: 2, ratingStar: '4.1' },
+          { itemId: '2', shopId: '20', shopName: 'Oficial Kpop', shopType: [1], productName: 'Álbum Stray Kids ATE Oficial', priceMin: '149', priceDiscountRate: '30', commissionRate: '0.08', sales: 120, ratingStar: '4.9' },
+        ],
+      },
+    },
+  } : { data: { productOfferV2: { nodes: [] } } }));
+  const selK = radar.selecionarCandidatosRadar(planK, [], respShK, [], [], cfg, []);
+  assert.equal(selK.candidatos.length, 1);
+  assert.equal(selK.candidatos[0].produto_id, 'shp_20_2');
+
+  // 6) Workflow 04-radar-ofertas otimizado: saveDataSuccessExecution=none e trava anti-sobreposição
+  const wfRadar = lerWf('04-radar-ofertas.json');
+  assert.equal(wfRadar.settings.saveDataSuccessExecution, 'none');
+  const nodePlan = wfRadar.nodes.find((n) => n.name === 'Planejar');
+  assert.match(nodePlan.parameters.jsCode, /radar_rodando_ate/);
+  const connsResultado = Object.values(wfRadar.connections).filter((c) => c.main && c.main.some((arr) => arr.some((x) => x.node === 'Resultado lote radar')));
+  assert.equal(connsResultado.length, 3, 'Apenas Reenviar radar? (falso), Tem reenvio texto? (falso) e Telegram (reenvio radar) conectam em Resultado lote radar');
+});
+
+test('auditoria final: amazon_busca K-Pop integrada, Nuvemshop real com js-nubesdk-slot, entidades invisíveis, relógio com ctx perfumes e anti-duplicação', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const fluxos = require('../lib/fluxos');
+  const mercado = require('../lib/mercado');
+  const cfg = cfgBase([
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+  ]);
+
+  // 1) Relógio Tommy Hilfiger NÃO cai em perfumes mesmo com "perfumes" no contexto, e Perfume Polo Blue continua em perfumes
+  assert.equal(
+    extrator.classificarCategoria('Relógio Tommy Hilfiger David Masculino', cfg, 'perfumes-e-beleza promobit').categoria,
+    'moda',
+  );
+  assert.equal(
+    extrator.classificarCategoria('Ralph Lauren Polo Blue Eau de Toilette 125ml', cfg, '').categoria,
+    'perfumes',
+  );
+  assert.equal(
+    extrator.classificarCategoria('Ralph Lauren Polo Blue', cfg, '').categoria,
+    'perfumes',
+  );
+
+  // 2) Entidades invisíveis (&NegativeMediumSpace;, U+2060) limpas em título e busca
+  const pagPlafon = extrator.lerPaginaProduto(
+    { statusCode: 200, body: '<html><head><title>Plafon Tramontina Smart&NegativeMediumSpace; LED : Amazon.com.br</title></head><body><h1 id="productTitle">Plafon Tramontina Smart&NegativeMediumSpace; LED Quadrado</h1><span class="priceToPay"><span class="a-offscreen">R$ 53,73</span></span></body></html>' },
+    'https://www.amazon.com.br/dp/B0B7V43K65',
+  );
+  assert.equal(pagPlafon.titulo, 'Plafon Tramontina Smart LED Quadrado');
+  assert.equal(
+    extrator.classificarCategoria('Ap\u2060ple iPh\u2060one 17e 512GB', cfg, '').categoria,
+    'tech',
+  );
+
+  // 3) amazon_busca K-Pop despachada em selecionarCandidatosRadar + artista "por Stray Kids" extraído após </h2>
+  const htmlAmzKpop = [
+    '<div role="listitem" data-asin="B0DMWT47YF" class="s-result-item">',
+    '<h2 aria-label="HOP[SKZHOP VER.]"><span>HOP[SKZHOP VER.]</span></h2>',
+    '<div class="a-row"><span>por Stray Kids</span></div>',
+    '<span class="a-price" data-a-size="xl"><span class="a-offscreen">R$&nbsp;155,90</span></span>',
+    '<span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$&nbsp;211,77</span></span>',
+    '<img class="s-image" src="https://m.media-amazon.com/images/I/61kpopalbum.jpg" />',
+    '</div>',
+  ].join('');
+  const planKpop = radar.planejarFontesRadar(cfg, { modo: 'comando', categorias: ['kpop'], lojas: ['amazon'], ts: AGORA });
+  const respWebAmz = planKpop.fontesWeb.map((f) => (f.tipo === 'amazon_busca' ? { statusCode: 200, body: htmlAmzKpop } : { statusCode: 200, body: '' }));
+  const selAmz = radar.selecionarCandidatosRadar(planKpop, respWebAmz, [], [], [], cfg, []);
+  assert.ok(selAmz.candidatos.some((c) => c.produto_id === 'amz_B0DMWT47YF' && /Stray Kids/i.test(c.titulo) && c.categoria === 'kpop'));
+
+  // 4) Nuvemshop real com data-variants > 4KB + js-nubesdk-slot + fallback kpopandyoushop sem data-variants
+  const paddingVariants = Array.from({ length: 25 }, (_, i) => ({
+    product_id: 380334243, price_number: 232, compare_at_price_number: 275, stock: 5, available: true,
+    image_url: `https://acdn-us.mitiendanube.com/stores/001/products/svt_${i}.jpg`, option0: `Ver${i}`,
+  }));
+  const htmlNuvemReal = [
+    `<div class="js-item-product" data-component="product-list-item" data-component-value="380334243" data-variants="${JSON.stringify(paddingVariants).replace(/"/g, '&quot;')}">`,
+    '<div class="js-nubesdk-slot">' + 'x'.repeat(5000) + '</div>',
+    '<a href="https://www.hopescolor.com/produtos/seventeen-5th-album-happy-burstday/" title="Seventeen 5th Album &#039;Happy Burstday&#039;">Seventeen 5th Album</a>',
+    '</div>',
+  ].join('');
+  const itensNuvemReal = radar.lerNuvemshopKpop(htmlNuvemReal, 'hopescolor', 'https://www.hopescolor.com/produtos/');
+  assert.equal(itensNuvemReal.length, 1);
+  assert.equal(itensNuvemReal[0].preco, 232);
+  assert.equal(itensNuvemReal[0].preco_de, 275);
+  assert.match(itensNuvemReal[0].titulo, /Seventeen 5th Album 'Happy Burstday'/);
+
+  const htmlKpopAndYou = [
+    '<div class="js-item-product" data-product-id="323459818" data-component="product-list-item" data-component-value="323459818">',
+    '<div class="js-nubesdk-slot">' + 'x'.repeat(6500) + '</div>',
+    '<img data-srcset="//acdn-us.mitiendanube.com/stores/004/products/pob-480-0.webp 480w" />',
+    '<a href="https://www.kpopandyoushop.com.br/produtos/photocard-pob-happy-jin/" title="PHOTOCARD POB HAPPY JIN">PHOTOCARD POB HAPPY JIN</a>',
+    '<span class="js-compare-price-display">R$ 90,00</span><span class="js-price-display">R$ 70,00</span>',
+    '</div>',
+  ].join('');
+  const itensKyu = radar.lerNuvemshopKpop(htmlKpopAndYou, 'kpopandyoushop', 'https://www.kpopandyoushop.com.br/produtos/');
+  assert.equal(itensKyu.length, 1);
+  assert.equal(itensKyu[0].preco, 70);
+  assert.equal(itensKyu[0].preco_de, 90);
+  assert.equal(itensKyu[0].imagem, 'https://acdn-us.mitiendanube.com/stores/004/products/pob-480-0.webp');
+
+  // 5) Não duplica post no tópico `top` quando categoria === 'top' e oferta.top === true, nem repete mesmo produto na mesma loja com ID diferente
+  const cfgPub = cfgBase([{ chave: 'grupo_id', valor: '-100123' }, { chave: 'topico.top', valor: '3' }, { chave: 'publicar.plataformas', valor: 'wag' }]);
+  const pubTop = fluxos.prepararPublicacao(
+    { oferta_id: 'o_top_1', produto_id: 'ml_MLB1', loja: 'ml', categoria: 'top', titulo: 'Lote Cupons ML', preco: 0, url: 'https://mercadolivre.com.br', top: true, selo: 'ok' },
+    [
+      { plataforma: 'tg', url: 'https://mercadolivre.com.br', sub_id: 's1' },
+      { plataforma: 'wag', url: 'https://mercadolivre.com.br', sub_id: 's2' },
+    ],
+    cfgPub,
+    { ts: AGORA, chat_id: 1, message_id: 1 },
+  );
+  assert.equal(pubTop.ok, true);
+  assert.equal(pubTop.chamadas.filter((c) => c.bot === 'grupo').length, 1);
+
+  const repMesmaLoja = extrator.avaliarRepeticao24h(
+    { produto_id: 'ml_MLBU99999999', loja: 'ml', titulo: 'Tênis Nike Sb Chron 2 Canvas Masculino', preco: 185 },
+    [{ oferta_id: 'o_ant', produto_id: 'ml_MLB2143127365', loja: 'ml', titulo: 'Tênis Nike Sb Chron 2 Canvas Masculino', preco: 185, status: 'aprovada', ts: AGORA - 3600000 }],
+    AGORA,
+    { modo_radar: true },
+  );
+  assert.equal(repMesmaLoja.bloquear, true);
+
+  // 6) extrairQtdCombo reconhece 2x em qualquer posição e bloqueia comparação 2x vs 1x
+  assert.equal(mercado.casarProdutosMercado({ titulo: 'Camiseta Tech Light Insider Masculino 2x', preco: 96 }, [{ titulo: 'Camiseta Tech Light Insider Masculino', preco: 69 }]).length, 0);
+});
+
+test('revisão independente: classificação avançada, cupom ML mínimo, multi-unidade no guardião, K-Pop Amazon/Nuvemshop, afiliado K-Pop e economia CPU/RAM', () => {
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const comunidade = require('../lib/comunidade');
+  const links = require('../lib/links');
+  const cfg = cfgBase([
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+    { chave: 'afiliado.hopescolor', valor: 'utm_source=oferto' },
+  ]);
+
+  // 1) Classificação de não-perfumes e smartwatches/relógios de mesa
+  assert.equal(extrator.classificarCategoria('Polo Masculina Ralph Lauren Piquet', cfg).categoria, 'moda');
+  assert.equal(extrator.classificarCategoria('Capinha iPhone 15 Light Blue Silicone', cfg).categoria, 'tech');
+  assert.notEqual(extrator.classificarCategoria('Chá Verde Green Tea 60 Cápsulas', cfg).categoria, 'perfumes');
+  assert.equal(extrator.classificarCategoria('Relógio Digital Smartwatch D20 Bluetooth', cfg).categoria, 'tech');
+  assert.equal(extrator.classificarCategoria('Relógio Despertador Digital de Mesa LED', cfg).categoria, 'casa');
+
+  // 2) Código do produto / modelo no título não vira cupom falso
+  assert.equal(extrator.extrairDoTexto('Monitor LG UltraGear 25G523B\nCódigo: 25G523B\nR$ 551').cupom, '');
+  assert.equal(extrator.extrairDoTexto('Monitor LG UltraGear\nCódigo do produto: 25G523B\nR$ 551').cupom, '');
+
+  // 3) Trava de cupom com valor mínimo no Mercado Livre e Amazon
+  const htmlMlMin = '<html><body><h1 class="ui-pdp-title">Creme Johnson Baby 200ml</h1><meta property="price" content="25.96"/><span class="ui-pdp-promotions-pill-label">Aplicar cupom de R$ 25 OFF em compras acima de R$ 150</span></body></html>';
+  const lidoMlMin = extrator.lerPaginaProduto({ statusCode: 200, body: htmlMlMin }, 'https://www.mercadolivre.com.br/p/MLB123456');
+  assert.equal(lidoMlMin.cupom_valor, null);
+  assert.equal(lidoMlMin.cupom_auto, '');
+
+  const htmlAmzMin = '<html><body><span id="productTitle">Creme Johnson Baby 200ml</span><span class="priceToPay"><span class="a-offscreen">R$ 25,96</span></span><label id="greenBadge1">Economize R$ 25. Mínimo de compra: R$ 100,00</label></body></html>';
+  const lidoAmzMin = extrator.lerPaginaProduto({ statusCode: 200, body: htmlAmzMin }, 'https://www.amazon.com.br/dp/B07MT9LCV1');
+  assert.equal(lidoAmzMin.cupom_valor, null);
+
+  // 4) Multi-unidade: emoji antes de 2x, "leve 2 camisetas por R$", deduplicação 24h e Guardião não encerrando 2x R$ 96 quando 1x custa R$ 129
+  const htmlEmoji2x = '<div class="tgme_widget_message_wrap"><div data-post="canal/42"><div class="tgme_widget_message_text">👕 2x Camiseta Tech Light Insider Masculino<br/>De R$ 258 por R$ 96<br/><a href="https://www.mercadolivre.com.br/camiseta-tech-light-insider/p/MLB4232914111">link</a></div></div></div>';
+  const candsEmoji2x = radar.lerCanalTelegramPublico(htmlEmoji2x, 'canal');
+  assert.equal(candsEmoji2x.length, 1);
+  assert.equal(candsEmoji2x[0]._qtd_unidades, 2);
+
+  const htmlLeve2 = '<div class="tgme_widget_message_wrap"><div data-post="canal/43"><div class="tgme_widget_message_text">Camiseta Tech Light Insider Masculino<br/>Leve 2 camisetas por R$ 96<br/><a href="https://www.mercadolivre.com.br/camiseta-tech-light-insider/p/MLB4232914111">link</a></div></div></div>';
+  const candsLeve2 = radar.lerCanalTelegramPublico(htmlLeve2, 'canal');
+  assert.equal(candsLeve2.length, 1);
+  assert.equal(candsLeve2[0]._qtd_unidades, 2);
+
+  const rep2x = extrator.avaliarRepeticao24h(
+    { produto_id: 'ml_MLBU99999', loja: 'ml', titulo: '2x Camiseta Tech Light Insider Masculino', preco: 96 },
+    [{ oferta_id: 'o1', produto_id: 'ml_MLB4232914111', loja: 'ml', titulo: 'Camiseta Tech Light Insider Masculino', preco: 96, status: 'aprovada', ts: AGORA - 600000 }],
+    AGORA,
+    { modo_radar: true },
+  );
+  assert.equal(rep2x.bloquear, true);
+
+  const htmlPagUnit = '<html><body><h1 class="ui-pdp-title">Camiseta Tech Light Insider Masculino</h1><meta property="price" content="129.00"/></body></html>';
+  const exp2x = extrator.avaliarExpiracaoPagina(
+    { oferta_id: 'o_2x', loja: 'ml', url: 'https://www.mercadolivre.com.br/p/MLB4232914111', titulo: '2x Camiseta Tech Light Insider Masculino', preco: 96, links_manuais: JSON.stringify({ _qtd_unidades: 2 }) },
+    { statusCode: 200, body: htmlPagUnit },
+  );
+  assert.equal(exp2x.expirada, false, 'Guardião não pode encerrar oferta 2x R$ 96 só porque 1 unidade na página custa R$ 129');
+  const queda2x = comunidade.avaliarQuedaExtraPagina(
+    { oferta_id: 'o_2x', loja: 'ml', url: 'https://www.mercadolivre.com.br/p/MLB4232914111', titulo: '2x Camiseta Tech Light Insider Masculino', preco: 96, links_manuais: JSON.stringify({ _qtd_unidades: 2 }) },
+    { statusCode: 200, body: htmlPagUnit },
+  );
+  assert.equal(queda2x.caiu, false);
+
+  // 5) Amazon K-Pop: filtra Compra Internacional e aceita item bem avaliado em busca p_85=19171728011 sem a-icon-prime explícito
+  const htmlAmzKpopMix = [
+    '<div role="listitem" data-asin="B0C8JXHKTN" class="s-result-item">',
+    '<span>Escolha da Amazon</span>',
+    '<h2 aria-label="Escolha da Amazon"><span>Stray Kids – Bastão de luz oficial Ver.2</span></h2>',
+    '<span>4,7 de 5 estrelas</span><span>(1,9 mil)</span>',
+    '<span class="a-price"><span class="a-offscreen">R$&nbsp;527,87</span></span>',
+    '<span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$&nbsp;779,36</span></span>',
+    '</div>',
+    '<div role="listitem" data-asin="B0INTL1234" class="s-result-item">',
+    '<h2 aria-label="Lightstick"><span>BTS Army Bomb Official Lightstick</span></h2>',
+    '<span>4,8 de 5 estrelas</span><span>(500)</span><span>Compra Internacional</span>',
+    '<span class="a-price"><span class="a-offscreen">R$&nbsp;300,00</span></span>',
+    '<span class="a-price a-text-price" data-a-strike="true"><span class="a-offscreen">R$&nbsp;450,00</span></span>',
+    '</div>',
+  ].join('');
+  const itensAmzLight = radar.lerAmazonBuscaHtml(
+    htmlAmzKpopMix,
+    'https://www.amazon.com.br/s?k=lightstick+kpop&rh=p_85%3A19171728011',
+    { categoria_hint: 'kpop', loja_oficial: false },
+  );
+  assert.equal(itensAmzLight.length, 1);
+  assert.equal(itensAmzLight[0].produto_id, 'amz_B0C8JXHKTN');
+  assert.equal(itensAmzLight[0].loja_confiavel, true);
+
+  // 6) Economia CPU/RAM + Nuvemshop rotação + preservação de título ALL CAPS + afiliado K-Pop + Guardião pós-movimentação
+  const planPbBloq = radar.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA, pb_redir_bloqueado_ate: AGORA + 300000 });
+  assert.equal(planPbBloq.fontesWeb.some((f) => f.tipo === 'promobit_loja' || f.tipo === 'promobit_alta' || f.tipo === 'promobit_cat'), false);
+
+  const planTurn1 = radar.planejarFontesRadar(cfg, { modo: 'agendado', ts: AGORA + 120000 });
+  assert.equal(planTurn1.fontesWeb.some((f) => f.tipo === 'nuvemshop_kpop'), true);
+
+  const prepKpop = radar.prepararPaginasRadar({
+    opcoes: { modo: 'agendado', ts: AGORA },
+    candidatos: [{
+      radar_key: 'kpopandyoushop_339422678',
+      loja: 'kpopandyoushop',
+      produto_id: 'kyu_c34da939c489',
+      titulo: '[PRONTA ENTREGA] BTS ARIRANG',
+      preco: 249,
+      preco_de: 319,
+      desconto_pct: 22,
+      imagem: 'https://acdn-us.mitiendanube.com/stores/004/615/122/products/arirang.webp',
+      url: 'https://www.kpopandyoushop.com.br/produtos/pronta-entrega-bts-arirang-1e8vx/',
+      resolved: true,
+      categoria: 'kpop',
+      fonte_radar: 'nuvemshop_kpop',
+    }],
+    reqs3: [],
+  }, [], cfg);
+  assert.equal(prepKpop.candidatos[0].titulo, '[PRONTA ENTREGA] BTS ARIRANG');
+  assert.equal(prepKpop.reqsPag.length, 0, 'não precisa baixar página de produto Nuvemshop já completo');
+  assert.equal(prepKpop.reqsMercado.length, 0, 'não consulta Zoom/Amazon para loja K-Pop especializada');
+
+  const plannedHopes = links.planejarLinks({
+    oferta_id: 'o_hpc1', loja: 'hopescolor', categoria: 'kpop',
+    url: 'https://www.hopescolor.com/produtos/lightstick/',
+  }, cfg, AGORA);
+  assert.match(plannedHopes[0].url, /\?utm_source=oferto$/);
+
+  // 7) Títulos que compartilham prefixo longo (>36 chars) mas são produtos distintos não são bloqueados pela deduplicação
+  const repPrefixo = extrator.avaliarRepeticao24h(
+    { produto_id: 'umu_6553', loja: 'umusic', titulo: 'Vinil Various Artists - KPop Demon Hunters - Soda Pop (7") - Importado', preco: 139.93 },
+    [{ oferta_id: 'o_sd', produto_id: 'umu_6175', loja: 'umusic', titulo: 'Vinil Various Artists - KPop Demon Hunters (Soundtrack from the Netflix Film) - Importado', preco: 246.42, status: 'aprovada', ts: AGORA - 600000 }],
+    AGORA,
+    { modo_radar: true },
+  );
+  assert.equal(repPrefixo.bloquear, false);
+});
+
+test('integração das 3 lojas K-Pop da Shopee (Record Planet, Kpopmerch, Every Kpop/ALIKO): API, web/canais, priorização e coleta', () => {
+  const shopee = require('../lib/shopee');
+  const config = require('../lib/config');
+  const extrator = require('../lib/extrator');
+  const radar = require('../lib/radar');
+  const fluxos = require('../lib/fluxos');
+  const textos = require('../lib/textos');
+
+  const cfg = cfgBase([
+    { chave: 'shopee.app_id', valor: '183999' },
+    { chave: 'shopee.secret', valor: 'segredo-shopee' },
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+    { chave: 'topico.kpop', valor: '276' },
+  ]);
+
+  // 1) Identificação por shopId, URL (slug de loja ou -i.shopId.itemId) e shopName
+  assert.equal(shopee.LOJAS_KPOP_SHOPEE.length, 7);
+  assert.equal(shopee.identificarLojaKpopShopee({ shopId: '716812351' }).username, 'recordplanet.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopId: 431836255 }).username, 'kpopmerch.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopId: '437474956' }).username, 'everykpop.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ url: 'https://shopee.com.br/recordplanet.br/17037332453' }).shop_id, '716812351');
+  assert.equal(shopee.identificarLojaKpopShopee({ url: 'https://shopee.com.br/Album-i.431836255.29816102406' }).shop_id, '431836255');
+  assert.equal(shopee.identificarLojaKpopShopee({ url: 'https://shopee.com.br/aliko.br/15071267777' }).shop_id, '437474956');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'Record Planet' }).shop_id, '716812351');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'Kpopmerch Official Store' }).shop_id, '431836255');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'ALIKO' }).shop_id, '437474956');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopId: '999999', shopName: 'Loja Genérica' }), null);
+  assert.equal(shopee.identificarLojaKpopShopee({ url: 'https://shopee.com.br/recordplanet.br.fake/123456' }), null);
+  assert.equal(shopee.identificarLojaKpopShopee({ url: 'https://shopee.com.br/universal-link?redir=https%3A%2F%2Fshopee.com.br%2Fkpopmerch.br%2F99887766' }).shop_id, '431836255');
+
+  const lojas = require('../lib/lojas');
+  assert.equal(lojas.identificar('https://shopee.com.br/recordplanet.br/17037332453').produto_id, 'shp_716812351_17037332453');
+  assert.equal(lojas.identificar('https://shopee.com.br/everykpop.br/15071267777').produto_id, 'shp_437474956_15071267777');
+  assert.equal(lojas.identificar('https://shopee.com.br/aliko.br/15071267777').produto_id, 'shp_437474956_15071267777');
+
+  // 2) reqOfertas com shopId usa $shopId:Int64 e omite keyword vazia; sem shopId mantém Q_OFERTAS original
+  const reqShop = shopee.reqOfertas(cfg.shopee, '', { shopId: '716812351', sortType: 2, limit: 20 }, 1700000000);
+  const bodyShop = JSON.parse(reqShop.body);
+  assert.match(bodyShop.query, /\$shopId:Int64/);
+  assert.equal(bodyShop.variables.shopId, 716812351);
+  assert.equal('keyword' in bodyShop.variables, false);
+
+  const reqKw = shopee.reqOfertas(cfg.shopee, 'lightstick', { sortType: 2, limit: 20 }, 1700000000);
+  const bodyKw = JSON.parse(reqKw.body);
+  assert.doesNotMatch(bodyKw.query, /\$shopId/);
+  assert.equal(bodyKw.variables.keyword, 'lightstick');
+
+  // 3) lerOfertas reconhece loja curada mesmo sem shopType=1/2/4 e com poucas vendas (pré-venda) + filtro de anúncios de serviço
+  const lidoSh = shopee.lerOfertas({
+    data: {
+      productOfferV2: {
+        nodes: [
+          {
+            itemId: '101', shopId: '716812351', shopName: 'Record Planet', shopType: [],
+            productName: 'ATEEZ - GOLDEN HOUR : Part.2 (Digipack Ver.)', priceMin: '139.90',
+            priceDiscountRate: '22', commissionRate: '0.08', sales: 6, ratingStar: '4.9',
+            imageUrl: 'https://cf.shopee.com.br/file/rp1.jpg',
+          },
+          {
+            itemId: '102', shopId: '431836255', shopName: 'Kpopmerch', shopType: [],
+            productName: 'KPOP MERCH Serviço Ao Cliente Somente Para C/S', priceMin: '50.00',
+            priceDiscountRate: '20', commissionRate: '0.05', sales: 100, ratingStar: '5.0',
+          },
+        ],
+      },
+    },
+  });
+  assert.equal(lidoSh.produtos.length, 2);
+  assert.equal(lidoSh.produtos[0].loja_kpop_curada, true);
+  assert.equal(lidoSh.produtos[0].loja_confiavel, true);
+  assert.equal(lidoSh.produtos[0].loja_indicada, true);
+  assert.equal(shopee.ehAnuncioServicoShopee(lidoSh.produtos[0].titulo), false);
+  assert.equal(shopee.ehAnuncioServicoShopee(lidoSh.produtos[1].titulo), true);
+
+  // 4) Planejamento no radar: multi-categoria rotaciona 1 shopId por ciclo; /radar kpop e /radar <loja> consultam shopIds diretamente
+  const planCiclo0 = radar.planejarFontesRadar(cfg, { modo: 'agendado', ts: 0 });
+  const planCiclo1 = radar.planejarFontesRadar(cfg, { modo: 'agendado', ts: 120000 });
+  const planCiclo2 = radar.planejarFontesRadar(cfg, { modo: 'agendado', ts: 240000 });
+  assert.equal(planCiclo0.fontesShopee.filter((f) => f.loja_kpop_curada)[0].shop_id, '716812351');
+  assert.equal(planCiclo1.fontesShopee.filter((f) => f.loja_kpop_curada)[0].shop_id, '431836255');
+  assert.equal(planCiclo2.fontesShopee.filter((f) => f.loja_kpop_curada)[0].shop_id, '437474956');
+
+  const cmdKpop = config.interpretarComandoRadar('/radar kpop', cfg);
+  const planCmdKpop = radar.planejarFontesRadar(cfg, Object.assign({ modo: 'comando', ts: AGORA }, cmdKpop));
+  const shopIdsCmd = planCmdKpop.fontesShopee.filter((f) => f.loja_kpop_curada).map((f) => f.shop_id);
+  assert.deepEqual(shopIdsCmd, ['716812351', '431836255', '437474956']);
+
+  for (const [cmdTxt, espSid] of [
+    ['/radar recordplanet', '716812351'],
+    ['/radar kpopmerch', '431836255'],
+    ['/radar kpopmerch.br', '431836255'],
+    ['/radar everykpop', '437474956'],
+    ['/radar aliko', '437474956'],
+  ]) {
+    const cmdLoja = config.interpretarComandoRadar(cmdTxt, cfg);
+    assert.deepEqual(cmdLoja.shop_ids, [espSid]);
+    const planLoja = radar.planejarFontesRadar(cfg, Object.assign({ modo: 'comando', ts: AGORA }, cmdLoja));
+    assert.equal(planLoja.fontesShopee.length, 1);
+    assert.equal(planLoja.fontesShopee[0].shop_id, espSid);
+    assert.equal(planLoja.fontesWeb.some((f) => f.tipo === 'promobit_cupons'), false);
+  }
+
+  // /radar recordplanet não vaza oferta genérica do Promobit/Shopee nem falha silenciosamente sem API
+  const cmdRp = config.interpretarComandoRadar('/radar recordplanet', cfg);
+  const planRp = radar.planejarFontesRadar(cfg, Object.assign({ modo: 'comando', ts: AGORA }, cmdRp));
+  const pbFake = {
+    props: {
+      pageProps: {
+        serverOffers: [{
+          offerId: 777111, storeDomain: 'shopee.com.br', offerTitle: 'Camiseta Genérica Shopee',
+          offerPrice: 49.9, offerOldPrice: 99.9, offerPriceType: 'NORMAL', offerLikes: 10,
+        }],
+      },
+    },
+  };
+  const webFakeRp = planRp.fontesWeb.map((f) => (f.tipo === 'promobit_loja'
+    ? { body: `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(pbFake)}</script>` }
+    : ''));
+  const selRpVaza = radar.selecionarCandidatosRadar(planRp, webFakeRp, [{}], [], [], cfg, []);
+  assert.equal(selRpVaza.candidatos.length, 0);
+
+  const cfgSemSh = cfgBase([
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+    { chave: 'topico.kpop', valor: '276' },
+  ]);
+  const finSemSh = radar.finalizarRadar(
+    { opcoes: Object.assign({ modo: 'comando', chat_id: 999, ts: AGORA }, cmdRp), candidatos: [], reqs3: [], reqsPag: [], reqsMercado: [] },
+    [], [], [], cfgSemSh, [], [],
+  );
+  assert.match(finSemSh.chamadas[0].payload.text, /shopee\.app_id/);
+
+  // 5) /radar kpop seleciona produto de loja curada mesmo sem termo em termos_lista, descarta serviço e loja não confiável, e pula Zoom/Amazon
+  const respCmdKpop = planCmdKpop.fontesShopee.map((f) => {
+    if (f.shop_id === '716812351') {
+      return {
+        data: {
+          productOfferV2: {
+            nodes: [
+              {
+                itemId: '501', shopId: '716812351', shopName: 'Record Planet', shopType: [],
+                productName: 'ATEEZ - GOLDEN HOUR : Part.2 (Digipack Ver.)', priceMin: '139.90',
+                priceDiscountRate: '25', commissionRate: '0.08', sales: 8, ratingStar: '4.9',
+                imageUrl: 'https://cf.shopee.com.br/file/ateez.jpg',
+                productLink: 'https://shopee.com.br/product/716812351/501',
+              },
+              {
+                itemId: '502', shopId: '716812351', shopName: 'Record Planet', shopType: [],
+                productName: 'Taxa de Envio Extra Record Planet', priceMin: '30.00',
+                priceDiscountRate: '20', commissionRate: '0.05', sales: 50, ratingStar: '5.0',
+              },
+            ],
+          },
+        },
+      };
+    }
+    return {
+      data: {
+        productOfferV2: {
+          nodes: [
+            {
+              itemId: '999', shopId: '999888', shopName: 'Loja Desconhecida', shopType: [],
+              productName: 'Album Kpop Barato', priceMin: '45.00',
+              priceDiscountRate: '30', commissionRate: '0.05', sales: 3, ratingStar: '4.0',
+            },
+          ],
+        },
+      },
+    };
+  });
+  const selCmdKpop = radar.selecionarCandidatosRadar(planCmdKpop, [], respCmdKpop, [], [], cfg, []);
+  assert.equal(selCmdKpop.candidatos.length, 1);
+  assert.equal(selCmdKpop.candidatos[0].produto_id, 'shp_716812351_501');
+  assert.equal(selCmdKpop.candidatos[0].categoria, 'kpop');
+  assert.equal(selCmdKpop.candidatos[0].loja_kpop_curada, true);
+  assert.equal(selCmdKpop.candidatos[0].shop_name, 'Record Planet');
+
+  const prepCmdKpop = radar.prepararPaginasRadar(selCmdKpop, [], cfg);
+  assert.equal(prepCmdKpop.reqsMercado.length, 0, 'não consulta Zoom/Amazon para loja Shopee K-Pop curada');
+  const finCmdKpop = radar.finalizarRadar(prepCmdKpop, [], [], [], cfg, [], []);
+  assert.equal(finCmdKpop.ofertasNovas.length, 1);
+  const manK = JSON.parse(finCmdKpop.ofertasNovas[0].links_manuais);
+  assert.equal(manK.loja_kpop_curada, true);
+  assert.equal(manK.shop_name, 'Record Planet');
+  assert.equal(manK.shop_id, '716812351');
+  const cardTxt = textos.cardAprovacao(finCmdKpop.ofertasNovas[0], cfg, []);
+  assert.match(cardTxt.text, /Record Planet \(K-Pop verificada\)/);
+
+  // 6) Fluxo web / canal Telegram + redirect s.shopee.com.br para everykpop.br / aliko.br + link colado direto
+  const estRedir = {
+    opcoes: { modo: 'agendado', ts: AGORA },
+    candidatos: [{
+      radar_key: 'tg_kp_1', loja: '', titulo: 'Álbum Oficial Edição Limitada', preco: 169.9, preco_de: 229.9,
+      desconto_pct: 26, redir_url: 'https://s.shopee.com.br/3B96w99xHp', imagem: 'https://cf.shopee.com.br/file/aliko.jpg',
+    }],
+    reqs1: [{ idx: 0, url: 'https://s.shopee.com.br/3B96w99xHp' }],
+  };
+  const r1Sh = radar.aplicarRedirRadar1(estRedir, [{
+    statusCode: 301,
+    headers: { location: 'https://shopee.com.br/everykpop.br/15071267777?utm_source=x' },
+  }], cfg);
+  assert.equal(r1Sh.candidatos[0].resolved, true);
+  assert.equal(r1Sh.candidatos[0].loja, 'shopee');
+  assert.equal(r1Sh.candidatos[0].loja_kpop_curada, true);
+  assert.equal(r1Sh.candidatos[0].shop_id, '437474956');
+  assert.equal(r1Sh.candidatos[0].categoria, 'kpop');
+
+  const parsedLink = extrator.parseMensagemLink(
+    { text: 'https://s.shopee.com.br/3qOnjPJOcl\nCamiseta Oficial Oversized Edição Limitada\nDe R$ 199 por R$ 149' },
+    cfg,
+    {
+      curto: 'https://s.shopee.com.br/3qOnjPJOcl',
+      resp_curto: { statusCode: 301, headers: { location: 'https://shopee.com.br/Product-i.716812351.43410742701' } },
+    },
+  );
+  assert.equal(parsedLink.ok, true);
+  assert.equal(parsedLink.oferta.loja, 'shopee');
+  assert.equal(parsedLink.oferta.categoria, 'kpop', 'merch de loja K-Pop curada não deve cair em moda');
+  assert.equal(parsedLink.oferta.links_manuais.loja_kpop_curada, true);
+  assert.equal(parsedLink.oferta.links_manuais.shop_id, '716812351');
+  assert.equal(parsedLink.oferta.links_manuais.shop_name, 'Record Planet');
+  const mercLink = extrator.prepararMercadoOferta({ rota: 'oferta', oferta: parsedLink.oferta }, cfg);
+  assert.equal(mercLink.reqs_mercado, undefined, 'não consulta Zoom/Amazon para link direto de loja K-Pop curada');
+
+  // Resposta rápida de preço preserva categoria kpop e metadados da loja curada quando Shopee bloqueia HTML
+  const promptPreco = extrator.pedirPrecoRapido({
+    chat_id: 999,
+    oferta: Object.assign({}, parsedLink.oferta, { preco: null, titulo: 'Camiseta Oficial Edição Especial' }),
+  }, cfg);
+  const respPreco = extrator.parseRespostaPreco({
+    text: '149,90',
+    reply_to_message: { text: promptPreco.payload.text.replace(/<[^>]+>/g, '') },
+  }, cfg);
+  assert.equal(respPreco.ok, true);
+  assert.equal(respPreco.oferta.categoria, 'kpop');
+  assert.equal(respPreco.oferta.links_manuais.loja_kpop_curada, true);
+  assert.equal(respPreco.oferta.links_manuais.shop_id, '716812351');
+
+  // Merch com palavra de moda em loja K-Pop curada no radar continua em kpop mesmo após prepararPaginasRadar
+  const selMerch = radar.selecionarCandidatosRadar(planCmdKpop, [], planCmdKpop.fontesShopee.map((f) => (f.shop_id === '437474956' ? {
+    data: {
+      productOfferV2: {
+        nodes: [{
+          itemId: '701', shopId: '437474956', shopName: 'ALIKO', shopType: [],
+          productName: 'Camiseta Moletom Mochila Oficial Kpopmerch', priceMin: '189.90',
+          priceDiscountRate: '20', commissionRate: '0.08', sales: 5, ratingStar: '4.9',
+          productLink: 'https://shopee.com.br/Camiseta-Moletom-i.437474956.701',
+        }],
+      },
+    },
+  } : { data: { productOfferV2: { nodes: [] } } })), [], [], cfg, []);
+  assert.equal(selMerch.candidatos.length, 1);
+  assert.equal(selMerch.candidatos[0].categoria, 'kpop');
+  const prepMerch = radar.prepararPaginasRadar(selMerch, [], cfg);
+  assert.equal(prepMerch.candidatos[0].categoria, 'kpop');
+
+  // 7) Coleta agendada Shopee (02-coleta-shopee / fluxos.js): inclui 3 shopIds, prioriza curada mesmo em pré-venda
+  const buscasColeta = fluxos.montarBuscasShopee(cfg, AGORA).filter((b) => b.categoria === 'kpop');
+  assert.ok(buscasColeta.some((b) => b.shop_id === '716812351' && b.loja_kpop_curada));
+  assert.ok(buscasColeta.some((b) => b.shop_id === '431836255' && b.loja_kpop_curada));
+  assert.ok(buscasColeta.some((b) => b.shop_id === '437474956' && b.loja_kpop_curada));
+
+  const respColeta = buscasColeta.map((b) => (b.shop_id === '431836255' ? {
+    data: {
+      productOfferV2: {
+        nodes: [
+          {
+            itemId: '888', shopId: '431836255', shopName: 'Kpopmerch', shopType: [],
+            productName: 'aespa Armageddon Official Album (POB)', priceMin: '159.90',
+            priceDiscountRate: '25', commissionRate: '0.08', sales: 12, ratingStar: '4.9',
+            imageUrl: 'https://cf.shopee.com.br/file/kpm.jpg',
+          },
+          {
+            itemId: '889', shopId: '431836255', shopName: 'Kpopmerch', shopType: [],
+            productName: 'KPOP MERCH Serviço Ao Cliente Somente Para C/S', priceMin: '50.00',
+            priceDiscountRate: '25', commissionRate: '0.08', sales: 200, ratingStar: '5.0',
+          },
+        ],
+      },
+    },
+  } : { data: { productOfferV2: { nodes: [] } } }));
+  const avColeta = fluxos.avaliarCandidatos(buscasColeta, respColeta, [], [], cfg, AGORA);
+  assert.equal(avColeta.ofertasNovas.length, 1);
+  assert.equal(avColeta.ofertasNovas[0].produto_id, 'shp_431836255_888');
+  assert.equal(JSON.parse(avColeta.ofertasNovas[0].links_manuais).loja_kpop_curada, true);
+  assert.equal(JSON.parse(avColeta.ofertasNovas[0].links_manuais).shop_name, 'Kpopmerch');
+});
+
+test('rodada 2: br.shp.ee (kpopfever.br, pigeekv.br), Withmuu, Soundwave, Amazon K-Pop ampliada e priorização de afiliados', () => {
+  const shopee = require('../lib/shopee');
+  const lojas = require('../lib/lojas');
+  const links = require('../lib/links');
+  const curtos = require('../lib/curtos');
+  const extrator = require('../lib/extrator');
+  const config = require('../lib/config');
+  const radar = require('../lib/radar');
+  const textos = require('../lib/textos');
+
+  const cfgSemAf = cfgBase([
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+    { chave: 'topico.kpop', valor: '276' },
+  ]);
+  const cfgComAf = cfgBase([
+    { chave: 'shopee.app_id', valor: '183999' },
+    { chave: 'shopee.secret', valor: 'segredo-shopee' },
+    { chave: 'amazon.tag_padrao', valor: 'oferto-20' },
+    { chave: 'rakuten.id', valor: 'rak123' },
+    { chave: 'radar.min_desconto_pct', valor: '15' },
+    { chave: 'radar.preco_min', valor: '15' },
+    { chave: 'topico.kpop', valor: '276' },
+  ]);
+
+  // 1) Suporte a br.shp.ee (expansão automática sem preservar uls_trackid alheio como _afiliado)
+  assert.equal(curtos.ehCurto('https://br.shp.ee/3B96vg13'), true);
+  assert.equal(curtos.ehCurto('https://br.shp.ee/jFq9zuyG'), true);
+  assert.equal(extrator.ehAfiliadoCurto('https://br.shp.ee/3B96vg13'), false);
+  assert.equal(lojas.identificar('https://br.shp.ee/3B96vg13').erro ? true : false, true);
+  assert.equal(extrator.extrairLinksProduto('Confira https://br.shp.ee/3B96vg13')[0], 'https://br.shp.ee/3B96vg13');
+
+  const parsedFever = extrator.parseMensagemLink(
+    { text: 'https://br.shp.ee/3B96vg13\nÁlbum Oficial Edição Limitada\nDe R$ 220 por R$ 159' },
+    cfgComAf,
+    {
+      curto: 'https://br.shp.ee/3B96vg13',
+      resp_curto: { statusCode: 301, headers: { location: 'https://shopee.com.br/kpopfever.br/987654321?uls_trackid=575r16uv01c6' } },
+    },
+  );
+  assert.equal(parsedFever.ok, true);
+  assert.equal(parsedFever.oferta.loja, 'shopee');
+  assert.equal(parsedFever.oferta.produto_id, 'shp_kpopfever.br_987654321');
+  assert.equal(parsedFever.oferta.url, 'https://shopee.com.br/kpopfever.br/987654321');
+  assert.equal(parsedFever.oferta.categoria, 'kpop');
+  assert.equal(parsedFever.oferta.links_manuais.loja_kpop_curada, true);
+  assert.equal(parsedFever.oferta.links_manuais.shop_username, 'kpopfever.br');
+  assert.equal(parsedFever.oferta.links_manuais.shop_name, 'KPOP FEVER');
+  assert.equal(parsedFever.oferta.links_manuais._afiliado, undefined);
+
+  // 2) Canonicalização e identificação de kpopfever.br, pigeekv.br, withmuu.br, soundwavekpop.br
+  assert.equal(lojas.identificar('https://shopee.com.br/kpopfever/111222333').url_limpa, 'https://shopee.com.br/kpopfever.br/111222333');
+  assert.equal(lojas.identificar('https://shopee.com.br/pigeek/444555666').produto_id, 'shp_pigeekv.br_444555666');
+  assert.equal(lojas.identificar('https://shopee.com.br/pigee/444555666').url_limpa, 'https://shopee.com.br/pigeekv.br/444555666');
+  assert.equal(lojas.identificar('https://shopee.com.br/withmuu/777888999').url_limpa, 'https://shopee.com.br/withmuu.br/777888999');
+  assert.equal(lojas.identificar('https://shopee.com.br/soundwavekpop.br/123123123').produto_id, 'shp_soundwavekpop.br_123123123');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'PiGEE.BR' }).username, 'pigeekv.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'KPOP FEVER' }).username, 'kpopfever.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'Withmuu Official Store' }).username, 'withmuu.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'SOUNDWAVE' }).username, 'soundwavekpop.br');
+  assert.equal(shopee.identificarLojaKpopShopee({ shopName: 'Soundwave Áudio Bluetooth' }), null);
+  assert.equal(shopee.identificarLojaKpopShopee({ url: 'https://shopee.com.br/kpopfever.br.fake/123456' }), null);
+
+  // lerOfertas marca oficial=true para Withmuu e Soundwave, curada=true para PiGEE.BR e KPOP FEVER
+  const lidoNew = shopee.lerOfertas({
+    data: {
+      productOfferV2: {
+        nodes: [
+          { itemId: '1', shopId: '9001', shopName: 'Withmuu', shopType: [], productName: 'TWICE Album POB', priceMin: '149.9', priceDiscountRate: '20', commissionRate: '0.08', sales: 3, ratingStar: '5.0' },
+          { itemId: '2', shopId: '9002', shopName: 'PiGEE.BR', shopType: [], productName: 'ATEEZ Digipack', priceMin: '119.9', priceDiscountRate: '25', commissionRate: '0.08', sales: 5, ratingStar: '5.0' },
+          { itemId: '3', shopId: '9003', shopName: 'Vendedor Aleatório', shopType: [], productName: 'Cabo USB Genérico', priceMin: '29.9', priceDiscountRate: '30', commissionRate: '0.08', sales: 2, ratingStar: '4.1' },
+        ],
+      },
+    },
+  });
+  assert.equal(lidoNew.produtos[0].loja_oficial, true);
+  assert.equal(lidoNew.produtos[0].loja_kpop_curada, true);
+  assert.equal(lidoNew.produtos[1].loja_kpop_curada, true);
+  assert.equal(lidoNew.produtos[1].loja_confiavel, true);
+  assert.equal(lidoNew.produtos[2].loja_confiavel, false);
+
+  // 3) Comandos /radar kpopfever, /radar pigeek, /radar withmuu, /radar soundwave
+  for (const [cmdTxt, espUser] of [
+    ['/radar kpopfever', 'kpopfever.br'],
+    ['/radar pigeek', 'pigeekv.br'],
+    ['/radar pigee', 'pigeekv.br'],
+    ['/radar withmuu', 'withmuu.br'],
+    ['/radar soundwave', 'soundwavekpop.br'],
+  ]) {
+    const cmd = config.interpretarComandoRadar(cmdTxt, cfgComAf);
+    assert.deepEqual(cmd.shop_usernames, [espUser]);
+    const plan = radar.planejarFontesRadar(cfgComAf, Object.assign({ modo: 'comando', ts: AGORA }, cmd));
+    assert.ok(plan.fontesShopee.length >= 1);
+    assert.equal(plan.fontesWeb.some((f) => f.tipo === 'promobit_cupons'), false);
+  }
+
+  const cmdPg = config.interpretarComandoRadar('/radar pigeek', cfgComAf);
+  const planPg = radar.planejarFontesRadar(cfgComAf, Object.assign({ modo: 'comando', ts: AGORA }, cmdPg));
+  const respShPg = planPg.fontesShopee.map((_, idx) => (idx === 0 ? {
+    data: {
+      productOfferV2: {
+        nodes: [
+          { itemId: '701', shopId: '888777', shopName: 'PiGEE.BR', shopType: [], productName: 'STRAY KIDS - HOP (Official Album)', priceMin: '139.90', priceDiscountRate: '22', commissionRate: '0.08', sales: 10, ratingStar: '5.0' },
+          { itemId: '702', shopId: '111222', shopName: 'Outra Loja', shopType: [1], productName: 'Album Genérico', priceMin: '99.90', priceDiscountRate: '30', commissionRate: '0.08', sales: 50, ratingStar: '4.9' },
+        ],
+      },
+    },
+  } : { data: { productOfferV2: { nodes: [] } } }));
+  const selPg = radar.selecionarCandidatosRadar(planPg, [], respShPg, [], [], cfgComAf, []);
+  assert.equal(selPg.candidatos.length, 1);
+  assert.equal(selPg.candidatos[0].shop_username, 'pigeekv.br');
+  assert.equal(selPg.candidatos[0].categoria, 'kpop');
+
+  // Sem API Shopee: devolve instrução clara para configurar shopee.app_id/secret
+  const finSemApiPg = radar.finalizarRadar(
+    { opcoes: Object.assign({ modo: 'comando', chat_id: 999, ts: AGORA }, cmdPg), candidatos: [], reqs3: [], reqsPag: [], reqsMercado: [] },
+    [], [], [], cfgSemAf, [], [],
+  );
+  assert.match(finSemApiPg.chamadas[0].payload.text, /shopee\.app_id/);
+
+  // 4) Verificação e priorização de afiliados + exibição no card e /afiliados
+  assert.equal(links.temAfiliadoAtivo('belezanaweb', cfgComAf, {}), true);
+  assert.equal(links.ofereceLinkAfiliado('amazon'), true);
+  assert.equal(links.ofereceLinkAfiliado('shopee'), true);
+  assert.equal(links.ofereceLinkAfiliado('umusic'), true);
+  assert.equal(links.ofereceLinkAfiliado('hopescolor'), false);
+  assert.equal(links.ofereceLinkAfiliado('klinestore'), false);
+  assert.equal(links.dicaAfiliado('hopescolor', cfgSemAf, {}), null);
+  assert.equal(links.statusAfiliadoFonte('amazon', cfgComAf, {}).modo, 'afiliado_ativo');
+  assert.equal(links.statusAfiliadoFonte('amazon', cfgSemAf, {}).modo, 'afiliado_disponivel');
+  assert.equal(links.statusAfiliadoFonte('hopescolor', cfgSemAf, {}).modo, 'link_direto');
+
+  // Priorização na seleção do radar: afiliado ativo > afiliado disponível > link direto confiável (sem bloquear link direto)
+  const mkPb = (offers) => ({ statusCode: 200, body: `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { serverOffers: { offers } } } })}</script>` });
+  const planPrio = {
+    ativo: true,
+    opcoes: { modo: 'comando', limite: 2, limite_explicito: true, categorias: ['kpop'], lojas: ['amazon', 'ml', 'hopescolor'], ts: AGORA },
+    fontesWeb: [
+      { tipo: 'promobit_loja', loja_hint: 'amazon' },
+      { tipo: 'promobit_loja', loja_hint: 'ml' },
+      { tipo: 'nuvemshop_kpop', loja_hint: 'hopescolor', url_real: 'https://www.hopescolor.com/produtos/' },
+    ],
+    fontesShopee: [],
+  };
+  const htmlHopesPrio = '<div class="js-item-product" data-component="product-list-item" data-component-value="101"><a href="https://www.hopescolor.com/produtos/album-bts-1/" title="Álbum BTS Proof Oficial">Álbum BTS Proof Oficial</a><span class="js-compare-price-display">R$ 200,00</span><span class="js-price-display">R$ 150,00</span></div>';
+  const selPrio = radar.selecionarCandidatosRadar(
+    planPrio,
+    [
+      mkPb([{ offerId: 1, offerTitle: 'Álbum BTS Proof Oficial Amazon', offerPrice: 150, offerOldPrice: 200, storeDomain: 'amazon.com.br', offerLikes: 5, categoryName: 'kpop' }]),
+      mkPb([{ offerId: 2, offerTitle: 'Álbum Stray Kids Oficial ML', offerPrice: 150, offerOldPrice: 200, storeDomain: 'mercadolivre.com.br', offerLikes: 5, categoryName: 'kpop' }]),
+      { statusCode: 200, body: htmlHopesPrio },
+    ],
+    [], [], [], cfgComAf, [],
+  );
+  assert.equal(selPrio.candidatos.length, 2);
+  assert.equal(selPrio.candidatos[0].loja, 'amazon', 'Amazon com afiliado ativo fica em 1º');
+  assert.equal(selPrio.candidatos[1].loja, 'ml', 'ML (aceita afiliado) ganha de loja só link direto com mesmo desconto');
+
+  // Card exibe corretamente afiliado ativo vs aceita afiliado vs link direto
+  const cardAfAtivo = textos.cardAprovacao({ oferta_id: 'o1', loja: 'amazon', categoria: 'kpop', titulo: 'Album', preco: 100, selo: 'ok', url: 'https://www.amazon.com.br/dp/B012345678' }, cfgComAf, []);
+  const cardAfDisp = textos.cardAprovacao({ oferta_id: 'o2', loja: 'ml', categoria: 'kpop', titulo: 'Album', preco: 100, selo: 'ok', url: 'https://www.mercadolivre.com.br/p/MLB123' }, cfgComAf, []);
+  const cardDireto = textos.cardAprovacao({ oferta_id: 'o3', loja: 'hopescolor', categoria: 'kpop', titulo: 'Album', preco: 100, selo: 'ok', url: 'https://www.hopescolor.com/produtos/album/' }, cfgComAf, []);
+  assert.match(cardAfAtivo.text, /afiliado ativo \(Amazon Associados\)/);
+  assert.match(cardAfDisp.text, /aceita afiliado \(Mercado Livre Afiliados\) · link direto/);
+  assert.match(cardDireto.text, /link direto \(sem programa de afiliado\)/);
+
+  const txtAfiliados = config.textoAfiliados(cfgComAf);
+  assert.match(txtAfiliados, /KPOP FEVER/);
+  assert.match(txtAfiliados, /PiGEE\.BR/);
+  assert.match(txtAfiliados, /Withmuu/);
+  assert.match(txtAfiliados, /Soundwave/);
+
+  // 5) Shopee API non-kpop loja não confiável (nota < 4.7 / vendas < 15 / shopType=[]) também é filtrada no radar
+  const planShGeral = {
+    ativo: true,
+    opcoes: { modo: 'comando', limite: 4, limite_explicito: true, categorias: ['tech'], lojas: ['shopee'], ts: AGORA },
+    fontesWeb: [],
+    fontesShopee: [{ categoria: 'tech', keyword: 'fone bluetooth' }],
+  };
+  const selShGeral = radar.selecionarCandidatosRadar(planShGeral, [], [{
+    data: {
+      productOfferV2: {
+        nodes: [
+          { itemId: '1', shopId: '10', shopName: 'Loja Ruim', shopType: [], productName: 'Fone TWS Ruim', priceMin: '50', priceDiscountRate: '40', commissionRate: '0.10', sales: 1, ratingStar: '3.9' },
+          { itemId: '2', shopId: '20', shopName: 'JBL Oficial', shopType: [1], productName: 'Fone JBL Oficial TWS', priceMin: '199', priceDiscountRate: '30', commissionRate: '0.08', sales: 200, ratingStar: '4.9' },
+        ],
+      },
+    },
+  }], [], [], cfgComAf, []);
+  assert.equal(selShGeral.candidatos.length, 1);
+  assert.equal(selShGeral.candidatos[0].produto_id, 'shp_20_2');
 });

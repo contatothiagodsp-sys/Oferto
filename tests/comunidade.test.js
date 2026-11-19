@@ -17,7 +17,7 @@ function cfgComunidade(extra) {
     { chave: 'bot_token_grupo', valor: 'TOK_PUB' },
     { chave: 'bot_grupo_username', valor: 'Ofertobr_ofertas_bot' },
     { chave: 'webhook_secret', valor: 'segredo' },
-    { chave: 'grupo_id', valor: '-1003927635700' },
+    { chave: 'grupo_id', valor: '-1001234567890' },
     { chave: 'topico.top', valor: '3' },
     { chave: 'topico.beleza', valor: '4' },
     { chave: 'topico.casa', valor: '5' },
@@ -874,7 +874,7 @@ test('Agente 4 (Concierge 24/7 no Chat/DM), Sinônimos em Alertas & Buscas e Com
     { chave: 'bot_token_grupo', valor: 'TOK_PUB' },
     { chave: 'bot_grupo_username', valor: 'oferto_pub_bot' },
     { chave: 'webhook_secret', valor: 'segredo' },
-    { chave: 'grupo_id', valor: '-1003927635700' },
+    { chave: 'grupo_id', valor: '-1001234567890' },
     { chave: 'topico.tech', valor: '7' },
     { chave: 'topico.casa', valor: '5' },
     { chave: 'topico_chat_aberto', valor: '174' },
@@ -900,7 +900,7 @@ test('Agente 4 (Concierge 24/7 no Chat/DM), Sinônimos em Alertas & Buscas e Com
       text,
       is_topic_message: true,
       message_thread_id: threadId,
-      chat: { id: -1003927635700, type: 'supergroup' },
+      chat: { id: -1001234567890, type: 'supergroup' },
       from: { id: 888 },
     },
   });
@@ -975,7 +975,7 @@ test('Agentes 1, 2, 3 e 5: link.amazon->amzlinks, R&#036;, Gatry, Prova Social, 
     { chave: 'bot_token', valor: 'TOK_ADM' },
     { chave: 'bot_token_grupo', valor: 'TOK_PUB' },
     { chave: 'webhook_secret', valor: 'segredo' },
-    { chave: 'grupo_id', valor: '-1003927635700' },
+    { chave: 'grupo_id', valor: '-1001234567890' },
     { chave: 'topico.top', valor: '3' },
     { chave: 'topico.tech', valor: '7' },
     { chave: 'topico.casa', valor: '5' },
@@ -1000,7 +1000,7 @@ test('Agentes 1, 2, 3 e 5: link.amazon->amzlinks, R&#036;, Gatry, Prova Social, 
   assert.equal(extCanal[0].preco, 39);
   assert.equal(extCanal[0].preco_de, 73);
   assert.equal(extCanal[0].redir_url, 'https://link.amazon/B0eiQubl3');
-  assert.equal(extCanal[0].imagem, 'https://cdn4.telesco.pe/file/downy.jpg');
+  assert.equal(extCanal[0].imagem, '');
   assert.doesNotMatch(extCanal[0].titulo, /Vai deixar/i);
 
   const htmlGatry = '<article><a href="/promocoes/abc">Cafeteira Nespresso Vertuo Pop</a> — R$ 449,00 <a href="https://www.amazon.com.br/dp/B0NESPRESS?tag=terceiro-20">Ir</a></article>';
@@ -1132,6 +1132,17 @@ test('Agentes 1, 2, 3 e 5: link.amazon->amzlinks, R&#036;, Gatry, Prova Social, 
   }
   assert.ok(execG.updatesOfertas.some((u) => u.oferta_id === 'o_pend_old' && u.status === 'expirada'));
   assert.ok(execG.chamadas.some((c) => c.metodo === 'editMessageText' && c.payload.message_id === 777 && /BAIXOU AINDA MAIS/.test(c.payload.text)));
+  // Queda muito alta (>=15%) ou desconto >=35%: também responde à mensagem anterior com link + cupom!
+  const execGForte = L.executarGuardiao(
+    { ts: ts1845 + 60000, checar: [ofAtiva] },
+    [{ statusCode: 200, data: '<html><script type="application/ld+json">{"@type":"Product","name":"SSD NVMe 1TB Kingston","offers":{"price":250.00}}</script><body><label id="greenBadge1">Salve o cupom R$ 20</label><span id="promoMessageCXCW1">: MEGA30</span></body></html>'.padEnd(650, ' ') }],
+    [ofAtiva],
+    [{ oferta_id: 'o_drop_1', plataforma: 'tg', categoria: 'tech', message_id: 777 }],
+    [{ oferta_id: 'o_drop_1', plataforma: 'tg', url: 'https://www.amazon.com.br/dp/B0DROP11?tag=meuaff-20' }],
+    cfg,
+    ts1845 + 60000,
+  );
+  assert.ok(execGForte.chamadas.some((c) => c.metodo === 'sendMessage' && c.payload.reply_parameters && c.payload.reply_parameters.message_id === 777 && /BAIXOU MUITO/.test(c.payload.text) && /MEGA30/.test(c.payload.text) && /B0DROP11\?tag=meuaff-20/.test(c.payload.text)));
   assert.ok(execG.chamadas.some((c) => c.metodo === 'sendMessage' && c.payload.message_thread_id === 3 && /ESQUENTA DE CUPONS DAS 19H/.test(c.payload.text)));
   assert.deepEqual(execG.upsertsConfig, [{ chave: 'cupons.ultimo_esquenta', valor: '2026-11-18' }]);
 

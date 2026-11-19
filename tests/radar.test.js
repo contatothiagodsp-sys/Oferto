@@ -295,7 +295,7 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'shein'));
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'tiktok'));
   assert.ok(base.fontesWeb.some((f) => f.tipo === 'telegram_canal' && f.canal === 'canal_teste'));
-  assert.equal(base.fontesShopee.length, 7);
+  assert.equal(base.fontesShopee.length, 9);
 
   const mkPromobit = (offers) => ({
     statusCode: 200,

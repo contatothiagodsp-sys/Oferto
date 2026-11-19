@@ -481,10 +481,10 @@ test('relatório diário e setup', () => {
   const wh = s.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'setWebhook');
   assert.deepEqual(wh.payload.allowed_updates, ['my_chat_member', 'chat_member', 'message']);
   const topicos = s.chamadas.filter((c) => c.metodo === 'createForumTopic').map((c) => c.ref.topico);
-  assert.deepEqual(topicos, ['moda', 'beleza', 'perfumes', 'saude', 'bebe', 'tech']); // casa e top já existem
+  assert.deepEqual(topicos, ['moda', 'beleza', 'perfumes', 'saude', 'bebe', 'tech', 'kpop']); // casa e top já existem
   const resp = s.chamadas.map((c) => (c.metodo === 'createForumTopic' ? { ok: true, result: { message_thread_id: 50 } } : { ok: true, result: { username: 'bot', title: 'G', is_forum: true } }));
   const res = L.resumoSetup(s.chamadas, resp, s.avisos, cfg);
-  assert.equal(res.topicos.length, 6);
+  assert.equal(res.topicos.length, 7);
   assert.equal(res.topicos[0].chave, 'topico.moda');
   assert.equal(res.chamadas.length, 2); // tópico novo: avisa os 2 admins
   const semTopico = s.chamadas.filter((c) => c.metodo !== 'createForumTopic');
