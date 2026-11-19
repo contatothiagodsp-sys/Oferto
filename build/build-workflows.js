@@ -1433,18 +1433,22 @@ return resps.map((r) => {
   const raw = typeof r.body === 'string' ? r.body : (typeof r.data === 'string' ? r.data : '');
   if (!raw) return { json: { statusCode: r.statusCode || 200, body: '', error: r.error || undefined } };
   const limpo = raw
+    .replace(/<header\\b[^>]*>[\\s\\S]*?<\\/header>/gi, '')
+    .replace(/<footer\\b[^>]*>[\\s\\S]*?<\\/footer>/gi, '')
+    .replace(/<noscript\\b[^>]*>[\\s\\S]*?<\\/noscript>/gi, '')
     .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
     .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
     .replace(/<!--[\\s\\S]*?-->/g, '')
     .replace(/<script\\b([^>]*)>([\\s\\S]*?)<\\/script>/gi, (all, attrs, inner) => {
       if (/application\\/ld\\+json|__NEXT_DATA__|__PRELOADED_STATE__/i.test(attrs)) return all;
-      if (/hiRes|colorImages|ListPrice|priceSpecification/i.test(inner) && all.length < 40000) return all;
+      if (/hiRes|colorImages|ListPrice|priceSpecification|dimensionValuesDisplayData|discountOptionsParamsMap/i.test(inner) && all.length < 90000) return all;
       return '';
     })
-    .replace(/[ \\t]{2,}/g, ' ');
-  const body = limpo.length > 350000 ? limpo.slice(0, 350000) : limpo;
+    .replace(/\\sdata-(?:csa-[a-z0-9_-]+|cel-widget)="[^"]*"/gi, '')
+    .replace(/\\s{2,}/g, ' ');
+  const body = limpo.length > 450000 ? limpo.slice(0, 450000) : limpo;
   return { json: { statusCode: r.statusCode || 200, body } };
-});`, { cfg: false, nota: 'Remove scripts/styles/SVGs pesados das PDPs antes de Finalizar radar preservando JSON-LD, preços, cupons e imagens.' }), x + 5340, y - 120);
+});`, { cfg: false, nota: 'Remove header/footer/scripts/styles/SVGs pesados das PDPs antes de Finalizar radar preservando JSON-LD, preços, cupons e imagens.' }), x + 5340, y - 120);
   wf.add(switchExpr(N('Tem mercado radar?'), `($('${N('Preparar páginas radar')}').first().json.reqsMercado || []).length > 0 ? 0 : 1`, 2), x + 5390, y);
   wf.add(itens(N('Itens mercado radar'), `$('${N('Preparar páginas radar')}').first().json.reqsMercado`), x + 5440, y - 120);
   wf.add(httpRadarGet(N('Checar mercado radar'), true, { batchSize: 2, batchInterval: 250 }), x + 5460, y - 120);

@@ -18,6 +18,14 @@ if ! command -v sqlite3 >/dev/null 2>&1; then
 fi
 mkdir -p "$DESTINO"
 
+checkpoint_wal() {
+  [ -f "$DB" ] || return 0
+  sqlite3 -cmd ".timeout 30000" "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
+  for f in "$DB-wal" "$DB-shm"; do
+    if [ -f "$f" ]; then chown "$(stat -c %u:%g "$DB")" "$f" 2>/dev/null; fi
+  done
+}
+
 fazer_backup() {
   ARQ="$DESTINO/oferto-$(date +%Y-%m-%d).tar.gz"
   [ -f "$ARQ" ] && return 0
@@ -53,6 +61,7 @@ fazer_backup() {
 echo "Backup: 1 cópia por dia em $DESTINO, guardando $DIAS dias."
 while true; do
   fazer_backup
+  checkpoint_wal
   [ -n "${UMA_VEZ:-}" ] && exit 0
   sleep 3600
 done

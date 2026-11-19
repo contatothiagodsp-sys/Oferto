@@ -366,4 +366,64 @@ test('Bloco C + D: Enxugar Nuvemshop/Magento/páginas/mercado, batch/timeout, tr
   assert.match(cfgPadrao.telegram.canais_desc.beleza, /Skincare/i);
   assert.match(cfgPadrao.telegram.canais_desc.kpop, /KpopAlbums/i);
   assert.match(cfgPadrao.telegram.canais_desc.saude, /Oficial Farma/i);
+  assert.match(dc, /EXECUTIONS_DATA_HARD_DELETE_BUFFER:\s*"0"/);
+  assert.match(dc, /DB_SQLITE_VACUUM_ON_STARTUP:\s*"false"/);
+  assert.match(bk, /checkpoint_wal/);
+});
+
+test('Regressões pós-auditoria: Rx/Vitamina D alta dose, categorias Oral-B/Tena, peças Samsung/Consul/Electrolux e cupom Amazon em Enxugar páginas', () => {
+  const cfg = L.padrao();
+
+  // 1. Rx / Vitamina D >= 5.000 UI / categorias VTEX /Medicamentos/Prescrição/ bloqueadas, OTC <= 2.000 UI liberado
+  const vtexFarmacia = [
+    { productId: 'r1', productName: 'Livalo 4mg 30 Comprimidos', link: 'https://www.paguemenos.com.br/livalo-4mg-30-comprimidos/p', categories: ['/Medicamentos e Saúde/Colesterol/'], items: [{ images: [{ imageUrl: 'https://paguemenos.vteximg.com.br/1.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 148.59, ListPrice: 199.9, AvailableQuantity: 5 } }] }] },
+    { productId: 'r2', productName: 'Apevitin BC 4mg + Associações Xarope 240ml', link: 'https://www.paguemenos.com.br/apevitin-bc-240ml/p', categories: ['/Saúde/'], items: [{ images: [{ imageUrl: 'https://paguemenos.vteximg.com.br/2.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 33.99, ListPrice: 49.9, AvailableQuantity: 5 } }] }] },
+    { productId: 'r3', productName: 'Vitamina D3 Neo Química 50.000UI 4 Cápsulas Moles', link: 'https://www.paguemenos.com.br/vitamina-d3-50-000ui/p', categories: ['/Medicamentos e Saúde/Vitaminas e Minerais/'], items: [{ images: [{ imageUrl: 'https://paguemenos.vteximg.com.br/3.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 40.99, ListPrice: 60.0, AvailableQuantity: 5 } }] }] },
+    { productId: 'r4', productName: 'Vitamina D3 5.0000 UI 12 Cápsulas Biolab', link: 'https://www.drogariavenancio.com.br/vitamina-d3-5-0000-ui/p', categories: ['/Medicamentos/Prescrição/'], items: [{ images: [{ imageUrl: 'https://drogariavenancio.vteximg.com.br/4.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 39.9, ListPrice: 70.0, AvailableQuantity: 5 } }] }] },
+    { productId: 'r5', productName: 'Koli D3 10000UI 12 Cápsulas Moles', link: 'https://www.paguemenos.com.br/koli-d3-10000ui/p', categories: ['/Medicamentos e Saúde/Vitaminas e Minerais/'], items: [{ images: [{ imageUrl: 'https://paguemenos.vteximg.com.br/5.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 43.49, ListPrice: 65.0, AvailableQuantity: 5 } }] }] },
+    { productId: 'r6', productName: 'Font D 7.000UI 30 Comprimidos', link: 'https://www.paguemenos.com.br/font-d-7000ui/p', categories: ['/Medicamentos e Saúde/Vitaminas e Minerais/'], items: [{ images: [{ imageUrl: 'https://paguemenos.vteximg.com.br/6.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 32.0, ListPrice: 50.0, AvailableQuantity: 5 } }] }] },
+    { productId: 'r7', productName: 'Produto Qualquer 5mg', link: 'https://www.drogariavenancio.com.br/produto-rx/p', categories: ['/Medicamentos/Prescrição/Aparelho Digestivo/'], items: [{ images: [{ imageUrl: 'https://drogariavenancio.vteximg.com.br/7.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 29.9, ListPrice: 59.9, AvailableQuantity: 5 } }] }] },
+    { productId: 'ok1', productName: 'Suplemento Alimentar Vitamina D3 2.000UI 60 Cápsulas', link: 'https://www.paguemenos.com.br/vitamina-d3-2000ui/p', categories: ['/Vida Saudável/Multivitamínicos e Nutrientes/'], items: [{ images: [{ imageUrl: 'https://paguemenos.vteximg.com.br/8.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 24.9, ListPrice: 39.9, AvailableQuantity: 10 } }] }] },
+  ];
+  const lidoFarm = L.lerCatalogoVtex(vtexFarmacia, { loja: 'paguemenos', categoria_hint: 'saude' });
+  assert.equal(lidoFarm.length, 1, 'Apenas suplemento OTC <= 2.000 UI deve passar');
+  assert.match(lidoFarm[0].titulo, /2\.000UI/);
+
+  // Oficial Farma Magento: bloqueia Vitamina D3 10.000UI, permite Magnésio + CoQ10
+  const htmlOfRx = `
+    <div class="product-item-info" id="product-item-info_1"><a class="product-item-link" href="https://www.oficialfarma.com.br/vitamina-d3-10-000ui">Vitamina D3 10.000UI 60 Doses</a><span data-price-amount="40.00" data-price-type="oldPrice"></span><span data-price-amount="25.35" data-price-type="finalPrice"></span></div>
+    <div class="product-item-info" id="product-item-info_2"><a class="product-item-link" href="https://www.oficialfarma.com.br/magnesio-dimalato">Magnésio Dimalato 300mg 90 Cápsulas</a><span data-price-amount="99.90" data-price-type="oldPrice"></span><span data-price-amount="64.90" data-price-type="finalPrice"></span></div>
+  `;
+  const lidoOfRx = L.lerCatalogoMagento(htmlOfRx, { loja: 'oficialfarma', categoria_hint: 'saude' });
+  assert.equal(lidoOfRx.length, 1);
+  assert.match(lidoOfRx[0].titulo, /Magnésio/);
+
+  // 2. Peças/acessórios Consul, Electrolux e Samsung bloqueados
+  const pecas = [
+    { loja: 'consul', prod: { productId: 'c1', productName: 'Painel de Controle Decorativo para Máquina de Lavar', link: 'https://www.consul.com.br/painel-lavadora/p', items: [{ images: [{ imageUrl: 'https://consul.vteximg.com.br/1.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 89.9, ListPrice: 129.9, AvailableQuantity: 5 } }] }] } },
+    { loja: 'samsung', prod: { productId: 's1', productName: 'Moldura para Smart TV 75" The Frame Pro', link: 'https://shop.samsung.com.br/moldura-the-frame/p', items: [{ images: [{ imageUrl: 'https://samsungbrshop.vteximg.com.br/1.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 499, ListPrice: 999, AvailableQuantity: 5 } }] }] } },
+    { loja: 'electrolux', prod: { productId: 'e1', productName: 'Placa Potência Geladeira Electrolux DB52', link: 'https://loja.electrolux.com.br/placa-potencia/p', items: [{ images: [{ imageUrl: 'https://electrolux.vteximg.com.br/1.jpg' }], sellers: [{ sellerId: '1', commertialOffer: { Price: 199, ListPrice: 299, AvailableQuantity: 5 } }] }] } },
+  ];
+  for (const x of pecas) {
+    assert.equal(L.lerCatalogoVtex([x.prod], { loja: x.loja }).length, 0, `${x.loja} deve bloquear ${x.prod.productName}`);
+  }
+
+  // 3. Classificação Oral-B + 2 Pilhas AA -> saude (não casa) e Tena Pants -> saude (não bebe)
+  const catOral = L.classificarCategoria('Escova de Dente Elétrica Infantil Oral-B Disney Pixar Carros 1 Unidade + 2 Pilhas AA', cfg, 'saude');
+  assert.equal(catOral.categoria, 'saude', 'Oral-B com 2 Pilhas AA deve ir para saude, não casa');
+  const catTena = L.classificarCategoria('Kit Tena Pants Roupa Intima Confort 16 Unidades', cfg, 'bebe fraldas');
+  assert.equal(catTena.categoria, 'saude', 'Fralda geriátrica Tena Pants nunca deve ir para bebe');
+
+  // 4. Enxugar páginas radar preserva cupom Amazon mesmo quando há >400 KB de header/data-csa/whitespace antes do bloco de preço
+  const { local } = B.gerar();
+  const noEnxPag = local['04-radar-ofertas.json'].nodes.find((n) => n.name === 'Enxugar páginas radar');
+  const fnEnxPag = vm.runInNewContext(`(function($input){ ${noEnxPag.parameters.jsCode} })`, {});
+  const htmlAmzGrande = '<html><body><header>' + 'h'.repeat(180000) + '</header>'
+    + '<div data-csa-c-id="' + 'a'.repeat(180000) + '" data-cel-widget="nav">   \n\n\n   </div>'
+    + '<span id="productTitle">Protetor Solar Sundown 200ml</span>'
+    + '<div id="promoPriceBlockMessage"><label>Salve o cupom 30%</label><span id="promoMessageCXCW1"> : NOWKENVUE30. Desconto da Amazon.</span></div>'
+    + '<footer>' + 'f'.repeat(150000) + '</footer></body></html>';
+  const resEnxAmz = fnEnxPag({ all: () => [{ json: { statusCode: 200, body: htmlAmzGrande } }] });
+  assert.ok(resEnxAmz[0].json.body.includes('NOWKENVUE30'), 'Enxugar páginas radar deve preservar cupom Amazon');
+  assert.ok(resEnxAmz[0].json.body.length < 5000, 'Header, footer e data-csa-* devem ser removidos');
 });
