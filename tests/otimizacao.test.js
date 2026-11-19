@@ -45,6 +45,17 @@ test('Build otimizado: tree-shaking por nó, Fase 2 desconectada e saveDataSucce
   assert.ok(!noTunel.parameters.jsCode.includes('"extrator":function'));
   assert.ok(!noTunel.parameters.jsCode.includes('"fluxos":function'));
 
+  // Tree-shaking de símbolos reexportados (ex.: esquema em config vs fluxos):
+  // nós Config padrão (exceto 00-setup, que chama setupChamadas de fluxos) não devem arrastar fluxos/extrator/radar.
+  for (const [arq, wf] of Object.entries(local)) {
+    if (arq === '00-setup.json') continue;
+    const noCfg = wf.nodes.find((n) => n.name === 'Config' && n.type === 'n8n-nodes-base.code');
+    if (!noCfg) continue;
+    assert.ok(!noCfg.parameters.jsCode.includes('"fluxos":function'), `${arq} / Config não deve incluir fluxos`);
+    assert.ok(!noCfg.parameters.jsCode.includes('"extrator":function'), `${arq} / Config não deve incluir extrator`);
+    assert.ok(!noCfg.parameters.jsCode.includes('"radar":function'), `${arq} / Config não deve incluir radar`);
+  }
+
   // Minificador preserva URLs com //, regexes e template literals.
   const amostra = `
     // comentário de linha
@@ -60,7 +71,7 @@ test('Build otimizado: tree-shaking por nó, Fase 2 desconectada e saveDataSucce
   assert.equal(new Function(min)(), 'ok 123456');
 });
 
-test('Enxugar fontes web: reduz HTML pesado preservando __NEXT_DATA__ (Promobit) e mensagens (t.me/s)', () => {
+test('Enxugar fontes web: preserva amazon_busca, cauda recente do Telegram e JSON válido em umusic/Promobit', () => {
   const { local } = B.gerar();
   const wf = local['04-radar-ofertas.json'];
   const no = wf.nodes.find((n) => n.name === 'Enxugar fontes web');
@@ -70,10 +81,20 @@ test('Enxugar fontes web: reduz HTML pesado preservando __NEXT_DATA__ (Promobit)
     { tipo: 'promobit_loja', url: 'https://www.promobit.com.br/promocoes/loja/amazon/' },
     { tipo: 'telegram_canal', canal: 'xetdaspromocoes', url: 'https://t.me/s/xetdaspromocoes' },
     { tipo: 'gatry_home', url: 'https://gatry.com/' },
+    { tipo: 'amazon_busca', url: 'https://www.amazon.com.br/s?k=kpop' },
+    { tipo: 'umusic_vtex', url: 'https://www.umusicstore.com/api/catalog_system/pub/products/search' },
   ];
-  const htmlPb = '<html><head>' + 'x'.repeat(50000) + '</head><body><script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{}}}</script>' + 'y'.repeat(50000) + '</body></html>';
-  const htmlTg = '<html><head><style>.a{color:red}</style></head><body><div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">Air Fryer R$ 299,90</div><script>alert(1)</script></div></body></html>';
+  const lixoPromobit = 'z'.repeat(650000);
+  const htmlPb = `<html><head>${'x'.repeat(50000)}</head><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({
+    props: { pageProps: { serverOffers: [{ offerId: 42, offerTitle: 'Oferta Pb' }], extraGigante: lixoPromobit } },
+  })}</script>${'y'.repeat(50000)}</body></html>`;
+  const blocoAntigoTg = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">Antiga ' + 'a'.repeat(360000) + '</div></div>';
+  const blocoNovoTg = '<div class="tgme_widget_message_wrap"><div class="tgme_widget_message_text">Air Fryer Recente R$ 299,90</div><script>alert(1)</script></div>';
+  const htmlTg = '<html><head><style>.a{color:red}</style></head><body>' + blocoAntigoTg + blocoNovoTg + '</body></html>';
   const htmlGt = '<html><head><title>Gatry</title></head><body><style>body{}</style><article>Produto R$ 99,90</article></body></html>';
+  const htmlAmz = '<html><head>' + 'h'.repeat(12000) + '</head><body><div role="listitem" data-asin="B0ABC12345"><h2><span>Album K-Pop Oficial</span></h2><script>bad()</script></div></body></html>';
+  const arrVtex = Array.from({ length: 80 }, (_, idx) => ({ productId: String(idx), productName: 'Item ' + idx, desc: 'd'.repeat(6000) }));
+  const jsonVtex = JSON.stringify(arrVtex);
 
   const ctx = {
     $: (nome) => {
@@ -85,24 +106,41 @@ test('Enxugar fontes web: reduz HTML pesado preservando __NEXT_DATA__ (Promobit)
         { json: { statusCode: 200, body: htmlPb, headers: { 'set-cookie': 'gigante' } } },
         { json: { statusCode: 200, body: htmlTg } },
         { json: { statusCode: 200, body: htmlGt } },
+        { json: { statusCode: 200, body: htmlAmz } },
+        { json: { statusCode: 200, body: jsonVtex } },
       ],
     },
   };
   const fn = vm.runInNewContext(`(function($, $input){ ${no.parameters.jsCode} })`, {});
   const res = fn(ctx.$, ctx.$input);
 
-  assert.equal(res.length, 3);
-  assert.ok(res[0].json.body.includes('__NEXT_DATA__'));
-  assert.ok(res[0].json.body.length < 500, 'Promobit deve manter apenas __NEXT_DATA__');
+  assert.equal(res.length, 5);
+  // Promobit gigante (>600KB) mantém JSON válido com serverOffers e descarta extraGigante
+  const mPb = res[0].json.body.match(/<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  assert.ok(mPb, 'Promobit deve preservar tag __NEXT_DATA__ completa');
+  const parsedPb = JSON.parse(mPb[1]);
+  assert.equal(parsedPb.props.pageProps.serverOffers[0].offerId, 42);
+  assert.ok(res[0].json.body.length < 1000, 'Promobit deve descartar campos gigantes não usados');
   assert.ok(!('headers' in res[0].json), 'headers pesados removidos');
 
-  assert.ok(res[1].json.body.includes('Air Fryer R$ 299,90'));
+  // Telegram > 350KB preserva mensagens MAIS RECENTES (final do HTML)
+  assert.ok(res[1].json.body.includes('Air Fryer Recente R$ 299,90'), 'Telegram deve preservar mensagens mais recentes no fim do HTML');
   assert.ok(!res[1].json.body.includes('<style>'));
   assert.ok(!res[1].json.body.includes('<script>'));
 
+  // Gatry
   assert.ok(res[2].json.body.includes('Produto R$ 99,90'));
   assert.ok(!res[2].json.body.includes('<head>'));
   assert.ok(!res[2].json.body.includes('<style>'));
+
+  // Amazon busca (antes caía no else de Promobit e perdia todos os itens!)
+  assert.ok(res[3].json.body.includes('data-asin="B0ABC12345"'), 'amazon_busca deve preservar listitems');
+  assert.ok(res[3].json.body.includes('Album K-Pop Oficial'));
+  assert.ok(!res[3].json.body.includes('<script>'));
+
+  // UMusic VTEX > 400KB mantém JSON válido
+  const parsedVtex = JSON.parse(res[4].json.body);
+  assert.ok(Array.isArray(parsedVtex) && parsedVtex.length === 60, 'umusic_vtex deve manter JSON válido');
 });
 
 test('Relatório diário: telemetria por fonte e lembrete de compliance Amazon Associates', () => {

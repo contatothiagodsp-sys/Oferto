@@ -238,7 +238,7 @@ function carregarIndiceLib() {
   const ordem = ordemIndex.concat(todosArqs.filter((n) => !ordemIndex.includes(n)));
 
   const mods = {};
-  const exportMap = {};
+  const exportsByMod = {};
   for (const nome of ordem) {
     const raw = fs.readFileSync(path.join(dir, nome + '.js'), 'utf8').replace(/^'use strict';\r?\n/, '');
     const deps = [...new Set([...raw.matchAll(/require\(\s*['"]\.\/([a-z0-9_-]+)(?:\.js)?['"]\s*\)/gi)].map((m) => m[1]))]
@@ -248,8 +248,29 @@ function carregarIndiceLib() {
     new Function('module', 'exports', 'require', min);
     mods[nome] = { deps, min };
     const exp = require(path.join(dir, nome + '.js'));
-    if (exp && typeof exp === 'object') {
-      for (const k of Object.keys(exp)) exportMap[k] = nome;
+    if (exp && typeof exp === 'object') exportsByMod[nome] = Object.keys(exp);
+  }
+  const tamanhoTransitivo = (raiz) => {
+    const vistos = new Set();
+    const fila = [raiz];
+    let bytes = 0;
+    while (fila.length) {
+      const m = fila.shift();
+      if (vistos.has(m) || !mods[m]) continue;
+      vistos.add(m);
+      bytes += mods[m].min.length;
+      for (const d of mods[m].deps) if (!vistos.has(d)) fila.push(d);
+    }
+    return bytes;
+  };
+  const pesoMod = {};
+  for (const nome of ordem) pesoMod[nome] = tamanhoTransitivo(nome);
+  const exportMap = {};
+  for (const nome of ordem) {
+    for (const k of (exportsByMod[nome] || [])) {
+      // Quando um símbolo é reexportado por módulos mais pesados (ex.: esquema em fluxos vs config),
+      // mantém o módulo de menor fechamento transitivo para maximizar o tree-shaking.
+      if (!exportMap[k] || pesoMod[nome] < pesoMod[exportMap[k]]) exportMap[k] = nome;
     }
   }
   return { ordem, mods, exportMap };
@@ -1225,16 +1246,38 @@ return resps.map((r, idx) => {
   const raw = typeof r.body === 'string' ? r.body : (typeof r.data === 'string' ? r.data : '');
   let body = raw;
   if (f.tipo === 'umusic_vtex') {
-    body = typeof r.body === 'string' ? r.body.slice(0, 400000) : (r.body != null ? r.body : r.data);
+    const val = r.body != null ? r.body : r.data;
+    if (typeof val === 'string' && val.length > 400000) {
+      try {
+        const arr = JSON.parse(val);
+        body = Array.isArray(arr) ? JSON.stringify(arr.slice(0, 60)) : val;
+      } catch (e) { body = val; }
+    } else {
+      body = val;
+    }
   } else if (f.tipo === 'telegram_canal') {
     const pos = raw.search(/<div[^>]+class="[^"]*tgme_widget_message_wrap/i);
     const trecho = pos >= 0 ? raw.slice(pos) : raw;
-    body = trecho
+    const limpo = trecho
       .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
       .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
       .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
-      .replace(/<!--[\\s\\S]*?-->/g, '')
-      .slice(0, 350000);
+      .replace(/<!--[\\s\\S]*?-->/g, '');
+    // Em t.me/s/<canal>, as mensagens mais recentes ficam no FINAL do HTML.
+    body = limpo.length > 350000 ? limpo.slice(-350000) : limpo;
+  } else if (f.tipo === 'amazon_busca') {
+    const pos = raw.indexOf('<div role="listitem"');
+    if (pos >= 0) {
+      body = raw.slice(pos)
+        .replace(/<script\\b[^>]*>[\\s\\S]*?<\\/script>/gi, '')
+        .replace(/<style\\b[^>]*>[\\s\\S]*?<\\/style>/gi, '')
+        .replace(/<svg\\b[^>]*>[\\s\\S]*?<\\/svg>/gi, '')
+        .replace(/<!--[\\s\\S]*?-->/g, '')
+        .replace(/[ \\t]{2,}/g, ' ')
+        .slice(0, 350000);
+    } else {
+      body = raw.slice(0, 8000);
+    }
   } else if (f.tipo === 'gatry_home' || f.tipo === 'nuvemshop_kpop') {
     body = raw
       .replace(/<head\\b[^>]*>[\\s\\S]*?<\\/head>/gi, '')
@@ -1245,8 +1288,28 @@ return resps.map((r, idx) => {
       .replace(/[ \\t]{2,}/g, ' ')
       .slice(0, 350000);
   } else {
-    const m = raw.match(/<script[^>]*id\\s*=\\s*["']__NEXT_DATA__["'][^>]*>[\\s\\S]*?<\\/script>/i);
-    body = m ? m[0].slice(0, 500000) : raw.slice(0, 4000);
+    const m = raw.match(/<script[^>]*id\\s*=\\s*["']__NEXT_DATA__["'][^>]*>([\\s\\S]*?)<\\/script>/i);
+    if (m) {
+      if (m[0].length <= 600000) {
+        body = m[0];
+      } else {
+        try {
+          const j = JSON.parse(m[1]);
+          const pp = (j && j.props && j.props.pageProps) || {};
+          body = '<script id="__NEXT_DATA__" type="application/json">' + JSON.stringify({
+            props: {
+              pageProps: {
+                serverOffers: pp.serverOffers,
+                serverFeaturedOffers: pp.serverFeaturedOffers,
+                sidebarFeaturedOffers: pp.sidebarFeaturedOffers,
+              },
+            },
+          }) + '</script>';
+        } catch (e) { body = m[0]; }
+      }
+    } else {
+      body = raw.slice(0, 4000);
+    }
   }
   return { json: { statusCode: r.statusCode || 200, body } };
 });`, { cfg: false, nota: 'Filtra e trunca HTML pesado antes de Selecionar radar para evitar OOM e timeout no JS runner.' }), x + 770, y - 120);

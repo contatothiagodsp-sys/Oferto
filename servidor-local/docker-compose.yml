@@ -107,7 +107,7 @@ services:
   filtro:
     image: caddy:2.8.4-alpine
     environment:
-      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-__secret_nao_configurado__}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:

@@ -3,7 +3,7 @@
 	@telegram_ok {
 		method POST
 		path /webhook/telegram-ofertas
-		header X-Telegram-Bot-Api-Secret-Token {$TELEGRAM_WEBHOOK_SECRET}
+		header X-Telegram-Bot-Api-Secret-Token {$TELEGRAM_WEBHOOK_SECRET:__secret_nao_configurado__}
 	}
 	handle @telegram_ok {
 		reverse_proxy n8n:5678
