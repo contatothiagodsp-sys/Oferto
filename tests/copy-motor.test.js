@@ -232,3 +232,15 @@ test('base por tipo: 12 celulares seguidos não repetem frase e a pasta não gan
   const g = L.ganchoOferta(of('Pasta de Dente Oral B 3D White com Carvão 140g', { categoria: 'saude', preco: 15.99, preco_de: 23.99 }), cfg, { mostrarPreco: true });
   assert.doesNotMatch(g, /SAÚDE|SUPLEMENTOS/);
 });
+
+test('linguagem do público geral: sem wishlist, backlog, setup, drift, call…; upgrade e skincare liberados', () => {
+  const o = of('x', { preco: 100, preco_de: 150 });
+  for (const t of ['Já salva na wishlist.', 'Mais um pro backlog que só cresce.', 'Setup novo pede tela boa.', 'Antes que o seu dê drift no meio da partida.', 'Pra call do trampo sair sem travar.']) {
+    assert.match(T.validarCopy(t, o).motivo || '', /jargão/, t);
+  }
+  for (const t of ['Upgrade de tela é daqueles que você sente no primeiro dia.', 'Rotina de skincare pede reposição.']) assert.equal(T.validarCopy(t, o).ok, true, t);
+  // copy antiga salva com jargão é revalidada e troca por frase nova no post
+  const antiga = of('Perfume Lattafa Khamrah 100ml', { categoria: 'perfumes', links_manuais: { copy_tom: { texto: 'Nesse valor sai fácil da wishlist.', chaves: [] } } });
+  assert.doesNotMatch(T.linhaCopy(antiga, {}, false), /wishlist/i);
+  assert.match(T.SYSTEM_COPY || require('../lib/tom-ia').SYSTEM_COPY, /lista de desejos/);
+});

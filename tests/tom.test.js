@@ -212,7 +212,7 @@ test('validarCopy barra urgência, preço, número inventado, link, caixa alta e
   ];
   for (const r of reprovadas) assert.equal(T.validarCopy(r, tit).ok, false, r);
   // Elogio de preço só com comparação verificada ou cupom.
-  const elogio = 'Nesse preço compensa demais deixar de reserva antes que o seu dê drift.';
+  const elogio = 'Nesse preço compensa demais deixar de reserva antes que o seu comece a puxar sozinho.';
   assert.match(T.validarCopy(elogio, { titulo: 'Controle', preco: 100 }).motivo, /sem comparação/);
   assert.equal(T.validarCopy(elogio, { titulo: 'Controle', preco: 100, preco_de: 150 }).ok, true);
   assert.equal(T.validarCopy(elogio, { titulo: 'Controle', preco: 100, cupom: 'X' }).ok, true);
@@ -399,7 +399,7 @@ test('perfumaria: sem promessa de performance nem blind buy no banco, no validad
   ]) assert.equal(T.validarCopy(r, perfume).ok, false, r);
   assert.match(T.validarCopy('Blind buy sem medo nesse valor, galera.', of('Fone JBL Tune 520BT', { preco: 100, preco_de: 160 })).motivo, /gosto pessoal/);
   // Proposta/ocasião conhecida (sem performance) passa.
-  assert.equal(T.validarCopy('Queridinho de quem curte perfume adocicado pra noite, e nesse valor sai fácil da wishlist.', perfume).ok, true);
+  assert.equal(T.validarCopy('Queridinho de quem curte perfume adocicado pra noite, e nesse valor sai fácil da lista de desejos.', perfume).ok, true);
   assert.equal(T.validarCopy('Mais fresco pro dia a dia, bom pra quem quer variar do perfume de sempre.', perfume).ok, true);
 
   // Prompt: regra de gosto pessoal e régua sem performance/blind; ficha de perfume leva o aviso.
