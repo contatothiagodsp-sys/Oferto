@@ -597,6 +597,32 @@ function httpTelegramArquivo(name, intervalo) {
   });
 }
 
+/**
+ * Claude API (copy no tom do nicho). Cada item: { http: { url, headers, body, timeout } } montado por LIB.pedidoCopyIA.
+ * A chave sai direto da cfg (não passa pelo item). Erro/timeout não param o fluxo: o texto cai no banco de frases.
+ */
+function httpCopyIA(name) {
+  return {
+    name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
+    notes: 'Gera a frase de tom do post na Claude API. Falhou ou demorou: o post usa o banco de frases do nicho.',
+    parameters: {
+      method: 'POST',
+      url: '={{ $json.http.url }}',
+      sendHeaders: true,
+      specifyHeaders: 'json',
+      jsonHeaders: `={{ JSON.stringify(Object.assign({}, $json.http.headers, { 'x-api-key': ${CFG}.copy.ia_chave })) }}`,
+      sendBody: true,
+      contentType: 'json',
+      specifyBody: 'json',
+      jsonBody: '={{ JSON.stringify($json.http.body) }}',
+      options: {
+        response: { response: { fullResponse: true, neverError: true, responseFormat: 'json' } },
+        timeout: '={{ $json.http.timeout || 15000 }}',
+      },
+    },
+  };
+}
+
 function httpShopee(name) {
   return {
     name, type: 'n8n-nodes-base.httpRequest', typeVersion: 4.2, onError: 'continueRegularOutput',
@@ -865,14 +891,29 @@ return [{ json: LIB.juntarMercadoOferta(e, resp, cfg) }];`, { lib: true }), 3440
   wf.link('Consultar mercado oferta?', 'Itens mercado oferta', 0);
   wf.chain('Itens mercado oferta', 'Checar mercado oferta', 'Juntar mercado oferta');
   wf.link('Consultar mercado oferta?', 'Juntar mercado oferta', 1);
-  wf.link('Juntar mercado oferta', 'Histórico do produto');
+  // Copy no tom do nicho: com copy.ia = sim, a Claude API escreve a frase; sem IA (ou falha) vale o banco de frases.
+  wf.add(code('Pedir copy IA', `
+return [{ json: { http: LIB.pedidoCopyIA(($input.first().json || {}).oferta, cfg) } }];`, { lib: true, nota: 'Monta o pedido da frase de tom (null quando copy.ia está desligada ou o nicho é sensível).' }), 3660, -100);
+  wf.add(switchExpr('Gerar copy IA?', '$json.http ? 0 : 1', 2), 3770, -100);
+  wf.add(httpCopyIA('Copy IA (Claude)'), 3880, -180);
+  wf.add(code('Juntar copy IA', `
+const e = $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
+const resp = $('Copy IA (Claude)').isExecuted ? $('Copy IA (Claude)').first().json : null;
+return [{ json: LIB.aplicarCopyIA(e, resp, cfg, Date.now()) }];`, { lib: true, nota: 'Valida a frase da IA e grava em links_manuais.copy_ia (reprovada/timeout: fica o banco de frases).' }), 4100, -100);
+  wf.link('Juntar mercado oferta', 'Pedir copy IA');
+  wf.chain('Pedir copy IA', 'Gerar copy IA?');
+  wf.link('Gerar copy IA?', 'Copy IA (Claude)', 0);
+  wf.link('Copy IA (Claude)', 'Juntar copy IA');
+  wf.link('Gerar copy IA?', 'Juntar copy IA', 1);
+  wf.link('Juntar copy IA', 'Histórico do produto');
   wf.link('Oferta completa?', 'Erro da oferta', 1);
   wf.chain('Erro da oferta', 'Telegram (erro da oferta)');
   wf.chain('Preparar oferta', 'Marcar substituída', 'Atualizar substituída');
   wf.add(dtGet('Histórico do produto', 'bfx_precos', [['produto_id', 'eq', '={{ $json.oferta.produto_id }}']]), 1100, 100);
   wf.add(dtGet('Ofertas do produto 24h', 'bfx_ofertas', [['produto_id', 'eq', "={{ $('Juntar mercado oferta').first().json.oferta.produto_id }}"]]), 1210, 100);
   wf.add(code('Avaliar oferta', `
-const cls = $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
+const cls = $('Juntar copy IA').isExecuted ? $('Juntar copy IA').first().json
+  : $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
 const rows = $('Histórico do produto').all().map((i) => i.json).filter((r) => r.produto_id);
 const ofsProd = $('Ofertas do produto 24h').isExecuted ? $('Ofertas do produto 24h').all().map((i) => i.json).filter((r) => r.oferta_id) : [];
 return [{ json: LIB.avaliarNovaOferta(cls, rows, cfg, ofsProd) }];`, { lib: true }), 1320, 100);
@@ -1528,11 +1569,23 @@ return f.autoPlanos && f.autoPlanos.length ? [{ json: f }] : [];`, { cfg: false 
   wf.add(switchExpr(N('Tem Shopee auto?'), `$('${N('Finalizar radar')}').first().json.reqsShopeeLinks.length > 0 ? 0 : 1`, 2), x + 6380, y + 180);
   wf.add(itens(N('Itens Shopee auto'), `$('${N('Finalizar radar')}').first().json.reqsShopeeLinks`), x + 6600, y + 60);
   wf.add(httpShopee(N('Shopee: links radar')), x + 6820, y + 60);
+  // Copy no tom do nicho para as ofertas que vão ao ar nesta rodada (até copy.ia_max_por_ciclo).
+  wf.add(code(N('Pedir copy radar'), `
+return [{ json: { pedidos: LIB.pedidosCopyIARadar($('${N('Finalizar radar')}').first().json, cfg) } }];`, { lib: true }), x + 6215, y + 300);
+  wf.add(switchExpr(N('Gerar copy radar?'), '$json.pedidos.length > 0 ? 0 : 1', 2), x + 6230, y + 300);
+  wf.add(itens(N('Itens copy radar'), `$('${N('Pedir copy radar')}').first().json.pedidos`), x + 6245, y + 380);
+  wf.add(httpCopyIA(N('Copy IA radar')), x + 6255, y + 380);
+  wf.add(code(N('Juntar copy radar'), `
+const pedidos = $('${N('Pedir copy radar')}').first().json.pedidos || [];
+const resps = pedidos.length && $('${N('Copy IA radar')}').isExecuted ? $('${N('Copy IA radar')}').all().map((i) => i.json) : [];
+return [{ json: { pedidos, resps } }];`, { cfg: false, nota: 'Uma saída só (o Data Table seguinte roda uma vez).' }), x + 6265, y + 300);
   const lockPubClear = cfgFluxo.lock
-    ? "const lote = LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt);\nif (!lote.chamadasPub || !lote.chamadasPub.length) { if (typeof $getWorkflowStaticData === 'function') $getWorkflowStaticData('global').radar_rodando_ate = 0; }\nreturn [{ json: lote }];"
-    : 'return [{ json: LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt) }];';
+    ? "const lote = LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt);\nlote.updates = LIB.updatesComCopy(lote.updates, fin);\nif (!lote.chamadasPub || !lote.chamadasPub.length) { if (typeof $getWorkflowStaticData === 'function') $getWorkflowStaticData('global').radar_rodando_ate = 0; }\nreturn [{ json: lote }];"
+    : 'const lote = LIB.publicarLoteRadar(fin, respSh, respCards, cfg, postsAnt);\nlote.updates = LIB.updatesComCopy(lote.updates, fin);\nreturn [{ json: lote }];';
   wf.add(code(N('Publicar lote radar'), `
-const fin = $('${N('Finalizar radar')}').first().json;
+const finBase = $('${N('Finalizar radar')}').first().json;
+const cp = $('${N('Juntar copy radar')}').isExecuted ? $('${N('Juntar copy radar')}').first().json : null;
+const fin = cp ? LIB.aplicarCopyIARadar(finBase, cp.pedidos, cp.resps, Date.now()) : finBase;
 const respSh = fin.reqsShopeeLinks.length && $('${N('Shopee: links radar')}').isExecuted ? $('${N('Shopee: links radar')}').all().map((i) => i.json) : [];
 const respCards = fin.chamadas.length && $('${N('Telegram (cards radar)')}').isExecuted ? $('${N('Telegram (cards radar)')}').all().map((i) => i.json) : [];
 const postsAnt = $('${N('Posts recentes radar')}').isExecuted ? $('${N('Posts recentes radar')}').all().map((i) => i.json).filter((r) => r.oferta_id) : [];
@@ -1764,7 +1817,11 @@ return [{ json: LIB.dispararAlertasOferta(base.ofertas, base.linksRows, rows, cf
   wf.chain(N('Finalizar radar'), N('Preços radar'), N('Gravar preços radar'));
   wf.chain(N('Finalizar radar'), N('Ofertas radar'), N('Gravar ofertas radar'));
   wf.chain(N('Finalizar radar'), N('Cards radar'), N('Telegram (cards radar)'));
-  wf.chain(N('Finalizar radar'), N('Auto radar?'), N('Posts recentes radar'), N('Tem Shopee auto?'));
+  wf.chain(N('Finalizar radar'), N('Auto radar?'), N('Pedir copy radar'), N('Gerar copy radar?'));
+  wf.link(N('Gerar copy radar?'), N('Itens copy radar'), 0);
+  wf.chain(N('Itens copy radar'), N('Copy IA radar'), N('Juntar copy radar'));
+  wf.link(N('Gerar copy radar?'), N('Juntar copy radar'), 1);
+  wf.chain(N('Juntar copy radar'), N('Posts recentes radar'), N('Tem Shopee auto?'));
 
   wf.link(N('Tem Shopee auto?'), N('Itens Shopee auto'), 0);
   wf.chain(N('Itens Shopee auto'), N('Shopee: links radar'), N('Publicar lote radar'));

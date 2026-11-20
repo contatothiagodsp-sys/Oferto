@@ -28,6 +28,13 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `auto.publicar_direto` | `nao` | sim/nao: publica direto no grupo/canais do Telegram e já entrega o texto do WhatsApp sem precisar clicar em Aprovar (ative rápido com /modo rapido) |
 | `auto.categoria_padrao` | `casa` | Categoria usada quando o bot não identifica pelas palavras do produto (casa, moda, beleza, perfumes, saude, bebe, tech) |
 | `copy.chamativa` | `sim` | sim/nao: gera ganchos persuasivos, comparação De/Por e economia em R$ nos textos de Telegram e WhatsApp para atrair cliques |
+| `copy.tom` | `sim` | sim/nao: adiciona abaixo do nome do produto uma frase curta no tom do público do nicho (fã de K-pop, gamer, hardware, casa, perfumes…). Sem IA, usa o banco de frases curado (custo zero) |
+| `copy.ia` | `nao` | sim/nao: gera a frase de tom com a Claude API (precisa de copy.ia_chave; cobrado por uso). Em erro, timeout ou frase reprovada, cai no banco de frases |
+| `copy.ia_chave` |  | Chave da Claude API (console.anthropic.com) usada por copy.ia. Vazio = IA desligada |
+| `copy.ia_modelo` | `claude-opus-5-5` | Modelo da Claude API para a copy (ex.: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5) |
+| `copy.ia_timeout_ms` | `15000` | Tempo máximo (ms) de espera pela IA antes de usar o banco de frases |
+| `copy.ia_max_por_ciclo` | `5` | Máximo de ofertas com copy por IA em cada rodada do radar (as demais usam o banco de frases) |
+| `copy.ia_api` | `https://api.anthropic.com/v1/messages` | Endereço da Claude API (não altere; usado em testes) |
 | `publicar.plataformas` | `wag,wac,x` | Quais textos prontos enviar ao aprovar: wag (Grupo WhatsApp), wac (Canal WhatsApp), x (X/Twitter). Use só wag para focar em Telegram + Grupo WhatsApp |
 | `divulgar.auto_diario` | `sim` | sim/nao: divulga automaticamente 1x ao dia (22h05) o hub dos seus canais para estimular entradas cruzadas |
 | `canais.auto_vincular` | `sim` | sim/nao: ao adicionar o bot publicador como admin num canal novo, identifica a categoria pelo nome, liga o canal, cria convite, coloca bio e fixa boas-vindas sozinho |

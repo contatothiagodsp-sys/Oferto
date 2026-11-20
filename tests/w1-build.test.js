@@ -60,7 +60,8 @@ test('P1-06: nós HTTP fora do portão são só leituras GET ou a API da Shopee'
       const u = urlDe(n);
       assert.ok(!/telegram|whatsapp|bot_token/i.test(u), `${arq}: "${n.name}" tem URL de Telegram/WhatsApp fora do portão`);
       const m = n.parameters.method || 'GET';
-      assert.ok(m === 'GET' || (m === 'POST' && u === '={{ $json.http.url }}' && /shopee/i.test(n.name)), `${arq}: "${n.name}" faz ${m} fora do portão`);
+      // POST fora do portão só para APIs que não publicam nada: Shopee (links) e Claude API (frase de tom do post).
+      assert.ok(m === 'GET' || (m === 'POST' && u === '={{ $json.http.url }}' && /shopee|copy ia/i.test(n.name)), `${arq}: "${n.name}" faz ${m} fora do portão`);
     }
   }
 });
