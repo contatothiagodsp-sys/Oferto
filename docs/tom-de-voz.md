@@ -66,9 +66,10 @@ oferta (título + categoria + preço/cupom)
    │       aprovada: links_manuais.copy_ia (Telegram, WhatsApp e reedições usam a mesma frase)
    │       erro / timeout / recusa / reprovada: links_manuais.copy_ia_falha com o motivo
    │
-   └──► 3. Fallback ── fraseNicho()                                     lib/tom.js
-           banco por nicho/subnicho e contexto; com especificação no título (hardware/tech),
-           frase de upgrade da spec; escolha fixa por produto (mesmo produto, mesma frase)
+   └──► 3. Banco de frases com memória ── atribuirCopyRadar / atribuirCopyEntrada    lib/tom.js
+           candidatasCopy(): frases únicas + combinações abertura × fecho do contexto (dezenas por produto)
+           escolherCopy(): a menos repetida contra as ofertas recentes e o próprio lote, preferindo as
+           que citam o grupo, o fandom, o lightstick ou a spec; fixada em links_manuais.copy_tom
    │
    ▼
 linhaCopy() → textoTelegram / textoWhatsAppGrupo / textoWhatsAppCanal (abaixo do título)
@@ -79,10 +80,36 @@ resumoCopy() → card de aprovação: "Tom (K-pop · BTS · IA): …" ou "… ·
 
 | Workflow | Ponto | Nós |
 |---|---|---|
-| 01 · roteador (link colado / `/oferta`) | depois de `Juntar mercado oferta`, antes de gravar a oferta | `Pedir copy IA` → `Gerar copy IA?` → `Copy IA (Claude)` → `Juntar copy IA` |
-| 04 · radar (publicação automática) | depois de `Auto radar?`, antes de `Publicar lote radar` | `Pedir copy radar` → `Gerar copy radar?` → `Itens copy radar` → `Copy IA radar` → `Juntar copy radar` |
+| 01 · roteador (link colado / `/oferta`) | depois de `Juntar mercado oferta`, antes de gravar a oferta | `Frases recentes` (bfx_ofertas, 2 dias) → `Pedir copy IA` → `Gerar copy IA?` → `Copy IA (Claude)` → `Juntar copy IA` (IA + frase do banco fixada) |
+| 04 · radar | `Finalizar radar` fixa a frase do banco de cada oferta do lote contra as `Ofertas recentes` (4 dias) | `atribuirCopyRadar(finalizarRadar(…), ofertas)` |
+| 04 · radar (publicação automática, IA) | depois de `Auto radar?`, antes de `Publicar lote radar` | `Pedir copy radar` → `Gerar copy radar?` → `Itens copy radar` → `Copy IA radar` → `Juntar copy radar` |
 
 O system prompt fica em `SYSTEM_COPY` ([lib/tom-ia.js](../lib/tom-ia.js)) e o `npm run build` embute esse texto nos nós acima. Os nós HTTP usam `onError: continueRegularOutput` e `timeout` (`copy.ia_timeout_ms`): se a IA falhar, o fluxo segue com o banco de frases. A chave vai direto da configuração para o cabeçalho `x-api-key` e não passa pelos itens da execução. No radar, só as `copy.ia_max_por_ciclo` primeiras ofertas de cada rodada vão para a IA.
+
+### Variedade: combinações e memória
+
+Um grupo de ofertas lê vários posts seguidos, então frase repetida mata a curadoria. Foi o que aconteceu às 21:48 de 20/11: dois lightsticks no mesmo lote saíram com a mesma frase. Por isso:
+
+- **Combinações.** Cada sub-nicho tem 5 a 12 **aberturas** que criam laço com a turma ("Pra não ser o único MOA sem luz no show.", "Quem é ENGENE sabe a dor de ver a coleção incompleta.", "Analógico puxando sozinho? Tá na hora de aposentar."). Cada nicho tem 5 a 6 **fechos** por contexto (neutro, queda verificada, cupom). Abertura + fecho vira uma mensagem de duas frases curtas. Além disso entram as frases únicas do banco e as frases da especificação do título. Isso dá de 17 a 85 frases possíveis por produto e contexto (cerca de 3.900 em 36 produtos de teste × 3 contextos). Combinações que repetem uma palavra forte ("próximo show… próximo show") são descartadas.
+- **Laço com a turma.** O K-pop usa o nome do grupo, o do fandom (ARMY, STAY, MOA, CARAT, ENGENE, MIDZY…) e o apelido do lightstick quando é consagrado (ARMY Bomb, Carat Bong, Candybong, Nachimbong, Lightiny, Moabong, Neobong). Integrantes do BTS com álbum solo aparecem pelo nome (j-hope, Jungkook, Jimin, Agust D, V). Quando há empate de repetição, ganha a frase que cita a turma ou a especificação.
+- **Memória.** `escolherCopy()` pontua cada frase pelo uso recente de cada peça: frase inteira (peso 100), frase única do mesmo modelo (40), abertura (12), duas primeiras palavras (6) e fecho (3). A comparação é pelo **modelo**, então "Alô, ARMY!" e "Alô, STAY!" contam como a mesma abertura. O radar considera as ofertas dos últimos 4 dias e as já escolhidas no mesmo lote; o roteador considera as dos últimos 2 dias.
+- **Frase fixada.** A escolhida vai para `links_manuais.copy_tom`. A aprovação, o post, o WhatsApp e as reedições do guardião usam a mesma frase. Se o contexto mudar (o preço voltou ao normal e a frase dizia "nesse valor"), ela é revalidada e trocada por uma frase válida.
+- **IA.** A ficha leva as frases que já saíram no mesmo nicho (recentes e do lote), e o prompt pede para não repetir abertura, estrutura nem expressões e para falar como alguém da turma.
+
+Simulação de três lotes seguidos (código atual, IA desligada):
+
+```
+21:48  j-hope – Album Hope on the Street    Abrir álbum do j-hope é terapia, a gente sabe. Nesse valor a coleção cresce sem culpa.
+21:48  Light Stick – BOYNEXTDOOR            Show do BOYNEXTDOOR sem lightstick não é a mesma coisa.
+21:48  Light Stick Ver.2 – TXT              O Moabong é daqueles itens que todo MOA sonha em ter. Baixou bem pra quem tava juntando pro show.
+21:48  ITZY – Album Gold                    MIDZY, olha o que apareceu por aqui. Já salva pra não esquecer.
+21:50  Light Stick Ver.3 – Stray Kids       Pra não ser o único STAY sem luz no próximo show.
+21:50  SEVENTEEN – Light Stick Ver.3        CARAT, bora deixar o lightstick pronto pro show? Baixou o suficiente pra sair da wishlist.
+21:50  BTS – Album Proof                    Pra ARMY que ainda não tem esse na estante. Nesse preço a wishlist agradece.
+21:52  ENHYPEN – Romance Untold             Quem é ENGENE sabe a dor de ver a coleção incompleta. Quem tava esperando baixar, chegou a vez.
+21:52  Controle DualSense                   Analógico puxando sozinho? Tá na hora de aposentar. Nesse valor sobra pro próximo jogo.
+21:52  Monitor LG 27" 180Hz                 180Hz pra parar de jogar no 60Hz. Baixou e merece atenção.
+```
 
 ### Validação (IA e banco)
 
@@ -103,7 +130,7 @@ Emojis e aspas das pontas são removidos. Medicamentos não ganham frase. Saúde
 
 `SYSTEM_COPY` define a persona (quem garimpa e manda os achados no grupo), as quatro diretrizes acima, os limites de publicidade, a regra de **perfumaria e itens de gosto pessoal** e a **régua de naturalidade** com os exemplos aprovados (few-shot). Para perfume, a régua tem três exemplos: árabe não reconhecido com desconto, árabe não reconhecido a preço normal e Lattafa Khamrah reconhecido.
 
-A mensagem do usuário é a **ficha do produto**: nome enxuto, loja, nicho/subnicho, público, jeito de falar, dores e motivos de compra, vocabulário do nicho, o que evitar, grupo/fandom, especificações do título, o momento da oferta e duas frases do banco para aquele contexto. O momento diz se pode ou não falar de preço. Em perfumaria, a ficha também repete a regra de gosto pessoal. A ficha não leva valores.
+A mensagem do usuário é a **ficha do produto**: nome enxuto, loja, nicho/subnicho, público, jeito de falar, dores e motivos de compra, vocabulário do nicho, o que evitar, grupo/fandom, especificações do título, o momento da oferta, duas frases do banco para aquele contexto e até 10 frases que já saíram no nicho, para não repetir. O momento diz se pode ou não falar de preço. Em perfumaria, a ficha também repete a regra de gosto pessoal. A ficha não leva valores.
 
 A resposta vem em JSON (`output_config.format` com o schema `{ copy }`), com `effort: low`. Nos modelos que aceitam, o pedido inclui `fallbacks: "default"` para o caso de recusa.
 
@@ -120,7 +147,7 @@ A resposta vem em JSON (`output_config.format` com o schema `{ copy }`), com `ef
 
 ## Exemplos de saída (banco de frases)
 
-Gerados pelo código com a IA desligada. Mostra só o nome do produto e a frase.
+Frases únicas do banco, uma possibilidade entre dezenas por produto (a escolhida em cada post depende do que saiu antes). Mostra só o nome do produto e a frase.
 
 | Produto | Contexto | Frase |
 |---|---|---|
@@ -149,7 +176,8 @@ No WhatsApp a frase entra na mesma posição, logo abaixo do `*nome do produto*`
 
 ## Como ampliar
 
-- **Novo nicho ou subnicho:** uma regra em `REGRAS_NICHO`, um perfil em `PERFIS` (com `dores`) e um bloco em `BANCO`, com frases `neutro` e, se fizer sentido, `queda` e `cupom`. O teste "banco de frases" valida cada frase no próprio contexto.
-- **Novo grupo de K-pop:** uma linha em `GRUPOS_KPOP` (id, nome de exibição, fandom, regex).
-- **Nova especificação:** um caso em `especificacoes()` e as frases `neutro`/`queda` em `FRASES_SPEC`, falando do upgrade e não do que a spec faz.
+- **Novo nicho ou subnicho:** uma regra em `REGRAS_NICHO`, um perfil em `PERFIS` (com `dores`), frases únicas em `BANCO` e aberturas (e, se quiser, fechos próprios) em `COMBO`. Os testes validam cada peça no próprio contexto e exigem pelo menos 20 frases possíveis por produto e contexto nos produtos de referência.
+- **Mais variedade:** acrescente aberturas em `COMBO[nicho].subs[sub].aberturas` (sem preço, falando com a turma) ou fechos em `COMBO[nicho].fechos` (por contexto). Cada abertura nova multiplica pelo número de fechos.
+- **Novo grupo de K-pop:** uma linha em `GRUPOS_KPOP` (id, nome de exibição, fandom, regex) e, se o lightstick tiver apelido consagrado, em `NOMES_LIGHTSTICK`.
+- **Nova especificação:** um caso em `especificacoes()` e as frases em `FRASES_SPEC` (`unicas` por contexto e `aberturas`), falando do upgrade e não do que a spec faz.
 - **Ajustar a régua da IA:** os exemplos ficam no fim de `SYSTEM_COPY`. Depois de mudar, rode `npm run build` para atualizar os workflows.

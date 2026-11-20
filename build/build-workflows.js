@@ -892,15 +892,20 @@ return [{ json: LIB.juntarMercadoOferta(e, resp, cfg) }];`, { lib: true }), 3440
   wf.chain('Itens mercado oferta', 'Checar mercado oferta', 'Juntar mercado oferta');
   wf.link('Consultar mercado oferta?', 'Juntar mercado oferta', 1);
   // Copy no tom do nicho: com copy.ia = sim, a Claude API escreve a frase; sem IA (ou falha) vale o banco de frases.
+  // Ofertas dos últimos 2 dias: a frase do post evita repetir abertura/fecho/frase do que já saiu.
+  wf.add(dtGet('Frases recentes', 'bfx_ofertas', [['ts', 'gte', '={{ Date.now() - 2 * 86400000 }}']]), 3550, -100);
   wf.add(code('Pedir copy IA', `
-return [{ json: { http: LIB.pedidoCopyIA(($input.first().json || {}).oferta, cfg) } }];`, { lib: true, nota: 'Monta o pedido da frase de tom (null quando copy.ia está desligada ou o nicho é sensível).' }), 3660, -100);
+const e = $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
+const recentes = $('Frases recentes').all().map((i) => i.json).filter((r) => r.oferta_id);
+return [{ json: { http: LIB.pedidoCopyIA((e || {}).oferta, cfg, LIB.frasesRecentes(recentes, (e || {}).oferta || {}, 10)) } }];`, { lib: true, nota: 'Monta o pedido da frase de tom (null quando copy.ia está desligada ou o nicho é sensível).' }), 3660, -100);
   wf.add(switchExpr('Gerar copy IA?', '$json.http ? 0 : 1', 2), 3770, -100);
   wf.add(httpCopyIA('Copy IA (Claude)'), 3880, -180);
   wf.add(code('Juntar copy IA', `
 const e = $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
 const resp = $('Copy IA (Claude)').isExecuted ? $('Copy IA (Claude)').first().json : null;
-return [{ json: LIB.aplicarCopyIA(e, resp, cfg, Date.now()) }];`, { lib: true, nota: 'Valida a frase da IA e grava em links_manuais.copy_ia (reprovada/timeout: fica o banco de frases).' }), 4100, -100);
-  wf.link('Juntar mercado oferta', 'Pedir copy IA');
+const recentes = $('Frases recentes').all().map((i) => i.json).filter((r) => r.oferta_id);
+return [{ json: LIB.atribuirCopyEntrada(LIB.aplicarCopyIA(e, resp, cfg, Date.now()), recentes) }];`, { lib: true, nota: 'Valida a frase da IA (copy_ia) e fixa a frase do banco escolhida contra repetição (copy_tom).' }), 4100, -100);
+  wf.chain('Juntar mercado oferta', 'Frases recentes', 'Pedir copy IA');
   wf.chain('Pedir copy IA', 'Gerar copy IA?');
   wf.link('Gerar copy IA?', 'Copy IA (Claude)', 0);
   wf.link('Copy IA (Claude)', 'Juntar copy IA');
@@ -1547,7 +1552,8 @@ const respPag = est.reqsPag.length && $('${N('Enxugar páginas radar')}').isExec
 const respMerc = (est.reqsMercado || []).length && $('${N('Enxugar mercado radar')}').isExecuted ? $('${N('Enxugar mercado radar')}').all().map((i) => i.json) : [];
 const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
-const fin = LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag, respMerc);
+// Frase de tom fixada em cada oferta do lote, diferente das recentes e das outras do lote.
+const fin = LIB.atribuirCopyRadar(LIB.finalizarRadar(est, [], ofertas, precos, cfg, respPag, respMerc), ofertas);
 if (typeof $getWorkflowStaticData === 'function') {
   const sd = $getWorkflowStaticData('global');
   sd.radar_descartes = LIB.atualizarDescartesRadar(sd.radar_descartes, fin.resumo.descartadas, (est.opcoes || {}).ts);
@@ -1571,7 +1577,8 @@ return f.autoPlanos && f.autoPlanos.length ? [{ json: f }] : [];`, { cfg: false 
   wf.add(httpShopee(N('Shopee: links radar')), x + 6820, y + 60);
   // Copy no tom do nicho para as ofertas que vão ao ar nesta rodada (até copy.ia_max_por_ciclo).
   wf.add(code(N('Pedir copy radar'), `
-return [{ json: { pedidos: LIB.pedidosCopyIARadar($('${N('Finalizar radar')}').first().json, cfg) } }];`, { lib: true }), x + 6215, y + 300);
+const recentes = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r) => r.oferta_id);
+return [{ json: { pedidos: LIB.pedidosCopyIARadar($('${N('Finalizar radar')}').first().json, cfg, recentes) } }];`, { lib: true }), x + 6215, y + 300);
   wf.add(switchExpr(N('Gerar copy radar?'), '$json.pedidos.length > 0 ? 0 : 1', 2), x + 6230, y + 300);
   wf.add(itens(N('Itens copy radar'), `$('${N('Pedir copy radar')}').first().json.pedidos`), x + 6245, y + 380);
   wf.add(httpCopyIA(N('Copy IA radar')), x + 6255, y + 380);

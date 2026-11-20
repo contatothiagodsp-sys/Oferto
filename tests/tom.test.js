@@ -90,6 +90,82 @@ test('banco de frases: toda frase passa na validação do próprio contexto, sem
   assert.ok(total >= 70, `banco pequeno demais (${total})`);
 });
 
+test('combinações: toda abertura e todo fecho passam sozinhos; cada sub-nicho rende dezenas de frases por contexto', () => {
+  const grupo = { id: 'bts', nome: 'BTS', fandom: 'ARMY' };
+  const encher = (f) => f.replace(/\{grupo\}/g, grupo.nome).replace(/\{fandom\}/g, grupo.fandom).replace(/\{bastao\}/g, 'ARMY Bomb');
+  for (const [nicho, cn] of Object.entries(T.COMBO_COPY)) {
+    for (const [ctx, lista] of Object.entries(cn.fechos)) {
+      for (const f of lista) {
+        const v = T.validarCopy(`Achado bom aqui. ${encher(f)}`, Object.assign({ categoria: nicho }, OFERTA_CTX[ctx]));
+        assert.ok(v.ok, `${nicho}/fecho/${ctx}: "${f}" (${v.motivo})`);
+      }
+    }
+    for (const [sub, s] of Object.entries(cn.subs)) {
+      for (const a of s.aberturas) {
+        // Abertura sempre sai com um fecho; valida com um fecho neutro curto (cobre as aberturas curtas, como "Alô, ARMY!").
+        const v = T.validarCopy(`${encher(a)} Vale conferir.`, Object.assign({ categoria: nicho }, OFERTA_CTX.neutro));
+        assert.ok(v.ok, `${nicho}/${sub}: abertura "${a}" reprovada (${v.motivo})`);
+      }
+    }
+  }
+  // Quantidade de frases possíveis (válidas, já com o tamanho máximo) por produto e contexto.
+  const produtos = [
+    ['Album BTS Proof Standard Edition', 'kpop'], ['Official Light Stick Ver.2 - TXT', 'kpop'], ['Controle Sem Fio PS5 DualSense', 'tech'],
+    ['Monitor Gamer LG 27" 180Hz', 'tech'], ['Fritadeira Air Fryer Mondial 4L', 'casa'], ['Perfume Lattafa Khamrah EDP 100ml', 'perfumes'],
+    ['Tênis de Corrida Asics Novablast 4', 'moda'], ['Fralda Pampers Confort Sec XG 76 Unidades', 'bebe'],
+  ];
+  for (const [titulo, categoria] of produtos) {
+    for (const [ctx, extra] of Object.entries({ neutro: {}, queda: { preco: 100, preco_de: 160 }, cupom: { cupom: 'X' } })) {
+      const n = T.candidatasCopy(of(titulo, Object.assign({ categoria }, extra))).length;
+      assert.ok(n >= 20, `${titulo} (${ctx}): só ${n} frases possíveis`);
+    }
+  }
+  assert.ok(T.candidatasCopy(of('Album BTS Proof Standard Edition', { categoria: 'kpop', preco: 100, preco_de: 160 })).length >= 50);
+});
+
+test('variedade: lote do radar e posts recentes não repetem frase, abertura nem fecho', () => {
+  // Caso real (21:48): dois lightsticks no mesmo lote saíram com a mesma frase.
+  const txt = of('Official Light Stick Ver.2 - TXT', { oferta_id: 'L1', produto_id: 'p1', categoria: 'kpop', preco: 562, preco_de: 666 });
+  const bnd = of('Official Light Stick Set - Boynextdoor', { oferta_id: 'L2', produto_id: 'p2', categoria: 'kpop', preco: 747, preco_de: 886 });
+  assert.equal(T.detectarNicho(bnd).sub, 'lightstick');
+  const fin = T.atribuirCopyRadar({ autoPlanos: [{ oferta: txt }, { oferta: bnd }], ofertasNovas: [Object.assign({}, txt, { links_manuais: '{}' })] }, []);
+  const [c1, c2] = fin.autoPlanos.map((p) => p.oferta.links_manuais.copy_tom);
+  assert.notEqual(c1.texto, c2.texto);
+  const pref = (c, p) => c.chaves.filter((k) => k.startsWith(p));
+  assert.ok(!pref(c1, 'a:').some((k) => pref(c2, 'a:').includes(k)), 'aberturas diferentes no mesmo lote');
+  assert.ok(!pref(c1, 'z:').some((k) => pref(c2, 'z:').includes(k)), 'fechos diferentes no mesmo lote');
+  // A linha da bfx_ofertas recebe a mesma frase do plano (aprovação e reedição usam a mesma).
+  assert.equal(JSON.parse(fin.ofertasNovas[0].links_manuais).copy_tom.texto, c1.texto);
+  // O post usa a frase fixada.
+  assert.equal(T.linhaCopy(fin.autoPlanos[0].oferta, cfgTom()), c1.texto);
+
+  // Lote grande do mesmo nicho: nenhuma frase repetida e aberturas bem espalhadas.
+  const grupos = ['BTS', 'Stray Kids', 'TWICE', 'SEVENTEEN', 'ENHYPEN', 'ATEEZ', 'TXT', 'NCT', 'ITZY', 'aespa'];
+  const lote = [];
+  for (let i = 0; i < 30; i++) {
+    const g = grupos[i % grupos.length];
+    const tipo = i % 3 === 0 ? `Official Light Stick - ${g}` : `${g} - Album Mini ${i} Ver. A`;
+    lote.push({ oferta: of(tipo, { oferta_id: 'K' + i, produto_id: 'k' + i, categoria: 'kpop', preco: 100, preco_de: i % 2 ? 160 : 100 }) });
+  }
+  const fl = T.atribuirCopyRadar({ autoPlanos: lote, ofertasNovas: [] }, []);
+  const textos = fl.autoPlanos.map((p) => p.oferta.links_manuais.copy_tom.texto);
+  assert.equal(new Set(textos).size, textos.length, 'nenhuma frase repetida no lote de 30');
+  const contagem = {};
+  for (const p of fl.autoPlanos) for (const k of p.oferta.links_manuais.copy_tom.chaves.filter((x) => x.startsWith('a:'))) contagem[k] = (contagem[k] || 0) + 1;
+  assert.ok(Math.max(...Object.values(contagem)) <= 3, 'nenhuma abertura usada mais de 3 vezes em 30 posts');
+
+  // Memória entre lotes: o que saiu nas ofertas recentes não volta no próximo post parecido.
+  const recente = Object.assign({}, txt, { oferta_id: 'R0', ts: 1, links_manuais: JSON.stringify({ copy_tom: c1 }) });
+  const seguinte = T.atribuirCopyEntrada({ oferta: Object.assign({}, txt, { oferta_id: 'L9' }) }, [recente]);
+  assert.notEqual(seguinte.oferta.links_manuais.copy_tom.texto, c1.texto);
+  // Mesmo produto e mesmo histórico: mesma escolha (determinístico).
+  assert.equal(T.atribuirCopyEntrada({ oferta: Object.assign({}, txt) }, [recente]).oferta.links_manuais.copy_tom.texto, seguinte.oferta.links_manuais.copy_tom.texto);
+  // Frase fixada que deixou de valer (preço voltou ao normal) cai para uma frase válida do contexto atual.
+  const voltou = Object.assign({}, fin.autoPlanos[0].oferta, { preco_de: undefined });
+  const lv = T.linhaCopy(voltou, cfgTom());
+  assert.ok(lv && T.validarCopy(lv, voltou).ok);
+});
+
 test('fallback: frase determinística por produto, varia entre produtos e respeita o contexto', () => {
   const a1 = T.linhaCopy(of('Album BTS Proof Standard Edition', { produto_id: 'A' }), cfgTom());
   const a2 = T.linhaCopy(of('Album BTS Proof Standard Edition', { produto_id: 'A' }), cfgTom());
@@ -97,19 +173,17 @@ test('fallback: frase determinística por produto, varia entre produtos e respei
   assert.match(a1, /BTS|ARMY|K-pop|coleç/i);
   const variadas = new Set(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].map((id) => T.linhaCopy(of('Album BTS Proof', { produto_id: id }), cfgTom())));
   assert.ok(variadas.size >= 3, 'produtos diferentes devem variar a frase');
-  // Queda verificada (preço "De:" da loja) usa frases de queda; sem comparação, nunca fala em preço.
-  const queda = T.linhaCopy(of('Album BTS Proof', { produto_id: 'Q', preco: 100, preco_de: 160 }), cfgTom());
-  assert.match(queda, /valor|baixou|enrolando/i);
-  for (const id of ['A', 'B', 'C', 'D', 'E', 'F']) {
-    assert.doesNotMatch(T.linhaCopy(of('Album BTS Proof', { produto_id: id }), cfgTom()), /valor|preço|baixou|cupom/i, 'sem comparação, não elogia preço');
-  }
-  // Especificação do título vira frase de upgrade, não explicação técnica.
-  assert.equal(T.linhaCopy(of('Monitor Gamer LG 27" 180Hz', { preco: 899, preco_de: 1199 }), cfgTom()),
-    '180Hz por esse valor é a deixa pra aposentar o monitor de 60Hz de vez.');
-  assert.equal(T.linhaCopy(of('Monitor Gamer LG 27" 180Hz'), cfgTom()), '180Hz é a deixa pra aposentar o monitor de 60Hz de vez.');
-  assert.match(T.linhaCopy(of('SSD Kingston NV2 1TB NVMe M.2'), cfgTom()), /HD/);
-  // Cupom sem frase própria usa as de queda.
-  assert.match(T.linhaCopy(of('Controle Sem Fio PS5 DualSense', { cupom: 'GAME10' }), cfgTom()), /cupom.*drift/i);
+  // Queda verificada abre as frases de oportunidade; sem comparação, nenhuma candidata fala de preço.
+  const comPreco = (o) => T.candidatasCopy(o).filter((c) => /valor|preço|baixou|baixar|enrolando/i.test(c.texto)).length;
+  assert.ok(comPreco(of('Album BTS Proof', { categoria: 'kpop', preco: 100, preco_de: 160 })) >= 10);
+  assert.equal(T.candidatasCopy(of('Album BTS Proof', { categoria: 'kpop' })).filter((c) => /valor|preço|baixou|cupom/i.test(c.texto)).length, 0);
+  // Especificação do título entra como upgrade (60Hz, HD lento), nunca como explicação técnica.
+  const monitor = T.candidatasCopy(of('Monitor Gamer LG 27" 180Hz', { preco: 899, preco_de: 1199 })).map((c) => c.texto);
+  assert.ok(monitor.includes('180Hz por esse valor é a deixa pra aposentar o monitor de 60Hz de vez.'));
+  assert.ok(monitor.every((t) => !/deixa o movimento|mais fluido/i.test(t)));
+  assert.ok(T.candidatasCopy(of('SSD Kingston NV2 1TB NVMe M.2')).some((c) => /HD/.test(c.texto)));
+  // Cupom: há frases que citam o cupom.
+  assert.ok(T.candidatasCopy(of('Controle Sem Fio PS5 DualSense', { cupom: 'GAME10' })).some((c) => /cupom/i.test(c.texto) && /drift|controle|partida|jogatina/i.test(c.texto)));
   // Medicamento: nenhuma linha extra.
   assert.equal(T.linhaCopy(of('Dipirona 500mg 10 comprimidos', { categoria: 'saude' }), cfgTom()), '');
   // copy.tom = nao desliga a camada.
@@ -217,7 +291,7 @@ test('integração nos textos: frase da IA entra no Telegram, no WhatsApp e no c
   assert.equal(falhou.oferta.links_manuais.copy_ia_falha, 'timeout');
   const tgFalha = L.textoTelegram(falhou.oferta, 'https://amzn.to/x', cfg);
   const linhaFalha = tgFalha.split('\n')[tgFalha.split('\n').findIndex((l) => /Air Fryer/.test(l)) + 1];
-  assert.match(linhaFalha, /pia|louça|fritura/i, 'fallback do banco de frases no lugar da IA');
+  assert.ok(T.candidatasCopy(falhou.oferta).some((c) => c.texto === linhaFalha), 'fallback do banco de frases no lugar da IA');
   assert.match(L.cardAprovacao(falhou.oferta, cfg).text, /banco de frases · IA: timeout/);
 
   // IA desligada: a entrada passa intacta (sem marcar falha).
@@ -272,7 +346,10 @@ test('workflows: copy por IA no roteador (antes de gravar a oferta) e no radar (
   const http = no(router, 'Copy IA (Claude)');
   assert.ok(http && http.onError === 'continueRegularOutput', 'falha da IA não para o fluxo');
   assert.match(http.parameters.jsonHeaders, /'x-api-key': \$\('Config'\)\.first\(\)\.json\.cfg\.copy\.ia_chave/);
-  assert.deepEqual(saidas(router, 'Juntar mercado oferta'), ['Pedir copy IA']);
+  assert.deepEqual(saidas(router, 'Juntar mercado oferta'), ['Frases recentes']);
+  assert.deepEqual(saidas(router, 'Frases recentes'), ['Pedir copy IA']);
+  assert.match(no(router, 'Juntar copy IA').parameters.jsCode, /atribuirCopyEntrada/);
+  assert.match(no(radar, 'Finalizar radar').parameters.jsCode, /atribuirCopyRadar\(LIB\.finalizarRadar\(/);
   assert.deepEqual(saidas(router, 'Juntar copy IA'), ['Histórico do produto']);
   assert.match(no(router, 'Avaliar oferta').parameters.jsCode, /\$\('Juntar copy IA'\)/);
   assert.ok(no(radar, 'Copy IA radar'));
@@ -305,11 +382,11 @@ test('perfumaria: sem promessa de performance nem blind buy no banco, no validad
     for (const f of Object.values(ctxs).flat()) assert.doesNotMatch(f, RE_PERF, `perfumes/${sub}: "${f}"`);
   }
   // Frases de referência pedidas para o banco árabe.
-  const arabe = (extra) => T.linhaCopy(of('Perfume Lattafa Khamrah Eau de Parfum 100ml', Object.assign({ categoria: 'perfumes' }, extra)), cfgTom());
-  const neutras = new Set(['A', 'B', 'C', 'D', 'E', 'F'].map((id) => arabe({ produto_id: id })));
-  assert.ok(neutras.has('Mais um da leva de perfumaria árabe que costuma chamar atenção na coleção.'));
-  const quedas = new Set(['A', 'B', 'C', 'D', 'E', 'F'].map((id) => arabe({ produto_id: id, preco: 100, preco_de: 160 })));
-  assert.ok(quedas.has('Pra quem curte perfumaria árabe e tava esperando baixar pra colocar na coleção.'));
+  const arabe = (extra) => T.candidatasCopy(of('Perfume Lattafa Khamrah Eau de Parfum 100ml', Object.assign({ categoria: 'perfumes' }, extra))).map((c) => c.texto);
+  assert.ok(arabe({}).includes('Mais um da leva de perfumaria árabe que costuma chamar atenção na coleção.'));
+  assert.ok(arabe({ preco: 100, preco_de: 160 }).includes('Pra quem curte perfumaria árabe e tava esperando baixar pra colocar na coleção.'));
+  // Nenhuma das combinações possíveis de perfume promete performance ou compra às cegas.
+  for (const ctx of [{}, { preco: 100, preco_de: 160 }, { cupom: 'X' }]) for (const t of arabe(ctx)) assert.doesNotMatch(t, RE_PERF, t);
 
   // Validador: performance e compra às cegas reprovadas em perfume; "blind buy sem medo" em qualquer nicho.
   const perfume = of('Perfume Lattafa Khamrah EDP 100ml', { categoria: 'perfumes', preco: 100, preco_de: 160 });
@@ -337,4 +414,23 @@ test('perfumaria: sem promessa de performance nem blind buy no banco, no validad
 
   // Resposta da IA prometendo performance cai no fallback.
   assert.match(T.lerCopyIA(respClaude('Projeção absurda saindo por esse valor, blind buy sem medo'), perfume).motivo, /reprovada/);
+});
+
+test('IA: prompt pede variedade e laço com a turma; a ficha leva as frases que já saíram (recentes + lote)', () => {
+  assert.match(T.SYSTEM_COPY, /Cada post precisa soar diferente/);
+  assert.match(T.SYSTEM_COPY, /Crie laço com quem lê/);
+  const cfg = cfgIA();
+  const a = of('Album BTS Proof Standard Edition', { oferta_id: 'A1', produto_id: 'a1', categoria: 'kpop', preco: 100, preco_de: 160 });
+  const b = of('Stray Kids - Album Mini Ver. A', { oferta_id: 'A2', produto_id: 'a2', categoria: 'kpop', preco: 100, preco_de: 160 });
+  const recente = of('TWICE - Album Ver. B', { oferta_id: 'R1', categoria: 'kpop', ts: 5, links_manuais: JSON.stringify({ copy_ia: { texto: 'ONCE, olha isso aqui que apareceu.' } }) });
+  const perfume = of('Perfume Lattafa Yara EDP', { oferta_id: 'R2', categoria: 'perfumes', ts: 6, links_manuais: JSON.stringify({ copy_tom: { texto: 'Pra quem acompanha perfumaria árabe de perto. Vale conferir as notas antes de decidir.', chaves: [] } }) });
+  const fin = T.atribuirCopyRadar({ autoPlanos: [{ oferta: a }, { oferta: b }], ofertasNovas: [] }, [recente, perfume]);
+  const ped = T.pedidosCopyIARadar(fin, cfg, [recente, perfume]);
+  const ficha = ped[0].http.body.messages[0].content;
+  assert.match(ficha, /Frases que já saíram nos últimos posts desse nicho/);
+  assert.ok(ficha.includes('ONCE, olha isso aqui que apareceu.'), 'frase recente do mesmo nicho');
+  assert.ok(ficha.includes(fin.autoPlanos[1].oferta.links_manuais.copy_tom.texto), 'frase da outra oferta do lote');
+  assert.ok(!ficha.includes('perfumaria árabe de perto'), 'frase de outro nicho não entra');
+  // Roteador: frasesRecentes filtra pelo nicho e devolve as mais novas primeiro.
+  assert.deepEqual(T.frasesRecentes([recente, perfume], a, 5), ['ONCE, olha isso aqui que apareceu.']);
 });
