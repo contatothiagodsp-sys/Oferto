@@ -214,7 +214,8 @@ test('base por tipo: produto reconhecido fala do produto; fora da base fala do p
   };
   for (const [t, id] of Object.entries(casos)) assert.equal((P.tipoProduto(t) || { id: null }).id, id, t);
   const pasta = of('Pasta de Dente Oral B 3D White Mineral Clean com Carvão 140g', { categoria: 'saude', preco: 15.99, preco_de: 23.99 });
-  assert.ok(P.tipoProduto(pasta.titulo).frases.some((f) => T.fraseNicho(pasta).startsWith(f.replace(/\.$/, ''))), T.fraseNicho(pasta));
+  const escolhida = T.escolherCopy(pasta);
+  assert.equal(escolhida.estrutura, 'tipo_produto', escolhida.texto);
   const fora = of('Varal de Chão Dobrável Aço', { categoria: 'casa', preco: 80, preco_de: 100 });
   const cands = T.candidatasCopy(fora);
   assert.ok(cands.length >= 15, `fora da base com pouca variação: ${cands.length}`);
@@ -243,4 +244,25 @@ test('linguagem do público geral: sem wishlist, backlog, setup, drift, call…;
   const antiga = of('Perfume Lattafa Khamrah 100ml', { categoria: 'perfumes', links_manuais: { copy_tom: { texto: 'Nesse valor sai fácil da wishlist.', chaves: [] } } });
   assert.doesNotMatch(T.linhaCopy(antiga, {}, false), /wishlist/i);
   assert.match(T.SYSTEM_COPY || require('../lib/tom-ia').SYSTEM_COPY, /lista de desejos/);
+});
+
+test('expansão: tipos rendem 10x+ (dor/uso × conclusão), K-pop cobre solistas e fandoms, perfume conhecido cita a proposta', () => {
+  const cel = T.candidatasCopy(of('Smartphone Samsung Galaxy A35', { categoria: 'tech' }));
+  assert.ok(cel.length >= 250, `celular só com ${cel.length}`);
+  assert.ok(cel.some((c) => /\? Um celular novo/.test(c.texto)));
+  const X = require('../lib/tipos-produto-extra');
+  const P = require('../lib/tipos-produto');
+  for (const tp of P.TIPOS_PRODUTO) assert.ok(X.EXTRA_TIPOS[tp.id], `tipo sem dores/usos: ${tp.id}`);
+  for (const id of Object.keys(X.EXTRA_TIPOS)) {
+    for (const f of X.frasesCombinadasTipo(id)) assert.ok(f.texto.length <= 120, f.texto);
+  }
+  for (const [t, fandom] of [['Jennie Ruby Album Ver.', 'BLINK'], ['Album MAMAMOO Reality in Black', 'MooMoo'], ['Album TREASURE Reboot Ver.', 'Teume']]) {
+    const d = T.detectarNicho(of(t, { categoria: 'kpop' }));
+    assert.equal(d.grupo && d.grupo.fandom, fandom, t);
+  }
+  const k = T.candidatasCopy(of('Perfume Lattafa Khamrah EDP 100ml', { categoria: 'perfumes' }));
+  assert.ok(k.some((c) => /Khamrah/.test(c.texto) && /adocicada e especiada/.test(c.texto)));
+  for (const c of k) assert.equal(T.validarCopy(c.texto, of('Perfume Lattafa Khamrah EDP 100ml', { categoria: 'perfumes' })).ok, true, c.texto);
+  const saude = T.candidatasCopy(of('Termômetro Digital G-Tech', { categoria: 'saude' }));
+  assert.ok(saude.length >= 100 && saude.every((c) => !/cura|trata|garante/i.test(c.texto)));
 });
