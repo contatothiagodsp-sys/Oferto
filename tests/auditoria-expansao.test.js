@@ -287,7 +287,7 @@ test('Bloco B + Oficial Farma: Shopify KpopAlbums (BRL + envio internacional), M
   assert.ok(RF.UMUSIC_VTEX_BUSCAS.some((u) => u.includes('ft=blackpink')));
   assert.ok(RF.UMUSIC_VTEX_BUSCAS.some((u) => u.includes('ft=lisa')));
   assert.ok(RF.UMUSIC_VTEX_BUSCAS.some((u) => u.includes('ft=jennie')));
-  for (const cat of ['perfumes', 'beleza', 'saude', 'bebe', 'moda', 'casa', 'tech']) {
+  for (const cat of ['saude', 'auto', 'beleza', 'tech', 'bebe', 'casa', 'moda', 'pet', 'livros', 'papelaria', 'mercado']) {
     assert.ok(RF.BUSCAS_AMAZON_NICHO.some((q) => q.cat === cat), `BUSCAS_AMAZON_NICHO deve cobrir ${cat}`);
   }
 });

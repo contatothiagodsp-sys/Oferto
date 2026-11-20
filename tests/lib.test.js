@@ -181,7 +181,7 @@ test('textos: todos com aviso de afiliado; X ≤ 280', () => {
   assert.doesNotMatch(wag, /RELÂMPAGO|acabar|corra|últimas/i, 'sem urgência falsa');
   const x = L.textoX(oferta, cfg);
   assert.ok(x.length <= 280 && L.tamanhoX(x) <= 280, `X com ${L.tamanhoX(x)}`);
-  assert.match(x, /^#publi/);
+  assert.match(x, /#publi$/);
   assert.match(L.textoXResposta('https://l/x'), /afiliado/);
   assert.doesNotMatch(tg, /Cupom/);
   assert.equal(L.botaoCompra(oferta, 'https://l/tg'), undefined);
@@ -192,7 +192,9 @@ test('textos: #publi na 1ª linha, aviso de preço, selo honesto e cobertura do 
   const base = { titulo: 'Air Fryer', preco: 349.9, min90: 399.9, desconto_pct: 12.5, loja: 'amazon', categoria: 'casa', data: new Date(AGORA).toISOString() };
   const todos = (o) => [L.textoTelegram(o, 'https://l', cfg), L.textoWhatsAppCanal(o, 'https://l', cfg), L.textoWhatsAppGrupo(o, 'https://l', cfg), L.textoX(o, cfg)];
   for (const t of todos(base)) {
-    assert.match(t.split('\n')[0], /#publi/);
+    const ls = t.split('\n');
+    assert.doesNotMatch(ls[0], /#publi/);
+    assert.match(ls[ls.length - 1], /#publi$/);
   }
   for (const t of [L.textoWhatsAppCanal(base, 'https://l', cfg), L.textoWhatsAppGrupo(base, 'https://l', cfg), L.textoX(base, cfg)]) {
     assert.match(t, /24\/11 às 12:30/);
@@ -213,9 +215,11 @@ test('textos: #publi na 1ª linha, aviso de preço, selo honesto e cobertura do 
   }
   assert.equal(L.fraseDesconto(Object.assign({}, base, { min90_dias: 90 }), cfg), '12% abaixo do menor preço dos últimos 90 dias (R$ 399,90)');
   // relâmpago no Telegram
-  assert.match(L.textoTelegram(Object.assign({}, base, { relampago: true }), 'https://l', cfg).split('\n')[0], /⚡ <b>ALERTA DE PREÇO<\/b>.*#publi/);
-  // X: link na resposta, com #publi e a frase da Amazon
-  assert.match(L.textoXResposta('https://www.amazon.com.br/dp/B0X?tag=a-20'), /#publi[\s\S]*Associado da Amazon/);
+  const tgRel = L.textoTelegram(Object.assign({}, base, { relampago: true }), 'https://l', cfg);
+  assert.match(tgRel.split('\n')[0], /⚡ <b>ALERTA DE PREÇO<\/b>/);
+  assert.match(tgRel.split('\n').pop(), /#publi$/);
+  // X: link na resposta, com a frase da Amazon e #publi no final
+  assert.match(L.textoXResposta('https://www.amazon.com.br/dp/B0X?tag=a-20'), /Associado da Amazon[\s\S]*#publi$/);
   assert.doesNotMatch(L.textoXResposta('https://s.shopee.com.br/x', { loja: 'shopee' }), /Amazon/);
 });
 
@@ -481,11 +485,11 @@ test('relatório diário e setup', () => {
   const wh = s.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'setWebhook');
   assert.deepEqual(wh.payload.allowed_updates, ['my_chat_member', 'chat_member', 'message']);
   const topicos = s.chamadas.filter((c) => c.metodo === 'createForumTopic').map((c) => c.ref.topico);
-  assert.deepEqual(topicos, ['moda', 'beleza', 'perfumes', 'saude', 'bebe', 'tech', 'kpop']); // casa e top já existem
+  assert.deepEqual(topicos, ['saude', 'auto', 'beleza', 'perfumes', 'tech', 'bebe', 'moda', 'kpop', 'pet', 'livros', 'papelaria', 'mercado']); // casa e top já existem
   const resp = s.chamadas.map((c) => (c.metodo === 'createForumTopic' ? { ok: true, result: { message_thread_id: 50 } } : { ok: true, result: { username: 'bot', title: 'G', is_forum: true } }));
   const res = L.resumoSetup(s.chamadas, resp, s.avisos, cfg);
-  assert.equal(res.topicos.length, 7);
-  assert.equal(res.topicos[0].chave, 'topico.moda');
+  assert.equal(res.topicos.length, 12);
+  assert.equal(res.topicos[0].chave, 'topico.saude');
   assert.equal(res.chamadas.length, 2); // tópico novo: avisa os 2 admins
   const semTopico = s.chamadas.filter((c) => c.metodo !== 'createForumTopic');
   const quieto = L.resumoSetup(semTopico, semTopico.map(() => ({ ok: true, result: { username: 'bot', title: 'G', is_forum: true } })), [], cfg);
@@ -578,7 +582,7 @@ test('arrumação do grupo: só com tudo pronto, fixa as mensagens e marca ok', 
   assert.doesNotMatch(seg, /Não coletamos/);
   assert.match(seg, /código[\s\S]*link de convite[\s\S]*data[\s\S]*admin/);
   assert.match(seg, /Como Associado da Amazon, ganhamos com compras qualificadas\./);
-  assert.match(a.find((c) => c.ref.chave === 'top').payload.text, /Até 5 ofertas por dia/);
+  assert.match(a.find((c) => c.ref.chave === 'top').payload.text, /Ofertas relâmpago, bugs de preço/);
 
   const respA = a.map((c, i) => (c.metodo === 'sendMessage' ? { ok: true, result: { message_id: 900 + i } } : { ok: true, result: true }));
   const b = L.fixarChamadas(a, respA, cfg);
@@ -691,7 +695,7 @@ test('/start no bot publicador: genérico, por tópico/campanha e gravação em 
   assert.equal(fim.linha.nome, 'beleza_meta1');
   const m = fim.chamadas[0];
   assert.equal(m.bot, 'grupo');
-  assert.match(m.payload.text, /💄 Bem-vindo às ofertas de Beleza & Skincare!/);
+  assert.match(m.payload.text, /💄 Bem-vindo às ofertas de Beleza & Autocuidado!/);
   assert.deepEqual(m.payload.reply_markup.inline_keyboard[0][0], { text: 'Entrar no grupo', url: 'https://t.me/+abc' });
   // convite já existe: reaproveita, sem chamar o Telegram de novo
   const reuso = L.boasVindasStart(camp, [{ nome: 'beleza_meta1', url: 'https://t.me/+abc' }], cfg);
@@ -712,7 +716,7 @@ test('/start no bot publicador: genérico, por tópico/campanha e gravação em 
   const g = L.boasVindasStart(gen, [], comLink)[0];
   assert.match(g.payload.text, /https:\/\/t\.me\/ofertoGrupo\n/);
   assert.match(g.payload.text, /Casa & Eletro: https:\/\/t\.me\/ofertoGrupo\/10/);
-  assert.match(g.payload.text, /Top do Dia: https:\/\/t\.me\/ofertoGrupo\/2/);
+  assert.match(g.payload.text, /Ofertas & Achadinhos Gerais: https:\/\/t\.me\/ofertoGrupo\/2/);
 
   // /links do admin
   assert.match(L.classificarUpdate(privado('/links', 111), HS, cfg, AGORA).chamadas[0].payload.text, /rode o 00-setup/);

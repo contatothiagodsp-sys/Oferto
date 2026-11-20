@@ -610,7 +610,7 @@ function httpCopyIA(name) {
       url: '={{ $json.http.url }}',
       sendHeaders: true,
       specifyHeaders: 'json',
-      jsonHeaders: `={{ JSON.stringify(Object.assign({}, $json.http.headers, { 'x-api-key': ${CFG}.copy.ia_chave })) }}`,
+      jsonHeaders: `={{ JSON.stringify(Object.assign({}, $json.http.headers, $json.http.auth_header && ${CFG}.copy.ia_chave ? { [$json.http.auth_header]: ($json.http.auth_prefix || '') + ${CFG}.copy.ia_chave } : ($json.http.auth_header === undefined && ${CFG}.copy.ia_chave ? { 'x-api-key': ${CFG}.copy.ia_chave } : {}))) }}`,
       sendBody: true,
       contentType: 'json',
       specifyBody: 'json',

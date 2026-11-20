@@ -213,5 +213,5 @@ test('lib/imagem.js continua embutível no n8n: sem require de pacote e sem I/O'
   const src = require('fs').readFileSync(require.resolve('../lib/imagem'), 'utf8');
   assert.ok(!/require\(/.test(src), 'não deve ter require');
   assert.ok(!/\b(process\.|fetch\(|setTimeout\()/.test(src));
-  assert.ok(src.startsWith("'use strict';\n"));
+  assert.ok(/^'use strict';\r?\n/.test(src));
 });

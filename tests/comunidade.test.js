@@ -149,26 +149,32 @@ test('Auto-Onboarding Zero-Toque de Canais: detecta nicho, cria convite/bio, fix
   const cfg = cfgComunidade();
 
   assert.equal(L.detectarCategoriaCanal('Ofertô Tech & Games', ''), 'tech');
-  assert.equal(L.detectarCategoriaCanal('Ofertô Beleza & Skincare', ''), 'beleza');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Beleza & Autocuidado', ''), 'beleza');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Perfumaria', ''), 'perfumes');
   assert.equal(L.detectarCategoriaCanal('Ofertô Perfumes · Árabes, Importados & Nicho', ''), 'perfumes');
-  assert.equal(L.detectarCategoriaCanal('Ofertô Saúde, Suplementos & Farmácia', ''), 'saude');
-  assert.equal(L.detectarCategoriaCanal('Ofertô Casa & Eletro', ''), 'casa');
-  assert.equal(L.detectarCategoriaCanal('Ofertô Bebê & Família', ''), 'bebe');
-  assert.equal(L.detectarCategoriaCanal('Ofertô VIP · Top Ofertas & Bugs', ''), 'top');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Saúde & Bem-estar', ''), 'saude');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Casa & Eletro', ''), 'casa');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Bebês & Família', ''), 'bebe');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Ofertas & Achadinhos Gerais', ''), 'top');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Auto & Moto', ''), 'auto');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Mundo Pet', ''), 'pet');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Livros & Leitura', ''), 'livros');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Papelaria & Criatividade', ''), 'papelaria');
+  assert.equal(L.detectarCategoriaCanal('Ofertô • Mercado & Sabores', ''), 'mercado');
   assert.equal(L.detectarCategoriaCanal('Canal Secreto Teste', ''), null);
 
-  // Canal privado de Perfumes adicionado como admin -> gera rota 'canal_novo'
+  // Canal privado de Perfumaria adicionado como admin -> gera rota 'canal_novo'
   const upd = {
     my_chat_member: {
-      chat: { id: -100555666777, title: 'Ofertô Perfumes · Árabes & Nicho', type: 'channel' },
-      new_chat_member: { status: 'administrator', can_invite_users: true, can_change_info: true, can_post_messages: true, can_pin_messages: true },
+      chat: { id: -100555666777, title: 'Ofertô • Perfumaria', type: 'channel' },
+      new_chat_member: { status: 'administrator', can_invite_users: true, can_change_info: true, can_post_messages: true, can_edit_messages: true, can_pin_messages: true },
     },
   };
   const cls = L.classificarUpdate(upd, HS, cfg, AGORA, { bot: 'grupo' });
   assert.equal(cls.rota, 'canal_novo');
   assert.equal(cls.categoria, 'perfumes');
   assert.deepEqual(cls.chamadas.map((c) => c.metodo), ['createChatInviteLink', 'setChatDescription', 'sendMessage']);
-  assert.match(cls.chamadas[2].payload.text, /Perfumes Árabes originais no Mercado Livre/);
+  assert.match(cls.chamadas[2].payload.text, /Perfumes Nacionais, Importados, Masculinos, Femininos, Árabes/);
   assert.match(cls.chamadas[2].payload.text, /\/alerta lattafa asad/);
 
   const resp = [
@@ -179,7 +185,7 @@ test('Auto-Onboarding Zero-Toque de Canais: detecta nicho, cria convite/bio, fix
   const fin = L.finalizarAutoOnboardingCanal(cls, resp, cfg);
   assert.ok(fin.upserts.some((u) => u.chave === 'canal.perfumes' && u.valor === '-100555666777'));
   assert.ok(fin.upserts.some((u) => u.chave === 'canal_link.perfumes' && u.valor === 'https://t.me/+PRIVPERF'));
-  assert.ok(fin.upserts.some((u) => u.chave === 'categoria_nome.perfumes' && u.valor === 'Perfumes & Fragrâncias'));
+  assert.ok(fin.upserts.some((u) => u.chave === 'categoria_nome.perfumes' && u.valor === 'Perfumaria'));
   for (const r of fin.upserts) assert.deepEqual(L.colunasInvalidas('bfx_config', r), []);
   assert.ok(fin.chamadas.some((c) => c.metodo === 'pinChatMessage' && c.payload.message_id === 42));
   assert.ok(fin.chamadas.some((c) => c.bot === 'admin' && /conectado e configurado automaticamente/.test(c.payload.text)));
@@ -192,7 +198,10 @@ test('Auto-Onboarding Zero-Toque de Canais: detecta nicho, cria convite/bio, fix
     },
   }, HS, cfg, AGORA, { bot: 'grupo' });
   assert.equal(gen.rota, 'responder');
-  assert.match(gen.chamadas[0].payload.text, /\/canais perfumes/);
+  assert.match(gen.chamadas[0].payload.text, /\/canais beleza/);
+  assert.match(gen.chamadas[0].payload.text, /\/canais auto/);
+  assert.match(gen.chamadas[0].payload.text, /\/canais pet/);
+  assert.match(gen.chamadas[0].payload.text, /\/canais mercado/);
 });
 
 test('Alertas Pessoais (bfx_alertas): parsing sem falsos tetos em modelos, CRUD, disparo com afiliado e cooldown', () => {
@@ -849,7 +858,7 @@ test('Comparador de mercado (Zoom + Amazon), PS5 B0FPGF9J2J Pix/Parcelado/300TAO
   assert.equal(joinedPs5.oferta.links_manuais.preco_parcelado, 4299);
   assert.equal(joinedPs5.oferta.links_manuais.parcelamento, 'Em até 12x de R$ 358,25 sem juros');
   const txtPs5 = L.textoTelegram(joinedPs5.oferta, 'https://www.amazon.com.br/dp/B0FPGF9J2J?tag=ofert-20', cfg);
-  assert.ok(txtPs5.split('\n').length <= 6, `Esperava post enxuto (<=6 linhas), veio ${txtPs5.split('\n').length}:\n${txtPs5}`);
+  assert.ok(txtPs5.split('\n').length <= 7, `Esperava post enxuto (<=7 linhas), veio ${txtPs5.split('\n').length}:\n${txtPs5}`);
   assert.match(txtPs5, /R\$ 4\.069,91[\s\S]*💠 PIX[\s\S]*12x de R\$ 358,25 sem juros/);
   assert.match(txtPs5, /Pegue o cupom no anúncio:.*<code>300TAO<\/code>/);
 

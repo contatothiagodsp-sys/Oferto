@@ -629,14 +629,20 @@ test('campanha sazonal: reconhece Black Friday, 11.11, 12.12, 01.01, Fim de Ano 
     titulo: 'Echo Dot 5', preco: 249,
     links_manuais: { preco_de: 429, campanha: lidoBf.campanha },
   }, 'https://amzn.to/echo', cfg);
-  assert.match(tgBf.split('\n')[0], /🖤 <b>BLACK FRIDAY<\/b>.*#BlackFriday #publi$/);
+  const linhasBf = tgBf.split('\n');
+  assert.match(linhasBf[0], /🖤 <b>BLACK FRIDAY<\/b>/);
+  assert.doesNotMatch(linhasBf[0], /#BlackFriday|#publi/);
+  assert.equal(linhasBf[linhasBf.length - 1], '#BlackFriday #publi');
 
   const tg11 = textos.textoTelegram({
     oferta_id: 'o_11_1', loja: 'ml', categoria: 'tech',
     titulo: 'Fone TWS', preco: 99,
     links_manuais: { preco_de: 199, campanha: '11.11' },
   }, 'https://mercadolivre.com/sec/tws', cfg);
-  assert.match(tg11.split('\n')[0], /🔥 <b>11\.11<\/b>.*#Oferta1111 #publi$/);
+  const linhas11 = tg11.split('\n');
+  assert.match(linhas11[0], /🔥 <b>11\.11<\/b>/);
+  assert.doesNotMatch(linhas11[0], /#Oferta1111|#publi/);
+  assert.equal(linhas11[linhas11.length - 1], '#Oferta1111 #publi');
 
   // Texto de canal do Telegram com #BlackFriday chega até finalizarRadar com campanha gravada
   const extTg = extrator.extrairDoTexto('🔥 Black Friday\nFone JBL\nDe R$ 300 por R$ 150 #BlackFriday');

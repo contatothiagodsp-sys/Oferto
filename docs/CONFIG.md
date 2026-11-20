@@ -26,15 +26,16 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `fuso` | `America/Sao_Paulo` | Fuso horário dos textos |
 | `auto.link_direto` | `sim` | sim/nao: no privado, basta colar ou encaminhar o link do produto que o bot extrai título, preço, imagem e categoria sem exigir /oferta |
 | `auto.publicar_direto` | `nao` | sim/nao: publica direto no grupo/canais do Telegram e já entrega o texto do WhatsApp sem precisar clicar em Aprovar (ative rápido com /modo rapido) |
-| `auto.categoria_padrao` | `casa` | Categoria usada quando o bot não identifica pelas palavras do produto (casa, moda, beleza, perfumes, saude, bebe, tech) |
+| `auto.categoria_padrao` | `casa` | Categoria usada quando o bot não identifica pelas palavras do produto (saude, auto, beleza, perfumes, tech, bebe, casa, moda, kpop, pet, livros, papelaria, mercado) |
 | `copy.chamativa` | `sim` | sim/nao: gera ganchos persuasivos, comparação De/Por e economia em R$ nos textos de Telegram e WhatsApp para atrair cliques |
-| `copy.tom` | `sim` | sim/nao: adiciona abaixo do nome do produto uma frase curta no tom do público do nicho (fã de K-pop, gamer, hardware, casa, perfumes…). Sem IA, usa o banco de frases curado (custo zero) |
-| `copy.ia` | `nao` | sim/nao: gera a frase de tom com a Claude API (precisa de copy.ia_chave; cobrado por uso). Em erro, timeout ou frase reprovada, cai no banco de frases |
-| `copy.ia_chave` |  | Chave da Claude API (console.anthropic.com) usada por copy.ia. Vazio = IA desligada |
-| `copy.ia_modelo` | `claude-opus-5-5` | Modelo da Claude API para a copy (ex.: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5) |
+| `copy.tom` | `sim` | sim/nao: adiciona abaixo do nome do produto uma frase curta no tom do público do nicho (fã de K-pop, gamer, hardware, casa, perfumes, pets, livros, auto…). Sem IA, usa o banco extenso de frases curado com memória anti-repetição (custo zero) |
+| `copy.ia` | `nao` | sim/nao: gera a frase de tom com LLM (suporta Ollama local gratuito, Groq/Gemini/OpenRouter grátis ou Claude API). Em erro, timeout ou frase reprovada, cai no banco de frases |
+| `copy.ia_provedor` | `auto` | auto/anthropic/openai/groq/gemini/openrouter/ollama: formato da API de LLM (auto detecta pelo endereço copy.ia_api; ollama local funciona sem chave e com custo R$ 0) |
+| `copy.ia_chave` |  | Chave da API de LLM (opcional para Ollama local gratuito). Vazio fora de localhost = IA desligada |
+| `copy.ia_modelo` | `claude-opus-5-5` | Modelo de LLM para a copy (ex.: llama-3.3-70b-versatile no Groq, gemini-2.0-flash, qwen2.5:7b no Ollama local, ou claude-opus-5-5) |
 | `copy.ia_timeout_ms` | `15000` | Tempo máximo (ms) de espera pela IA antes de usar o banco de frases |
 | `copy.ia_max_por_ciclo` | `5` | Máximo de ofertas com copy por IA em cada rodada do radar (as demais usam o banco de frases) |
-| `copy.ia_api` | `https://api.anthropic.com/v1/messages` | Endereço da Claude API (não altere; usado em testes) |
+| `copy.ia_api` | `https://api.anthropic.com/v1/messages` | Endereço da API de LLM (Anthropic ou endpoint OpenAI-compatível como Groq, Gemini, OpenRouter ou Ollama local) |
 | `publicar.plataformas` | `wag,wac,x` | Quais textos prontos enviar ao aprovar: wag (Grupo WhatsApp), wac (Canal WhatsApp), x (X/Twitter). Use só wag para focar em Telegram + Grupo WhatsApp |
 | `divulgar.auto_diario` | `sim` | sim/nao: divulga automaticamente 1x ao dia (22h05) o hub dos seus canais para estimular entradas cruzadas |
 | `canais.auto_vincular` | `sim` | sim/nao: ao adicionar o bot publicador como admin num canal novo, identifica a categoria pelo nome, liga o canal, cria convite, coloca bio e fixa boas-vindas sozinho |
@@ -68,8 +69,8 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `radar.publicar_direto` | `sim` | sim/nao: publica as promoções do radar automaticamente no Telegram e entrega o botão WhatsApp (desative com /modo aprovar) |
 | `radar.auto_top` | `sim` | sim/nao: manda automaticamente promoções muito fortes (>=35% OFF ou >=28% + cupom) para o Top do Dia |
 | `radar.top_max_dia` | `40` | Máximo de ofertas por dia no Top do Dia (ex.: 15 a 50; reserva 35% para o horário nobre 18h–23h) |
-| `radar.lojas` | `amazon,ml,shopee,shein,tiktok,aliexpress,kabum,terabyte,pichau,acer,motorola,samsung,drogaraia,drogasil,pacheco,panvel,araujo,paguemenos,venancio,oficialfarma,maxtitanium,rihappy,alobebe,belezanaweb,epocacosmeticos,boticario,natura,sephora,mahogany,creamy,ikesaki,centauro,netshoes,nike,adidas,olympikus,mizuno,underarmour,farmrio,renner,cea,riachuelo,dafiti,zattini,hering,polishop,electrolux,brastemp,consul,magalu,umusic,klinestore,hopescolor,asiaticstore,kpopandyoushop,kpopalbums` | Lojas monitoradas pelo radar automático (Amazon, ML, Shopee, Shein, TikTok, AliExpress, KaBuM!, Terabyte, Pichau, farmácias, suplementos, beleza, casa, tech, moda e K-pop) |
-| `radar.categorias` | `moda,beleza,perfumes,saude,casa,tech,bebe,kpop` | Categorias monitoradas pelo radar (moda, beleza, perfumes, saude, casa, tech, bebe, kpop) |
+| `radar.lojas` | `amazon,ml,shopee,shein,tiktok,aliexpress,kabum,terabyte,pichau,acer,motorola,samsung,drogaraia,drogasil,pacheco,panvel,araujo,paguemenos,venancio,oficialfarma,maxtitanium,rihappy,alobebe,belezanaweb,epocacosmeticos,boticario,natura,sephora,mahogany,creamy,ikesaki,centauro,netshoes,nike,adidas,olympikus,mizuno,underarmour,farmrio,renner,cea,riachuelo,dafiti,zattini,hering,polishop,electrolux,brastemp,consul,magalu,umusic,klinestore,hopescolor,asiaticstore,kpopandyoushop,kpopalbums,petz,cobasi,petlove,kalunga,pneustore` | Lojas monitoradas pelo radar automático (Amazon, ML, Shopee, Shein, TikTok, AliExpress, KaBuM!, Terabyte, Pichau, farmácias, suplementos, beleza, casa, tech, moda e K-pop) |
+| `radar.categorias` | `saude,auto,beleza,perfumes,tech,bebe,casa,moda,kpop,pet,livros,papelaria,mercado` | Categorias monitoradas pelo radar (saude, auto, beleza, perfumes, tech, bebe, casa, moda, kpop, pet, livros, papelaria, mercado) |
 | `radar.palavras` |  | Filtro opcional de palavras no radar separadas por ; (vazio = aceita todas as boas ofertas das lojas/categorias; ajuste com /buscas) |
 | `radar.min_desconto_pct` | `15` | Desconto mínimo (%) para entrar no radar (ofertas com cupom ou destaque da comunidade também entram) |
 | `radar.preco_min` | `15` | Preço mínimo em R$ no radar (ignora banners de R$ 0,01 e itens isca) |
@@ -167,55 +168,46 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `afiliado.cdjapan` |  | Opcional: parâmetro/template de afiliado para CDJapan (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.yesasia` |  | Opcional: parâmetro/template de afiliado para YesAsia (ex.: utm_source=meu_id ou URL com {url}) |
 | `afiliado.kpop1004` |  | Opcional: parâmetro/template de afiliado para KPOP1004 (ex.: utm_source=meu_id ou URL com {url}) |
-| `categoria_nome.top` |  | Nome exibido para Top do Dia (ex.: Top Ofertas & Bugs) |
-| `topico.top` |  | message_thread_id do tópico Top do Dia (preenchido pelo setup) |
-| `canal.top` |  | Canal só de Top do Dia (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.top` |  | Link de entrada do canal Top do Dia (automático se público @usuario; informe se for privado) |
-| `canal_logo.top` |  | Logo do canal Top do Dia (URL https:// ou file_id via comando /logo) |
-| `canal_desc.top` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Top do Dia |
-| `whatsapp.grupo.top` |  | Opcional: JID do grupo de WhatsApp específico de Top do Dia |
-| `categoria_nome.casa` |  | Nome exibido para Casa & Eletro (ex.: Casa & Eletro) |
-| `topico.casa` |  | message_thread_id do tópico Casa & Eletro (preenchido pelo setup) |
-| `canal.casa` |  | Canal só de Casa & Eletro (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.casa` |  | Link de entrada do canal Casa & Eletro (automático se público @usuario; informe se for privado) |
-| `canal_logo.casa` |  | Logo do canal Casa & Eletro (URL https:// ou file_id via comando /logo) |
-| `canal_desc.casa` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Casa & Eletro |
-| `whatsapp.grupo.casa` |  | Opcional: JID do grupo de WhatsApp específico de Casa & Eletro |
-| `categoria_nome.moda` |  | Nome exibido para Moda, Roupas & Tênis (ex.: Moda, Roupas & Tênis) |
-| `topico.moda` |  | message_thread_id do tópico Moda, Roupas & Tênis (preenchido pelo setup) |
-| `canal.moda` |  | Canal só de Moda, Roupas & Tênis (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.moda` |  | Link de entrada do canal Moda, Roupas & Tênis (automático se público @usuario; informe se for privado) |
-| `canal_logo.moda` |  | Logo do canal Moda, Roupas & Tênis (URL https:// ou file_id via comando /logo) |
-| `canal_desc.moda` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Moda, Roupas & Tênis |
-| `whatsapp.grupo.moda` |  | Opcional: JID do grupo de WhatsApp específico de Moda, Roupas & Tênis |
-| `categoria_nome.beleza` |  | Nome exibido para Beleza & Skincare (ex.: Beleza & Skincare) |
-| `topico.beleza` |  | message_thread_id do tópico Beleza & Skincare (preenchido pelo setup) |
-| `canal.beleza` |  | Canal só de Beleza & Skincare (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.beleza` |  | Link de entrada do canal Beleza & Skincare (automático se público @usuario; informe se for privado) |
-| `canal_logo.beleza` |  | Logo do canal Beleza & Skincare (URL https:// ou file_id via comando /logo) |
-| `canal_desc.beleza` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Beleza & Skincare |
-| `whatsapp.grupo.beleza` |  | Opcional: JID do grupo de WhatsApp específico de Beleza & Skincare |
-| `categoria_nome.perfumes` |  | Nome exibido para Perfumes & Fragrâncias (ex.: Perfumes & Fragrâncias) |
-| `topico.perfumes` |  | message_thread_id do tópico Perfumes & Fragrâncias (preenchido pelo setup) |
-| `canal.perfumes` |  | Canal só de Perfumes & Fragrâncias (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.perfumes` |  | Link de entrada do canal Perfumes & Fragrâncias (automático se público @usuario; informe se for privado) |
-| `canal_logo.perfumes` |  | Logo do canal Perfumes & Fragrâncias (URL https:// ou file_id via comando /logo) |
-| `canal_desc.perfumes` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Perfumes & Fragrâncias |
-| `whatsapp.grupo.perfumes` |  | Opcional: JID do grupo de WhatsApp específico de Perfumes & Fragrâncias |
-| `categoria_nome.saude` |  | Nome exibido para Saúde, Suplementos & Farmácia (ex.: Saúde, Suplementos & Farmácia) |
-| `topico.saude` |  | message_thread_id do tópico Saúde, Suplementos & Farmácia (preenchido pelo setup) |
-| `canal.saude` |  | Canal só de Saúde, Suplementos & Farmácia (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.saude` |  | Link de entrada do canal Saúde, Suplementos & Farmácia (automático se público @usuario; informe se for privado) |
-| `canal_logo.saude` |  | Logo do canal Saúde, Suplementos & Farmácia (URL https:// ou file_id via comando /logo) |
-| `canal_desc.saude` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Saúde, Suplementos & Farmácia |
-| `whatsapp.grupo.saude` |  | Opcional: JID do grupo de WhatsApp específico de Saúde, Suplementos & Farmácia |
-| `categoria_nome.bebe` |  | Nome exibido para Bebê & Família (ex.: Bebê & Família) |
-| `topico.bebe` |  | message_thread_id do tópico Bebê & Família (preenchido pelo setup) |
-| `canal.bebe` |  | Canal só de Bebê & Família (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.bebe` |  | Link de entrada do canal Bebê & Família (automático se público @usuario; informe se for privado) |
-| `canal_logo.bebe` |  | Logo do canal Bebê & Família (URL https:// ou file_id via comando /logo) |
-| `canal_desc.bebe` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Bebê & Família |
-| `whatsapp.grupo.bebe` |  | Opcional: JID do grupo de WhatsApp específico de Bebê & Família |
+| `afiliado.petz` |  | Opcional: parâmetro/template de afiliado para Petz (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.cobasi` |  | Opcional: parâmetro/template de afiliado para Cobasi (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.petlove` |  | Opcional: parâmetro/template de afiliado para Petlove (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.kalunga` |  | Opcional: parâmetro/template de afiliado para Kalunga (ex.: utm_source=meu_id ou URL com {url}) |
+| `afiliado.pneustore` |  | Opcional: parâmetro/template de afiliado para PneuStore (ex.: utm_source=meu_id ou URL com {url}) |
+| `categoria_nome.top` |  | Nome exibido para Ofertas & Achadinhos Gerais (ex.: Ofertas & Achadinhos Gerais) |
+| `topico.top` |  | message_thread_id do tópico Ofertas & Achadinhos Gerais (preenchido pelo setup) |
+| `canal.top` |  | Canal só de Ofertas & Achadinhos Gerais (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.top` |  | Link de entrada do canal Ofertas & Achadinhos Gerais (automático se público @usuario; informe se for privado) |
+| `canal_logo.top` |  | Logo do canal Ofertas & Achadinhos Gerais (URL https:// ou file_id via comando /logo) |
+| `canal_desc.top` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Ofertas & Achadinhos Gerais |
+| `whatsapp.grupo.top` |  | Opcional: JID do grupo de WhatsApp específico de Ofertas & Achadinhos Gerais |
+| `categoria_nome.saude` |  | Nome exibido para Saúde & Bem-estar (ex.: Saúde & Bem-estar) |
+| `topico.saude` |  | message_thread_id do tópico Saúde & Bem-estar (preenchido pelo setup) |
+| `canal.saude` |  | Canal só de Saúde & Bem-estar (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.saude` |  | Link de entrada do canal Saúde & Bem-estar (automático se público @usuario; informe se for privado) |
+| `canal_logo.saude` |  | Logo do canal Saúde & Bem-estar (URL https:// ou file_id via comando /logo) |
+| `canal_desc.saude` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Saúde & Bem-estar |
+| `whatsapp.grupo.saude` |  | Opcional: JID do grupo de WhatsApp específico de Saúde & Bem-estar |
+| `categoria_nome.auto` |  | Nome exibido para Auto & Moto (ex.: Auto & Moto) |
+| `topico.auto` |  | message_thread_id do tópico Auto & Moto (preenchido pelo setup) |
+| `canal.auto` |  | Canal só de Auto & Moto (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.auto` |  | Link de entrada do canal Auto & Moto (automático se público @usuario; informe se for privado) |
+| `canal_logo.auto` |  | Logo do canal Auto & Moto (URL https:// ou file_id via comando /logo) |
+| `canal_desc.auto` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Auto & Moto |
+| `whatsapp.grupo.auto` |  | Opcional: JID do grupo de WhatsApp específico de Auto & Moto |
+| `categoria_nome.beleza` |  | Nome exibido para Beleza & Autocuidado (ex.: Beleza & Autocuidado) |
+| `topico.beleza` |  | message_thread_id do tópico Beleza & Autocuidado (preenchido pelo setup) |
+| `canal.beleza` |  | Canal só de Beleza & Autocuidado (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.beleza` |  | Link de entrada do canal Beleza & Autocuidado (automático se público @usuario; informe se for privado) |
+| `canal_logo.beleza` |  | Logo do canal Beleza & Autocuidado (URL https:// ou file_id via comando /logo) |
+| `canal_desc.beleza` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Beleza & Autocuidado |
+| `whatsapp.grupo.beleza` |  | Opcional: JID do grupo de WhatsApp específico de Beleza & Autocuidado |
+| `categoria_nome.perfumes` |  | Nome exibido para Perfumaria (ex.: Perfumaria) |
+| `topico.perfumes` |  | message_thread_id do tópico Perfumaria (preenchido pelo setup) |
+| `canal.perfumes` |  | Canal só de Perfumaria (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.perfumes` |  | Link de entrada do canal Perfumaria (automático se público @usuario; informe se for privado) |
+| `canal_logo.perfumes` |  | Logo do canal Perfumaria (URL https:// ou file_id via comando /logo) |
+| `canal_desc.perfumes` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Perfumaria |
+| `whatsapp.grupo.perfumes` |  | Opcional: JID do grupo de WhatsApp específico de Perfumaria |
 | `categoria_nome.tech` |  | Nome exibido para Tech & Games (ex.: Tech & Games) |
 | `topico.tech` |  | message_thread_id do tópico Tech & Games (preenchido pelo setup) |
 | `canal.tech` |  | Canal só de Tech & Games (@usuario do canal ou ID -100…). Configure rápido via /canais |
@@ -223,50 +215,124 @@ Linha vazia = usa o padrão (exceto `shopee.busca.*`: vazio = não coletar aquel
 | `canal_logo.tech` |  | Logo do canal Tech & Games (URL https:// ou file_id via comando /logo) |
 | `canal_desc.tech` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Tech & Games |
 | `whatsapp.grupo.tech` |  | Opcional: JID do grupo de WhatsApp específico de Tech & Games |
-| `categoria_nome.kpop` |  | Nome exibido para K-Pop & Álbuns Oficiais (ex.: K-Pop & Álbuns Oficiais) |
-| `topico.kpop` |  | message_thread_id do tópico K-Pop & Álbuns Oficiais (preenchido pelo setup) |
-| `canal.kpop` |  | Canal só de K-Pop & Álbuns Oficiais (@usuario do canal ou ID -100…). Configure rápido via /canais |
-| `canal_link.kpop` |  | Link de entrada do canal K-Pop & Álbuns Oficiais (automático se público @usuario; informe se for privado) |
-| `canal_logo.kpop` |  | Logo do canal K-Pop & Álbuns Oficiais (URL https:// ou file_id via comando /logo) |
-| `canal_desc.kpop` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal K-Pop & Álbuns Oficiais |
-| `whatsapp.grupo.kpop` |  | Opcional: JID do grupo de WhatsApp específico de K-Pop & Álbuns Oficiais |
-| `shopee.busca.casa` | `air fryer; robo aspirador; cafeteira; ventilador; liquidificador; lava loucas` | Palavras-chave da coleta Shopee para Casa & Eletro (separe com ;) |
-| `shopee.busca.moda` | `tenis nike; tenis adidas; conjunto shein; vestido feminino; jaqueta puffer; camiseta oversized; calca cargo; legging academia` | Palavras-chave da coleta Shopee para Moda, Roupas & Tênis (separe com ;) |
-| `shopee.busca.beleza` | `protetor solar; serum principia; cerave; la roche posay; wella; mascara capilar; secador de cabelo; maquiagem` | Palavras-chave da coleta Shopee para Beleza & Skincare (separe com ;) |
-| `shopee.busca.perfumes` | `perfume arabe; lattafa asad; fakhar black; khamrah; yara; club de nuit; sabah al ward; sauvage; 212 vip; le male; good girl; malbec` | Palavras-chave da coleta Shopee para Perfumes & Fragrâncias (separe com ;) |
-| `shopee.busca.saude` | `creatina; whey protein; omega 3; multivitaminico; colageno verisol; escova eletrica oral b; irrigador oral` | Palavras-chave da coleta Shopee para Saúde, Suplementos & Farmácia (separe com ;) |
-| `shopee.busca.bebe` | `fralda pampers; fralda huggies; lenco umedecido; formula infantil; brinquedo educativo` | Palavras-chave da coleta Shopee para Bebê & Família (separe com ;) |
-| `shopee.busca.tech` | `ps5; xbox series; placa de video; ssd nvme; headset gamer; fone bluetooth; smartwatch; monitor gamer` | Palavras-chave da coleta Shopee para Tech & Games (separe com ;) |
-| `shopee.busca.kpop` | `album kpop oficial; lightstick kpop oficial; photocard kpop oficial; fichario photocard kpop; toploader sleeves photocard; bt21 oficial; skzoo pelucia kpop; funko pop bts blackpink; chaveiro kpop oficial; bts album; stray kids album; blackpink album; twice album; txt album; enhypen album; seventeen album; aespa album; newjeans album; ive album; ateez album; le sserafim album; nct album; exo album; moletom kpop; revista dicon kpop` | Palavras-chave da coleta Shopee para K-Pop & Álbuns Oficiais (separe com ;) |
-| `amazon.tag.casa_tg` |  | Tag da Amazon para Casa & Eletro no tg |
-| `amazon.tag.casa_wac` |  | Tag da Amazon para Casa & Eletro no wac |
-| `amazon.tag.casa_wag` |  | Tag da Amazon para Casa & Eletro no wag |
-| `amazon.tag.casa_x` |  | Tag da Amazon para Casa & Eletro no x |
-| `amazon.tag.moda_tg` |  | Tag da Amazon para Moda, Roupas & Tênis no tg |
-| `amazon.tag.moda_wac` |  | Tag da Amazon para Moda, Roupas & Tênis no wac |
-| `amazon.tag.moda_wag` |  | Tag da Amazon para Moda, Roupas & Tênis no wag |
-| `amazon.tag.moda_x` |  | Tag da Amazon para Moda, Roupas & Tênis no x |
-| `amazon.tag.beleza_tg` |  | Tag da Amazon para Beleza & Skincare no tg |
-| `amazon.tag.beleza_wac` |  | Tag da Amazon para Beleza & Skincare no wac |
-| `amazon.tag.beleza_wag` |  | Tag da Amazon para Beleza & Skincare no wag |
-| `amazon.tag.beleza_x` |  | Tag da Amazon para Beleza & Skincare no x |
-| `amazon.tag.perfumes_tg` |  | Tag da Amazon para Perfumes & Fragrâncias no tg |
-| `amazon.tag.perfumes_wac` |  | Tag da Amazon para Perfumes & Fragrâncias no wac |
-| `amazon.tag.perfumes_wag` |  | Tag da Amazon para Perfumes & Fragrâncias no wag |
-| `amazon.tag.perfumes_x` |  | Tag da Amazon para Perfumes & Fragrâncias no x |
-| `amazon.tag.saude_tg` |  | Tag da Amazon para Saúde, Suplementos & Farmácia no tg |
-| `amazon.tag.saude_wac` |  | Tag da Amazon para Saúde, Suplementos & Farmácia no wac |
-| `amazon.tag.saude_wag` |  | Tag da Amazon para Saúde, Suplementos & Farmácia no wag |
-| `amazon.tag.saude_x` |  | Tag da Amazon para Saúde, Suplementos & Farmácia no x |
-| `amazon.tag.bebe_tg` |  | Tag da Amazon para Bebê & Família no tg |
-| `amazon.tag.bebe_wac` |  | Tag da Amazon para Bebê & Família no wac |
-| `amazon.tag.bebe_wag` |  | Tag da Amazon para Bebê & Família no wag |
-| `amazon.tag.bebe_x` |  | Tag da Amazon para Bebê & Família no x |
+| `categoria_nome.bebe` |  | Nome exibido para Bebês & Família (ex.: Bebês & Família) |
+| `topico.bebe` |  | message_thread_id do tópico Bebês & Família (preenchido pelo setup) |
+| `canal.bebe` |  | Canal só de Bebês & Família (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.bebe` |  | Link de entrada do canal Bebês & Família (automático se público @usuario; informe se for privado) |
+| `canal_logo.bebe` |  | Logo do canal Bebês & Família (URL https:// ou file_id via comando /logo) |
+| `canal_desc.bebe` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Bebês & Família |
+| `whatsapp.grupo.bebe` |  | Opcional: JID do grupo de WhatsApp específico de Bebês & Família |
+| `categoria_nome.casa` |  | Nome exibido para Casa & Eletro (ex.: Casa & Eletro) |
+| `topico.casa` |  | message_thread_id do tópico Casa & Eletro (preenchido pelo setup) |
+| `canal.casa` |  | Canal só de Casa & Eletro (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.casa` |  | Link de entrada do canal Casa & Eletro (automático se público @usuario; informe se for privado) |
+| `canal_logo.casa` |  | Logo do canal Casa & Eletro (URL https:// ou file_id via comando /logo) |
+| `canal_desc.casa` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Casa & Eletro |
+| `whatsapp.grupo.casa` |  | Opcional: JID do grupo de WhatsApp específico de Casa & Eletro |
+| `categoria_nome.moda` |  | Nome exibido para Moda & Estilo (ex.: Moda & Estilo) |
+| `topico.moda` |  | message_thread_id do tópico Moda & Estilo (preenchido pelo setup) |
+| `canal.moda` |  | Canal só de Moda & Estilo (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.moda` |  | Link de entrada do canal Moda & Estilo (automático se público @usuario; informe se for privado) |
+| `canal_logo.moda` |  | Logo do canal Moda & Estilo (URL https:// ou file_id via comando /logo) |
+| `canal_desc.moda` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Moda & Estilo |
+| `whatsapp.grupo.moda` |  | Opcional: JID do grupo de WhatsApp específico de Moda & Estilo |
+| `categoria_nome.kpop` |  | Nome exibido para K-Pop & Colecionáveis (ex.: K-Pop & Colecionáveis) |
+| `topico.kpop` |  | message_thread_id do tópico K-Pop & Colecionáveis (preenchido pelo setup) |
+| `canal.kpop` |  | Canal só de K-Pop & Colecionáveis (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.kpop` |  | Link de entrada do canal K-Pop & Colecionáveis (automático se público @usuario; informe se for privado) |
+| `canal_logo.kpop` |  | Logo do canal K-Pop & Colecionáveis (URL https:// ou file_id via comando /logo) |
+| `canal_desc.kpop` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal K-Pop & Colecionáveis |
+| `whatsapp.grupo.kpop` |  | Opcional: JID do grupo de WhatsApp específico de K-Pop & Colecionáveis |
+| `categoria_nome.pet` |  | Nome exibido para Mundo Pet (ex.: Mundo Pet) |
+| `topico.pet` |  | message_thread_id do tópico Mundo Pet (preenchido pelo setup) |
+| `canal.pet` |  | Canal só de Mundo Pet (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.pet` |  | Link de entrada do canal Mundo Pet (automático se público @usuario; informe se for privado) |
+| `canal_logo.pet` |  | Logo do canal Mundo Pet (URL https:// ou file_id via comando /logo) |
+| `canal_desc.pet` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Mundo Pet |
+| `whatsapp.grupo.pet` |  | Opcional: JID do grupo de WhatsApp específico de Mundo Pet |
+| `categoria_nome.livros` |  | Nome exibido para Livros & Leitura (ex.: Livros & Leitura) |
+| `topico.livros` |  | message_thread_id do tópico Livros & Leitura (preenchido pelo setup) |
+| `canal.livros` |  | Canal só de Livros & Leitura (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.livros` |  | Link de entrada do canal Livros & Leitura (automático se público @usuario; informe se for privado) |
+| `canal_logo.livros` |  | Logo do canal Livros & Leitura (URL https:// ou file_id via comando /logo) |
+| `canal_desc.livros` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Livros & Leitura |
+| `whatsapp.grupo.livros` |  | Opcional: JID do grupo de WhatsApp específico de Livros & Leitura |
+| `categoria_nome.papelaria` |  | Nome exibido para Papelaria & Criatividade (ex.: Papelaria & Criatividade) |
+| `topico.papelaria` |  | message_thread_id do tópico Papelaria & Criatividade (preenchido pelo setup) |
+| `canal.papelaria` |  | Canal só de Papelaria & Criatividade (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.papelaria` |  | Link de entrada do canal Papelaria & Criatividade (automático se público @usuario; informe se for privado) |
+| `canal_logo.papelaria` |  | Logo do canal Papelaria & Criatividade (URL https:// ou file_id via comando /logo) |
+| `canal_desc.papelaria` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Papelaria & Criatividade |
+| `whatsapp.grupo.papelaria` |  | Opcional: JID do grupo de WhatsApp específico de Papelaria & Criatividade |
+| `categoria_nome.mercado` |  | Nome exibido para Mercado & Sabores (ex.: Mercado & Sabores) |
+| `topico.mercado` |  | message_thread_id do tópico Mercado & Sabores (preenchido pelo setup) |
+| `canal.mercado` |  | Canal só de Mercado & Sabores (@usuario do canal ou ID -100…). Configure rápido via /canais |
+| `canal_link.mercado` |  | Link de entrada do canal Mercado & Sabores (automático se público @usuario; informe se for privado) |
+| `canal_logo.mercado` |  | Logo do canal Mercado & Sabores (URL https:// ou file_id via comando /logo) |
+| `canal_desc.mercado` |  | Descrição curta usada na divulgação cruzada (/divulgar) do canal Mercado & Sabores |
+| `whatsapp.grupo.mercado` |  | Opcional: JID do grupo de WhatsApp específico de Mercado & Sabores |
+| `shopee.busca.saude` | `creatina; whey protein; omega 3; multivitaminico; colageno verisol; escova eletrica oral b; salonpas; inalador; termometro; medidor de pressao` | Palavras-chave da coleta Shopee para Saúde & Bem-estar (separe com ;) |
+| `shopee.busca.auto` | `suporte celular carro; carregador automotivo; camera veicular; cera automotiva vonixx; aspirador automotivo; calibrador pneu; capacete moto; tapete automotivo` | Palavras-chave da coleta Shopee para Auto & Moto (separe com ;) |
+| `shopee.busca.beleza` | `protetor solar; serum principia; cerave; la roche posay; wella; mascara capilar; secador de cabelo; maquiagem; desodorante` | Palavras-chave da coleta Shopee para Beleza & Autocuidado (separe com ;) |
+| `shopee.busca.perfumes` | `perfume arabe; lattafa asad; fakhar black; khamrah; yara; club de nuit; sabah al ward; sauvage; 212 vip; le male; good girl; malbec; body splash; perfume masculino; perfume feminino` | Palavras-chave da coleta Shopee para Perfumaria (separe com ;) |
+| `shopee.busca.tech` | `ps5; xbox series; placa de video; ssd nvme; headset gamer; fone bluetooth; smartwatch; monitor gamer; kindle; power bank; roteador wifi; notebook` | Palavras-chave da coleta Shopee para Tech & Games (separe com ;) |
+| `shopee.busca.bebe` | `fralda pampers; fralda huggies; lenco umedecido; formula infantil; brinquedo educativo; carrinho de bebe; cadeirinha auto; mamadeira avent` | Palavras-chave da coleta Shopee para Bebês & Família (separe com ;) |
+| `shopee.busca.casa` | `air fryer; robo aspirador; cafeteira; ventilador; liquidificador; lava loucas; garrafa termica stanley; panela eletrica; furadeira parafusadeira; jogo de cama` | Palavras-chave da coleta Shopee para Casa & Eletro (separe com ;) |
+| `shopee.busca.moda` | `tenis nike; tenis adidas; tenis olympikus; conjunto shein; vestido feminino; jaqueta puffer; camiseta oversized; legging academia; mochila; relogio casio; oculos de sol` | Palavras-chave da coleta Shopee para Moda & Estilo (separe com ;) |
+| `shopee.busca.kpop` | `album kpop oficial; lightstick kpop oficial; photocard kpop oficial; fichario photocard kpop; toploader sleeves photocard; bt21 oficial; skzoo pelucia kpop; bts album; stray kids album; blackpink album; twice album; txt album; enhypen album; seventeen album; aespa album; newjeans album; ive album; ateez album; le sserafim album; nct album; exo album` | Palavras-chave da coleta Shopee para K-Pop & Colecionáveis (separe com ;) |
+| `shopee.busca.pet` | `racao golden; racao premier; racao royal canin; areia gato pipicat; tapete higienico; petisco cachorro; sache gato; arranhador gato; fonte agua gato; cama pet` | Palavras-chave da coleta Shopee para Mundo Pet (separe com ;) |
+| `shopee.busca.livros` | `livro ficcao; box livros; manga; hq graphic novel; livro desenvolvimento pessoal; livro negocios; livro suspense; livro fantasia; livro infantil` | Palavras-chave da coleta Shopee para Livros & Leitura (separe com ;) |
+| `shopee.busca.papelaria` | `caderno inteligente; planner; caneta stabilo; lapis de cor faber castell; marca texto; estojo escolar; organizador de mesa; etiquetadora brother; cartucho tinta impressora` | Palavras-chave da coleta Shopee para Papelaria & Criatividade (separe com ;) |
+| `shopee.busca.mercado` | `azeite extra virgem; cafe em grao; capsula nespresso; capsula dolce gusto; energetico monster; cerveja pack; vinho tinto; chocolate; marmita congelada; arroz feijao` | Palavras-chave da coleta Shopee para Mercado & Sabores (separe com ;) |
+| `amazon.tag.saude_tg` |  | Tag da Amazon para Saúde & Bem-estar no tg |
+| `amazon.tag.saude_wac` |  | Tag da Amazon para Saúde & Bem-estar no wac |
+| `amazon.tag.saude_wag` |  | Tag da Amazon para Saúde & Bem-estar no wag |
+| `amazon.tag.saude_x` |  | Tag da Amazon para Saúde & Bem-estar no x |
+| `amazon.tag.auto_tg` |  | Tag da Amazon para Auto & Moto no tg |
+| `amazon.tag.auto_wac` |  | Tag da Amazon para Auto & Moto no wac |
+| `amazon.tag.auto_wag` |  | Tag da Amazon para Auto & Moto no wag |
+| `amazon.tag.auto_x` |  | Tag da Amazon para Auto & Moto no x |
+| `amazon.tag.beleza_tg` |  | Tag da Amazon para Beleza & Autocuidado no tg |
+| `amazon.tag.beleza_wac` |  | Tag da Amazon para Beleza & Autocuidado no wac |
+| `amazon.tag.beleza_wag` |  | Tag da Amazon para Beleza & Autocuidado no wag |
+| `amazon.tag.beleza_x` |  | Tag da Amazon para Beleza & Autocuidado no x |
+| `amazon.tag.perfumes_tg` |  | Tag da Amazon para Perfumaria no tg |
+| `amazon.tag.perfumes_wac` |  | Tag da Amazon para Perfumaria no wac |
+| `amazon.tag.perfumes_wag` |  | Tag da Amazon para Perfumaria no wag |
+| `amazon.tag.perfumes_x` |  | Tag da Amazon para Perfumaria no x |
 | `amazon.tag.tech_tg` |  | Tag da Amazon para Tech & Games no tg |
 | `amazon.tag.tech_wac` |  | Tag da Amazon para Tech & Games no wac |
 | `amazon.tag.tech_wag` |  | Tag da Amazon para Tech & Games no wag |
 | `amazon.tag.tech_x` |  | Tag da Amazon para Tech & Games no x |
-| `amazon.tag.kpop_tg` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no tg |
-| `amazon.tag.kpop_wac` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no wac |
-| `amazon.tag.kpop_wag` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no wag |
-| `amazon.tag.kpop_x` |  | Tag da Amazon para K-Pop & Álbuns Oficiais no x |
+| `amazon.tag.bebe_tg` |  | Tag da Amazon para Bebês & Família no tg |
+| `amazon.tag.bebe_wac` |  | Tag da Amazon para Bebês & Família no wac |
+| `amazon.tag.bebe_wag` |  | Tag da Amazon para Bebês & Família no wag |
+| `amazon.tag.bebe_x` |  | Tag da Amazon para Bebês & Família no x |
+| `amazon.tag.casa_tg` |  | Tag da Amazon para Casa & Eletro no tg |
+| `amazon.tag.casa_wac` |  | Tag da Amazon para Casa & Eletro no wac |
+| `amazon.tag.casa_wag` |  | Tag da Amazon para Casa & Eletro no wag |
+| `amazon.tag.casa_x` |  | Tag da Amazon para Casa & Eletro no x |
+| `amazon.tag.moda_tg` |  | Tag da Amazon para Moda & Estilo no tg |
+| `amazon.tag.moda_wac` |  | Tag da Amazon para Moda & Estilo no wac |
+| `amazon.tag.moda_wag` |  | Tag da Amazon para Moda & Estilo no wag |
+| `amazon.tag.moda_x` |  | Tag da Amazon para Moda & Estilo no x |
+| `amazon.tag.kpop_tg` |  | Tag da Amazon para K-Pop & Colecionáveis no tg |
+| `amazon.tag.kpop_wac` |  | Tag da Amazon para K-Pop & Colecionáveis no wac |
+| `amazon.tag.kpop_wag` |  | Tag da Amazon para K-Pop & Colecionáveis no wag |
+| `amazon.tag.kpop_x` |  | Tag da Amazon para K-Pop & Colecionáveis no x |
+| `amazon.tag.pet_tg` |  | Tag da Amazon para Mundo Pet no tg |
+| `amazon.tag.pet_wac` |  | Tag da Amazon para Mundo Pet no wac |
+| `amazon.tag.pet_wag` |  | Tag da Amazon para Mundo Pet no wag |
+| `amazon.tag.pet_x` |  | Tag da Amazon para Mundo Pet no x |
+| `amazon.tag.livros_tg` |  | Tag da Amazon para Livros & Leitura no tg |
+| `amazon.tag.livros_wac` |  | Tag da Amazon para Livros & Leitura no wac |
+| `amazon.tag.livros_wag` |  | Tag da Amazon para Livros & Leitura no wag |
+| `amazon.tag.livros_x` |  | Tag da Amazon para Livros & Leitura no x |
+| `amazon.tag.papelaria_tg` |  | Tag da Amazon para Papelaria & Criatividade no tg |
+| `amazon.tag.papelaria_wac` |  | Tag da Amazon para Papelaria & Criatividade no wac |
+| `amazon.tag.papelaria_wag` |  | Tag da Amazon para Papelaria & Criatividade no wag |
+| `amazon.tag.papelaria_x` |  | Tag da Amazon para Papelaria & Criatividade no x |
+| `amazon.tag.mercado_tg` |  | Tag da Amazon para Mercado & Sabores no tg |
+| `amazon.tag.mercado_wac` |  | Tag da Amazon para Mercado & Sabores no wac |
+| `amazon.tag.mercado_wag` |  | Tag da Amazon para Mercado & Sabores no wag |
+| `amazon.tag.mercado_x` |  | Tag da Amazon para Mercado & Sabores no x |

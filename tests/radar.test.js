@@ -295,7 +295,7 @@ test('Radar multi-fonte coleta, deduplica 72h, troca afiliados, suporta comandos
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'shein'));
   assert.ok(base.fontesWeb.some((f) => f.loja_hint === 'tiktok'));
   assert.ok(base.fontesWeb.some((f) => f.tipo === 'telegram_canal' && f.canal === 'canal_teste'));
-  assert.equal(base.fontesShopee.length, 9);
+  assert.equal(base.fontesShopee.length, 14);
 
   const mkPromobit = (offers) => ({
     statusCode: 200,
@@ -570,19 +570,19 @@ test('Modo Somente Canais: /canais, /logo, /divulgar (com logo), Outros canais e
     { chave: 'grupo_id', valor: 'nenhum' },
     { chave: 'bot_grupo_username', valor: '@oferto_pub_bot' },
     { chave: 'categoria_nome.tech', valor: 'Tech & Games' },
-    { chave: 'categoria_nome.perfumes', valor: 'Perfumes & Fragrâncias' },
+    { chave: 'categoria_nome.beleza', valor: 'Beleza & Autocuidado' },
     { chave: 'canal.tech', valor: '@oferto_tech_games' },
-    { chave: 'canal.perfumes', valor: '@oferto_perfumes_saude' },
+    { chave: 'canal.beleza', valor: '@oferto_beleza_autocuidado' },
     { chave: 'canal_logo.tech', valor: 'https://img.example/logo-tech.png' },
   ]);
 
   assert.equal(cfg.telegram.grupo_id, '');
-  assert.equal(cfg.categorias.perfumes.nome, 'Perfumes & Fragrâncias');
+  assert.equal(cfg.categorias.beleza.nome, 'Beleza & Autocuidado');
 
   // 1) /canais ligar canal e /canais so_canais
-  const clsCanal = L.classificarUpdate(msgPriv('/canais perfumes @oferto_perfumes_saude'), HS, cfg, AGORA);
+  const clsCanal = L.classificarUpdate(msgPriv('/canais beleza @oferto_beleza_autocuidado'), HS, cfg, AGORA);
   assert.equal(clsCanal.rota, 'config');
-  assert.ok(clsCanal.upserts.some((u) => u.chave === 'canal.perfumes' && u.valor === '@oferto_perfumes_saude'));
+  assert.ok(clsCanal.upserts.some((u) => u.chave === 'canal.beleza' && u.valor === '@oferto_beleza_autocuidado'));
 
   const clsLogo = L.classificarUpdate(msgPriv('/logo tech https://img.example/logo-tech.png'), HS, cfg, AGORA);
   assert.equal(clsLogo.rota, 'config');
@@ -604,7 +604,7 @@ test('Modo Somente Canais: /canais, /logo, /divulgar (com logo), Outros canais e
   const clsDiv = L.classificarUpdate(msgPriv('/divulgar tech'), HS, cfg, AGORA);
   assert.equal(clsDiv.rota, 'responder');
   const fotoDiv = clsDiv.chamadas.find((c) => c.bot === 'grupo' && c.metodo === 'sendPhoto');
-  assert.equal(fotoDiv.payload.chat_id, '@oferto_perfumes_saude');
+  assert.equal(fotoDiv.payload.chat_id, '@oferto_beleza_autocuidado');
   assert.equal(fotoDiv.payload.photo, 'https://img.example/logo-tech.png');
   assert.match(fotoDiv.payload.caption, /Ofertô Tech &amp; Games/);
   const admDiv = clsDiv.chamadas.find((c) => c.bot === 'admin');

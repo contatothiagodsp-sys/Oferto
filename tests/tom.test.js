@@ -434,3 +434,50 @@ test('IA: prompt pede variedade e laço com a turma; a ficha leva as frases que 
   // Roteador: frasesRecentes filtra pelo nicho e devolve as mais novas primeiro.
   assert.deepEqual(T.frasesRecentes([recente, perfume], a, 5), ['ONCE, olha isso aqui que apareceu.']);
 });
+
+test('casos reais de 20/11: fralda adulta não é bebê, lenço não é fralda, não-consumível não "faz estoque"', () => {
+  const ctxs = [{}, { preco: 100, preco_de: 160 }, { cupom: 'X' }];
+  const todas = (titulo, categoria) => ctxs.flatMap((ex) => T.candidatasCopy(of(titulo, Object.assign({ categoria }, ex))).map((c) => c.texto));
+
+  // Incontinência adulta: nicho próprio, tom discreto, nada de bebê/enxoval, sem IA.
+  for (const [titulo, cat] of [
+    ['Roupa Íntima Ever Care G/EG 8 Unidades', 'bebe'],
+    ['Fralda Geriátrica Bigfral Plus M 8 Unidades', 'saude'],
+    ['Roupa Íntima Descartável Tena Pants Plus G 16 Unidades', 'bebe'],
+    ['Fralda Plenitud Active G/XG 16 Unidades', 'bebe'],
+  ]) {
+    assert.equal(T.detectarNicho(of(titulo, { categoria: cat })).nicho, 'cuidado', titulo);
+    const frases = todas(titulo, cat);
+    assert.ok(frases.length >= 15, `${titulo}: só ${frases.length}`);
+    for (const f of frases) assert.doesNotMatch(f, /beb[eê]|enxoval|pequeno|m[aã]e|pai\b|fralda/i, `${titulo}: "${f}"`);
+  }
+  assert.equal(T.pedidoCopyIA(of('Roupa Íntima Ever Care G/EG 8 Unidades', { categoria: 'bebe' }), cfgIA()), null, 'cuidado adulto não vai para a IA');
+
+  // Lenço umedecido: sub-nicho próprio, nunca chamado de fralda.
+  const lenco = 'Lenços Umedecidos Pampers Splash Baby Shark 48 Unidades';
+  assert.equal(T.detectarNicho(of(lenco, { categoria: 'bebe' })).sub, 'lencos');
+  for (const f of todas(lenco, 'bebe')) assert.doesNotMatch(f, /fralda/i, f);
+
+  // Remédio de pet: sem frase.
+  assert.equal(T.linhaCopy(of('Antipulgas Bravecto Cães 10 a 20kg', { categoria: 'casa' }), cfgTom()), '');
+
+  // Não-consumíveis: nenhuma frase fala em estoque, repor ou reposição, em nenhum contexto.
+  for (const [titulo, cat] of [
+    ['Almofada Viscoelástica para Carrinho Estampada', 'bebe'],
+    ['Carrinho de Bebê Travel System Galzerano', 'bebe'],
+    ['Arranhador para Gatos Torre 3 Andares', 'casa'],
+    ['Coleira Peitoral para Cães Média', 'casa'],
+    ['Chapinha Prancha Alisadora Philips Titanium', 'beleza'],
+    ['Secador de Cabelo Taiff Black 2000W', 'beleza'],
+    ['Geladeira Brastemp Frost Free 375L', 'casa'],
+    ['Controle Sem Fio PS5 DualSense', 'tech'],
+  ]) {
+    const frases = todas(titulo, cat);
+    assert.ok(frases.length >= 15, `${titulo}: só ${frases.length}`);
+    for (const f of frases) assert.doesNotMatch(f, /estoque|repor\b|reposi|despensa|pote/i, `${titulo}: "${f}"`);
+  }
+  // Consumíveis continuam podendo falar de estoque.
+  assert.ok(todas('Fralda Pampers Confort Sec XG 76 Unidades', 'bebe').some((f) => /estoque/.test(f)));
+  assert.ok(todas('Ração Golden Cães Adultos 15kg', 'casa').some((f) => /estoque|pote/.test(f)));
+  assert.equal(T.detectarNicho(of('Ração Golden Cães Adultos 15kg', { categoria: 'casa' })).sub, 'consumo');
+});

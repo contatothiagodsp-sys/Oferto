@@ -54,8 +54,9 @@ oferta (título + categoria + preço/cupom)
 1. Roteador de tom ── detectarNicho()                                   lib/tom.js
    nicho/subnicho: kpop/album|lightstick|colecionavel, games/console|controle|jogo|periferico|acessorio,
    hardware/pc|monitor|notebook, tech/audio|tv|celular, casa/airfryer|cozinha|limpeza|clima|cama|eletro,
-   perfumes/arabe|nicho|geral, beleza/protetor|skincare|cabelo|make, moda/corrida|tenis|calcado|roupa,
-   bebe/fralda|geral, pet, suplementos, ferramentas, saude (sem frase)
+   perfumes/arabe|nicho|geral, beleza/protetor|skincare|cabelo|aparelho|make, moda/corrida|tenis|calcado|roupa,
+   bebe/fralda|lencos|geral, cuidado (incontinência adulta), pet/consumo|acessorio, suplementos, ferramentas,
+   saude (sem frase: medicamentos e remédio de pet)
    + grupo e fandom de K-pop (BTS → ARMY, Stray Kids → STAY, TWICE → ONCE…)
    + especificações do título (Hz, NVMe, DDR, RTX, OLED, 4K, cancelamento de ruído, Wi-Fi)
    + PERFIS[nicho]: público, jeito de falar, dores reais, vocabulário do nicho, o que evitar
@@ -110,6 +111,13 @@ Simulação de três lotes seguidos (código atual, IA desligada):
 21:52  Controle DualSense                   Analógico puxando sozinho? Tá na hora de aposentar. Nesse valor sobra pro próximo jogo.
 21:52  Monitor LG 27" 180Hz                 180Hz pra parar de jogar no 60Hz. Baixou e merece atenção.
 ```
+
+### Produto certo, frase certa
+
+- **Cuidado adulto.** Fralda geriátrica e roupa íntima descartável (Ever Care, Tena, Plenitud, Bigfral) têm nicho próprio, com tom respeitoso e discreto, sem falar de bebê ou enxoval e sem IA. Antes, com a categoria do canal "bebê", saíam como enxoval.
+- **Lenço umedecido** é sub-nicho próprio (antes caía em fralda e a frase dizia "Fralda nesse valor…").
+- **Estoque só em consumível.** Fechos de "fazer estoque", "repor" e "reposição" ficam só nos sub-nichos de consumo: fralda, lenço, limpeza, ração/areia/petisco, cosméticos e suplementos. Carrinho, almofada, arranhador, coleira, chapinha, secador e eletro grande recebem os fechos genéricos do nicho.
+- **Remédio de pet** (antipulgas, vermífugo) não recebe frase, como medicamento.
 
 ### Validação (IA e banco)
 
