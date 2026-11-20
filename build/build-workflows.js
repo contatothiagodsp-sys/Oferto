@@ -554,7 +554,7 @@ function httpTelegram(name, intervalo) {
       jsonBody: '={{ JSON.stringify($json.payload) }}',
       options: {
         batching: { batch: { batchSize: 1, batchInterval: intervalo || 60 } },
-        response: { response: { neverError: true } },
+        response: { response: { neverError: true, responseFormat: 'json' } },
         timeout: 45000,
       },
     },
@@ -590,7 +590,7 @@ function httpTelegramArquivo(name, intervalo) {
       },
       options: {
         batching: { batch: { batchSize: 1, batchInterval: intervalo || 700 } },
-        response: { response: { neverError: true } },
+        response: { response: { neverError: true, responseFormat: 'json' } },
         timeout: 60000,
       },
     },
@@ -897,14 +897,14 @@ return [{ json: LIB.juntarMercadoOferta(e, resp, cfg) }];`, { lib: true }), 3440
   wf.add(code('Pedir copy IA', `
 const e = $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
 const recentes = $('Frases recentes').all().map((i) => i.json).filter((r) => r.oferta_id);
-return [{ json: { http: LIB.pedidoCopyIA((e || {}).oferta, cfg, LIB.frasesRecentes(recentes, (e || {}).oferta || {}, 10)) } }];`, { lib: true, nota: 'Monta o pedido da frase de tom (null quando copy.ia está desligada ou o nicho é sensível).' }), 3660, -100);
+return [{ json: { http: LIB.pedidoCopyIA((e || {}).oferta, cfg, LIB.frasesRecentes(recentes, (e || {}).oferta || {}, 10), recentes) } }];`, { lib: true, nota: 'Monta o pedido da frase de tom (null quando copy.ia está desligada ou o nicho é sensível).' }), 3660, -100);
   wf.add(switchExpr('Gerar copy IA?', '$json.http ? 0 : 1', 2), 3770, -100);
   wf.add(httpCopyIA('Copy IA (Claude)'), 3880, -180);
   wf.add(code('Juntar copy IA', `
 const e = $('Juntar mercado oferta').isExecuted ? $('Juntar mercado oferta').first().json : $('Juntar página').first().json;
 const resp = $('Copy IA (Claude)').isExecuted ? $('Copy IA (Claude)').first().json : null;
 const recentes = $('Frases recentes').all().map((i) => i.json).filter((r) => r.oferta_id);
-return [{ json: LIB.atribuirCopyEntrada(LIB.aplicarCopyIA(e, resp, cfg, Date.now()), recentes) }];`, { lib: true, nota: 'Valida a frase da IA (copy_ia) e fixa a frase do banco escolhida contra repetição (copy_tom).' }), 4100, -100);
+return [{ json: LIB.atribuirCopyEntrada(LIB.aplicarCopyIA(e, resp, cfg, Date.now(), recentes), recentes) }];`, { lib: true, nota: 'Valida a frase da IA (copy_ia) e fixa a frase do banco escolhida contra repetição (copy_tom).' }), 4100, -100);
   wf.chain('Juntar mercado oferta', 'Frases recentes', 'Pedir copy IA');
   wf.chain('Pedir copy IA', 'Gerar copy IA?');
   wf.link('Gerar copy IA?', 'Copy IA (Claude)', 0);
@@ -1021,7 +1021,7 @@ const lim = $('Checar limite').first().json;
 if (lim.indices.length && $('Telegram (reenvio)').isExecuted) resp = LIB.juntarReenvio(resp, lim, $('Telegram (reenvio)').all().map((i) => i.json));
 return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), 4180, 740);
   // Post do grupo que não saiu nem no reenvio: status "falha" (o admin recebe o alerta).
-  wf.add(itens('Status de falha', '$json.update'), 4400, 560);
+  wf.add(itens('Status de falha', '($input.first().json.updates && $input.first().json.updates.length ? $input.first().json.updates : $input.first().json.update)'), 4400, 560);
   wf.add(dtUpdate('Gravar falha', 'bfx_ofertas', 'oferta_id'), 4620, 560);
   wf.add(itens('Linhas de post', '$json.posts'), 4400, 680);
   wf.add(dtInsert('Gravar posts', 'bfx_posts'), 4620, 680);
@@ -1435,6 +1435,8 @@ const ofertas = $('${N('Ofertas recentes')}').all().map((i) => i.json).filter((r
 const precos = $('${N('Histórico radar')}').all().map((i) => i.json).filter((r) => r.produto_id);
 const alertas = $input.all().map((i) => i.json).filter((r) => r.alerta_id);
 const sd = typeof $getWorkflowStaticData === 'function' ? $getWorkflowStaticData('global') : {};
+const cur = LIB.aplicarAutocuraDescartesRadar(sd.radar_descartes || {}, (base.opcoes && base.opcoes.ts) || Date.now());
+if (cur.curado) sd.radar_descartes = cur.memoria;
 const sel = LIB.selecionarCandidatosRadar(base, respWeb, respSh, ofertas, precos, cfg, alertas, sd.radar_descartes || {}, { pb_redir_bloqueado_ate: sd.pb_redir_bloqueado_ate || 0 });
 if (sel && sel.shop_ids_descobertos && Object.keys(sel.shop_ids_descobertos).length) {
   sd.kpop_shop_ids = Object.assign({}, sd.kpop_shop_ids || {}, sel.shop_ids_descobertos);
@@ -1664,15 +1666,15 @@ let okCount = 0;
 fontes.forEach((src, i) => {
   const it = resp[i] || {};
   const b = it.binary && it.binary.data;
-  const mime = String((b && b.mimeType) || '');
-  if (b && b.data && /^image\\//i.test(mime) && src.payload && src.bot) {
+  if (LIB.validarBinarioFotoTelegram(b).valido && src.payload && src.bot) {
     okCount++;
   } else {
     const fb = src.fallback || src;
-    fallbacks.push(Object.assign({}, fb, { _reenvio_pos: src._reenvio_pos, _enviar_arquivo: false }));
+    const fbPayload = fb && fb.payload ? Object.assign({}, fb.payload, { link_preview_options: { is_disabled: true } }) : undefined;
+    fallbacks.push(Object.assign({}, fb, fbPayload ? { payload: fbPayload } : {}, { _reenvio_pos: src._reenvio_pos, _enviar_arquivo: false }));
   }
 });
-return [{ json: { tem_foto: okCount > 0, ok_count: okCount, fallbacks } }];`, { cfg: false }), x + 7680, y + 120);
+return [{ json: { tem_foto: okCount > 0, ok_count: okCount, fallbacks } }];`, { lib: true, cfg: false }), x + 7680, y + 120);
   wf.add({
     name: N('Tem foto baixada?'), type: 'n8n-nodes-base.if', typeVersion: 2.2,
     parameters: {
@@ -1691,8 +1693,7 @@ const out = [];
 fontes.forEach((src, i) => {
   const it = resp[i] || {};
   const b = it.binary && it.binary.data;
-  const mime = String((b && b.mimeType) || '');
-  if (b && b.data && /^image\\//i.test(mime) && src.payload && src.bot) {
+  if (LIB.validarBinarioFotoTelegram(b).valido && src.payload && src.bot) {
     out.push({
       json: {
         bot: src.bot,
@@ -1708,7 +1709,7 @@ fontes.forEach((src, i) => {
     });
   }
 });
-return out;`, { cfg: false }), x + 7684, y + 60);
+return out;`, { lib: true, cfg: false }), x + 7684, y + 60);
   wf.add(httpTelegramArquivo(N('Telegram (reenvio foto)'), 700), x + 7686, y + 60);
   wf.add(code(N('Montar reenvio texto'), `
 const lim = $('${N('Checar envio radar')}').first().json;
@@ -1764,7 +1765,7 @@ if (lim.indices.length) {
   resp = LIB.juntarReenvio(resp, lim, rr);
 }${lockResClear}
 return [{ json: LIB.resultadoChamadas(chamadas, resp, cfg, Date.now()) }];`, { lib: true }), x + 7700, y + 320);
-  wf.add(itens(N('Status falha radar'), '$json.update'), x + 7920, y + 160);
+  wf.add(itens(N('Status falha radar'), '($input.first().json.updates && $input.first().json.updates.length ? $input.first().json.updates : $input.first().json.update)'), x + 7920, y + 160);
   wf.add(dtUpdate(N('Gravar falha radar'), 'bfx_ofertas', 'oferta_id'), x + 8140, y + 160);
   wf.add(itens(N('Posts lote'), '$json.posts'), x + 7920, y + 240);
   wf.add(dtInsert(N('Gravar posts radar'), 'bfx_posts'), x + 8140, y + 240);

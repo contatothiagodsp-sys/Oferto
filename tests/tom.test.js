@@ -238,7 +238,7 @@ test('pedidoCopyIA: só com IA ligada e chave; nada sensível; chave fora do ite
   assert.equal(p.body.model, 'claude-opus-5-5');
   assert.equal(p.body.output_config.effort, 'low');
   assert.equal(p.body.output_config.format.type, 'json_schema');
-  assert.deepEqual(p.body.output_config.format.schema.required, ['copy']);
+  assert.deepEqual(p.body.output_config.format.schema.required, ['copy', 'alternativas']);
   assert.equal(p.body.fallbacks, 'default');
   assert.equal(p.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
   assert.equal(p.headers['anthropic-version'], '2026-10-21');

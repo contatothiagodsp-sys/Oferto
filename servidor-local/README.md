@@ -98,15 +98,17 @@ Depois que os workflows aparecerem no painel, volte a linha para `PUBLICAR_WORKF
 
 1. Abra http://localhost:5678 no navegador.
 2. Crie a conta de dono. Ela fica só no seu computador; use um e-mail seu e uma senha forte.
-3. Em **Overview**, confira se os 6 workflows estão lá e publicados:
+3. Em **Overview**, confira se os 8 workflows estão lá e publicados:
    - 00 · Setup
    - 01 · Telegram: aprovação e publicação
    - 02 · Coleta Shopee
    - 03 · Relatório diário
+   - 04 · Radar Multi-Fonte de Ofertas
+   - 05 · Guardião Automático de Ofertas
    - 90 · Túnel
    - 91 · Saúde
 
-✋ Os 6 workflows aparecem na lista.
+✋ Os 8 workflows aparecem na lista.
 
 ### 5. Conferir o túnel
 
@@ -246,6 +248,7 @@ O vigia só faz o ping quando o 91 responde `ok`. Se o token do bot de aprovaç�
 | `n8n` fica **unhealthy** e `filtro`/`vigia`/`backup` não sobem | `docker compose logs n8n --tail 50`. Na primeira subida (ou depois de atualizar a imagem) as migrações podem passar de 1,5 min: espere e rode `docker compose up -d` de novo. |
 | `render` **unhealthy** ou erro de build | `docker compose logs render --tail 50` e `docker compose build render`. **Um erro de build do render faz o `docker compose up -d` inteiro falhar** (nenhum serviço sobe). Para manter o bot no ar: tire `render` do `COMPOSE_PROFILES` no `.env` e rode `docker compose up -d` de novo (ou `docker compose up -d --no-build`). Sem render, as ofertas vão para revisão (sem imagem não publica). |
 | A porta 5678 está em uso | Outro programa usa a porta. No `docker-compose.yml`, troque `127.0.0.1:5678:5678` por `127.0.0.1:5679:5678` e abra http://localhost:5679. |
+| `⚠️ Falhas na Bot API: sendMessage: timeout of 45000ms exceeded` | Causado por Happy Eyeballs para IPv6 inacessível no contêiner ou prévia de imagem quebrada (`.webp`/23 bytes). Confira `NODE_OPTIONS` com `--no-network-family-autoselection` no `docker-compose.yml` e veja [`../docs/TELEGRAM-RELIABILITY.md`](../docs/TELEGRAM-RELIABILITY.md). |
 
 ---
 

@@ -3,11 +3,11 @@
 Automação "colou o link, está publicado":
 
 ```
-Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem custo extra com cadência de pico em 29 lojas: Amazon, ML, Shopee, Shein, TikTok Shop, KaBuM!, Terabyte, Pichau, farmácias, beleza e 10 grandes lojas de moda/tênis)
+Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem custo extra com cadência de pico em 60+ lojas: Amazon, ML, Shopee, Shein, TikTok Shop, AliExpress, KaBuM!, Terabyte, Pichau, farmácias, suplementos, beleza, casa, moda/tênis, pet, papelaria, auto e K-pop)
         → expande links curtos, remove tags de terceiros e injeta seu afiliado (mercadolivre.com/sec, s.shopee.com.br, amzn.to, Awin, Rakuten…)
         → anti-repetição estrita de 24h (só republica se baixar o preço ou entrar cupom novo, respondendo direto ao post anterior!)
-        → extrai título enxuto, preço "De:", cupom ativo + avisos de resgate prévio na aba de cupons, parcelamento sem juros, imagem e categoria DE GRAÇA
-        → separa 7 nichos + Top (Casa, Moda & Tênis, Beleza & Skincare, Perfumes & Fragrâncias, Saúde/Farmácia, Bebê e Tech & Games), gera copy curta de alta conversão com CONAR (#publi)
+        → extrai título enxuto, preço "De:", cupom ativo + avisos de resgate prévio na aba de cupons, parcelamento sem juros, custo unitário, imagem e categoria DE GRAÇA
+        → separa 13 nichos + Top (Casa, Moda & Estilo, Beleza & Autocuidado, Perfumaria, Saúde & Bem-estar, Bebês & Família, Tech & Games, K-Pop & Colecionáveis, Mundo Pet, Auto & Moto, Livros & Leitura, Papelaria & Arte e Mercado & Sabores), gera copy curta de alta conversão com CONAR (#publi)
         → publica sozinho nos seus canais/tópicos com comentários direto nas publicações, alertas de lote de cupons por nicho/site (`/cupom`) e denúncia rápida `/admin`
         → entrega o texto pronto do Grupo do WhatsApp com botão [📲 Enviar no WhatsApp (1 toque)]
 ```
@@ -20,9 +20,10 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem c
 | `n8n/workflows/01-telegram-router.json` | O bot: recebe links, `/oferta`, `/cupom`, `/radar`, `/buscas`, `/canais` (`/canais migrar`, `/canais apagar_topico`), `/divulgar`, `/logo`, `/agentes`, `/afiliados`, `/alerta`, `/buscar`, `/cupons`, `/tophoje`, Concierge 24/7 no chat/DM, `/admin` (denúncia no chat), cliques nos botões e WhatsApp API opcional. |
 | `n8n/workflows/02-coleta-shopee.json` | A cada 2 h (8h–22h) busca ofertas na Shopee Affiliate API e manda as candidatas para aprovação. |
 | `n8n/workflows/03-relatorio-diario.json` | 22h05: resumo do dia (ofertas, posts, links, entradas por link de convite, sinalização de afiliados e divulgação cruzada automática dos canais). |
-| `n8n/workflows/04-radar-ofertas.json` | A cada 2 min (R\$ 0 de custo) os Agentes **Caçador + Auditor + Marketing** varrem 28 lojas + `@canaltechofertas`, `@xetdaspromocoes` e Gatry, removem tags concorrentes (incl. `link.amazon`/`amzlinks`), comparam Zoom+Amazon, aplicam anti-fadiga de 90 min, priorizam afiliados ativos e publicam automaticamente. |
+| `n8n/workflows/04-radar-ofertas.json` | A cada 2 min (R\$ 0 de custo) os Agentes **Caçador + Auditor + Marketing** (com motor **Ofertô Intelligence**) varrem 60+ lojas + `@canaltechofertas`, `@xetdaspromocoes` e `@nerdofertas`, removem tags concorrentes (incl. `link.amazon`/`amzlinks`), comparam Zoom+Amazon e histórico próprio, aplicam anti-fadiga de 90 min, priorizam afiliados ativos e publicam automaticamente. |
 | `n8n/workflows/05-guardiao-ofertas.json` | A cada 30 min (`15,45 8-23 * * *`) verifica ofertas publicadas: encerra esgotadas/subidas, atualiza posts ao vivo quando o preço cai `>= 6%` extra, expira pendentes `> 18h`, dispara às 18h45 o **Esquenta de Cupons das 19h** e às 21h15 o **Top 5 Ainda Ativas**. |
 | `docs/CONFIG.md` | Todas as chaves da tabela de configuração. |
+| `docs/OFERTÔ-INTELLIGENCE.md` · `docs/TELEGRAM-RELIABILITY.md` · `docs/AUDITORIA-COMPLETA-OFERTÔ.md` | Arquitetura do motor Ofertô Intelligence, confiabilidade de envio da Bot API do Telegram e auditoria técnica completa. |
 | `lib/`, `tests/`, `build/` | Código-fonte da lógica (testado) e o gerador dos workflows. |
 | `servidor-local/` | n8n Community grátis no seu computador (Docker + túnel). Guia em [servidor-local/README.md](servidor-local/README.md). |
 | `teste-local/` | Teste de ponta a ponta com n8n local e Telegram/Shopee falsos. |
@@ -32,7 +33,7 @@ Só colar/encaminhar o link no Telegram (ou Radar automático a cada 2 min sem c
 | Opção | Custo | Como |
 |---|---|---|
 | **Seu computador** (n8n Community + Docker) | Grátis; o computador precisa ficar ligado | [servidor-local/README.md](servidor-local/README.md): sobe tudo com `docker compose up -d`, importa os workflows e liga o webhook sozinho |
-| **n8n Cloud** | Plano pago após o teste grátis ([limite de execuções](#execuções-do-n8n-cloud-confira-o-seu-plano)) | Passo a passo abaixo: importar os 5 arquivos `.json` de `n8n/workflows/` |
+| **n8n Cloud** | Plano pago após o teste grátis ([limite de execuções](#execuções-do-n8n-cloud-confira-o-seu-plano)) | Passo a passo abaixo: importar os 6 arquivos `.json` de `n8n/workflows/` |
 
 Os workflows são os mesmos nas duas opções. No servidor local, os passos 2 e 4 abaixo são automáticos.
 
@@ -152,8 +153,8 @@ O modelo é `servidor-local/.env.example` (só chaves vazias e comentadas). Copi
 
 ### 2. Importar no n8n Cloud
 
-1. Em **Workflows → Create → Import from file**, importe os 4 arquivos de `n8n/workflows/`, um de cada vez.
-2. Abra **00 · Setup** e clique em **Execute workflow**. Isso cria as 7 tabelas e a tabela de configuração com os valores padrão.
+1. Em **Workflows → Create → Import from file**, importe os 6 arquivos de `n8n/workflows/`, um de cada vez.
+2. Abra **00 · Setup** e clique em **Execute workflow**. Isso cria as 8 tabelas e a tabela de configuração com os valores padrão.
 
 ### 3. Preencher a configuração (Overview → Data tables → `bfx_config`)
 
@@ -293,7 +294,7 @@ Como o preço é escolhido: Buy Box (se `keepa.buybox = sim` e houver), senão o
 | Comando | Faz |
 |---|---|
 | **Só colar o link** (ou encaminhar do app) | Extrai título, preço, cupom ativo (`Produto + Cupom = valor` e `De → no anúncio + Cupom =`), parcelamento sem juros, imagem e categoria de graça, preserva seu link de afiliado e gera o card (ou publica direto). Aceita atalho sem barra (`tech https://...`) e cupom+preço junto (`<link> 143,90 cupom FULL1811`, `<link> 400 cupom MELI15 15% 10x sem juros` ou `<link> de 229,90 anuncio 169,90 por 143,90 cupom FULL1811`). |
-| `/radar` · `/radar alta` · `/radar arabes` · `/radar nicho` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (18 lojas), com atalhos para produtos bombando (`/radar alta`), Perfumes Árabes no ML (`/radar arabes`), Perfumes de Nicho (`/radar nicho`), `/radar farmacia`, `/radar ps5`. |
+| `/radar` · `/radar alta` · `/radar arabes` · `/radar nicho` · `/radar off` | Controla ou dispara o **Radar automático multi-fonte** (60+ lojas), com atalhos para produtos bombando (`/radar alta`), Perfumes Árabes no ML (`/radar arabes`), Perfumes de Nicho (`/radar nicho`), `/radar farmacia`, `/radar ps5`. |
 | `/buscas <termos>` | Define os nichos/termos monitorados pelo Radar (ex.: `/buscas ps5; gta 6; lattafa; perfume de nicho`). |
 | `/canais` · `/canais <cat> <@canal>` | Gerencia os **canais separados** (`Ofertô Tech & Games`, `Perfumes, Beleza & Saúde`, `Casa & Eletro`, `Bebê & Família`, `VIP Top`). Ao adicionar o bot publicador como admin num canal novo, ele se conecta, coloca bio e fixa boas-vindas SOZINHO! |
 | `/resumao` | Publica na hora o **Top 5 Ofertas Ainda Ativas do Dia** no Telegram + texto pronto do WhatsApp. |

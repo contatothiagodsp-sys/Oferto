@@ -23,8 +23,8 @@ x-n8n-env: &n8n-env
   EXECUTIONS_DATA_HARD_DELETE_BUFFER: "0"
   # No máximo 3 execuções de produção ao mesmo tempo; evita picos de RAM quando o radar baixa HTML pesado.
   N8N_CONCURRENCY_PRODUCTION_LIMIT: "3"
-  # Limite explícito de heap Node e timeout de tarefa do JS runner (evita OOM e TaskRequestTimeoutError).
-  NODE_OPTIONS: "--max-old-space-size=1536 --dns-result-order=ipv4first"
+  # Limite explícito de heap Node, IPv4 prioritário sem Happy Eyeballs para IPv6 inacessível e timeout do JS runner.
+  NODE_OPTIONS: "--max-old-space-size=1536 --dns-result-order=ipv4first --no-network-family-autoselection"
   N8N_RUNNERS_TASK_TIMEOUT: "120"
   # Hardening do SQLite e poda de histórico de workflows (reduz RAM/disco e evita DB inchado).
   DB_SQLITE_POOL_SIZE: "4"
